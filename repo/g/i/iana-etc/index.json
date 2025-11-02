@@ -1,0 +1,20 @@
+{
+  "arch": "noarch",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+
+  ],
+  "license": "MIT",
+  "name": "iana-etc",
+  "platform": "linux",
+  "version": "20250807",
+  "source": "https://github.com/Mic92/iana-etc/releases/download/20250807/iana-etc-20250807.tar.gz",
+  "extras": [
+  ],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": [
+
+  ]
+}
