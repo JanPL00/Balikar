@@ -2,7 +2,7 @@
 // Created by placeja5 on 11/4/25.
 //
 
-#include "include/repo_parser.h"
+#include "includes/repo_parser.h"
 
 // Function to load JSON from file
 json_t* load_json(const char* filepath) {
@@ -120,10 +120,10 @@ int generate_repodata(const char* repo_path) {
     return 0;
 }
 
-int main(int argc, char** argv) {
-    if (argc != 2) {
-        fprintf(stderr, "Usage: %s repo\n", argv[0]);
-        return 1;
-    }
-    return generate_repodata(argv[1]);
-}
+// int main(int argc, char** argv) {
+//     if (argc != 2) {
+//         fprintf(stderr, "Usage: %s repo\n", argv[0]);
+//         return 1;
+//     }
+//     return generate_repodata(argv[1]);
+// }

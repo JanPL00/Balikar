@@ -1,0 +1,74 @@
+//
+// Created by placeja5 on 11/4/25.
+//
+
+#ifndef IMPL_COMMON_H
+#define IMPL_COMMON_H
+
+// ========================================
+// 1. SHARED STANDARD INCLUDES (C stdlib)
+// ========================================
+#include <stdio.h>      // For I/O (printf, fopen)
+#include <stdlib.h>     // For memory management (malloc, free, exit)
+#include <string.h>     // For strings (strcpy, snprintf)
+#include <unistd.h>     // For system calls (getenv, chdir for chroot)
+#include <sys/utsname.h> // For architecture (uname in setarch)
+#include <dirent.h>     // For directory recursion in parser (opendir, readdir)
+#include <time.h>       // For timestamps in metadata (time(NULL))
+
+// ========================================
+// 2. SHARED EXTERNAL LIBRARIES (libsolv, jansson, curl)
+// ========================================
+// Libsolv – core for pool, solver, repo (use pkg-config for cflags/libs)
+#include <solv/pool.h>          // Pool and Solvable
+#include <solv/repo.h>          // Repo handling
+#include <solv/solver.h>        // Solver and jobs
+#include <solv/transaction.h>   // Transactions
+#include <solv/selection.h>     // For globs and provides
+#include <solv/poolarch.h>      // Architecture
+#include <solv/evr.h>           // Version comparison
+
+// Jansson – for JSON parsing (index.json, repodata.json)
+#include <jansson.h>            // json_t, json_load_file, etc.
+
+// Curl – for downloader (fetching source tarballs)
+#include <curl/curl.h>          // curl_easy_init, etc.
+
+// Optional others (if needed): libarchive for tar extraction (but minimize – use system("tar"))
+
+// ========================================
+// 3. GLOBAL MACROS AND CONSTANTS
+// ========================================
+#define STAGING_DIR "$P"                // Staging directory for LFS/LLD (DESTDIR=$P)
+#define CHROOT_PATH "/tmp/pm-chroot"    // Default chroot for installation (CLI-overridable)
+#define MAX_RECURSION_DEPTH 10          // Recursion limit for mkdeps (prevents cycles)
+#define REPO_METADATA "repodata.json"   // Name of aggregated file for Conda-like repos
+#define PKG_METADATA "index.json"       // Name of metadata file in tar.xz
+#define MAX_PATH_LEN 1024               // Buffer size for paths (snprintf)
+#define DEBUG_LEVEL 0                   // Default debug level (CLI -d to increase)
+
+// Error codes (enum-like macros for consistent error handling)
+#define ERR_NO_REPO 1
+#define ERR_SOLVE_FAIL 2
+#define ERR_DOWNLOAD_FAIL 3
+#define ERR_BUILD_FAIL 4
+
+// ========================================
+// 4. GLOBAL STRUCTURES AND TYPEDEFS
+// ========================================
+typedef struct {
+    char *source;               // URL for download (from index.json)
+    json_t *mkdeps;             // Build-time dependencies (json_array)
+    json_t *extras;             // Patches/extras (json_array)
+    int is_group;               // Boolean for meta-package
+    int no_package;             // Boolean for virtual package
+} CustomMeta;                   // Custom metadata for Solvable->userdata (Conda + LFS)
+
+// ========================================
+// 5. SHARED FUNCTION PROTOTYPES (only globally shared ones)
+// ========================================
+// (Minimal – most go to module-specific .h; here only core utils like logging)
+void log_error(const char *fmt, ...);  // Global logger (printf + exit on fatal)
+void log_debug(int level, const char *fmt, ...);  // Debug print (if level >= DEBUG_LEVEL)
+
+#endif //IMPL_COMMON_H
