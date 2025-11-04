@@ -18,7 +18,9 @@ pkg_check_modules(CHECK REQUIRED check)
 add_executable(balikar
         src/balikar/main.c
         src/balikar/parser.c
-        src/balikar/downloader.c)
+        src/balikar/downloader.c
+        src/utils/repo_parser.c
+        src/utils/include/repo_parser.h)
 
 target_include_directories(balikar PRIVATE
         ${CURL_INCLUDE_DIRS}

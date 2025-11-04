@@ -1,0 +1,5 @@
+make DESTDIR=$P install
+
+su
+
+make install
