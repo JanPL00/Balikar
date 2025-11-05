@@ -25,9 +25,12 @@ add_executable(balikar
         src/balikar/main.c
         src/balikar/parser.c
         src/balikar/downloader.c
+        src/common/common.c
         src/utils/repo_parser.c
         src/utils/cli_helpers.c
-        src/common/common.c)
+        src/utils/string_helpers.c
+        src/utils/debug.c
+)
 
 target_include_directories(balikar PRIVATE
         ${CURL_INCLUDE_DIRS}

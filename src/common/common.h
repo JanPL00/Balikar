@@ -23,6 +23,8 @@
 #include <solv/pool.h>          // Pool and Solvable
 #include <solv/repo.h>          // Repo handling
 #include <solv/solver.h>        // Solver and jobs
+#include <solv/solverdebug.h>   // Solver debugging
+#include <solv/queue.h>           // Pro Queue
 #include <solv/transaction.h>   // Transactions
 #include <solv/selection.h>     // For globs and provides
 #include <solv/poolarch.h>      // Architecture
