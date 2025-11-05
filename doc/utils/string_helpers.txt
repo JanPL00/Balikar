@@ -31,3 +31,38 @@ Integrace v projektu
 ----
 Používá se v modulech jako solver.c (pro výpis rozhodnutí), debug.c (pro proofy) nebo print.c (pro transakce).
 Atributy jako "arch" pocházejí z parsovaných metadat (index.jsn přes parcer.c) s fallbackem na default Pool architekturu.
+
+
+
+
+========================================
+                ENGLISH
+========================================
+
+string_helpers
+=============
+(Czech above)
+
+Description
+----
+Source file: string_helpers.c
+
+This module serves as a utility wrapper for manipulating strings related to entities from the libsolv library.
+Its main purpose is to convert internal identifiers (such as Solvable ID or dependency ID) into readable strings for logging,
+debugging, and user output (e.g., in CLI or transactions). The module ensures safe memory allocation (user must call free()) and error handling,
+to prevent buffer overflows or errors.
+
+Key Functions
+----
+char *solvable_to_string(Pool *pool, Id p);
+    - Returns a string in the format "name-version.arch" (e.g., "glibc-2.39.x86_64") based on the Solvable object from the Pool.
+    - Uses libsolv API such as pool_id2str to extract data.
+
+char *dep_to_string(Pool *pool, Id dep);
+    - Converts dependency ID to a readable string (e.g., "requires: gcc >=10").
+    - Duplicates the output from pool_dep2str for safe use.
+
+Integration in the Project
+----
+It is used in modules such as solver.c (for printing decisions), debug.c (for proofs), or print.c (for transactions).
+Attributes like "arch" come from parsed metadata (index.jsn via parcer.c) with fallback to the default Pool architecture.
