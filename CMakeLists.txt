@@ -30,6 +30,7 @@ add_executable(balikar
         src/utils/cli_helpers.c
         src/utils/string_helpers.c
         src/utils/debug.c
+        src/utils/print.c
 )
 
 target_include_directories(balikar PRIVATE

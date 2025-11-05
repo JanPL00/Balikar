@@ -20,6 +20,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  -d               Increase debug level\n");
     fprintf(stderr, "  --staging-dir=PATH  Set staging directory (default: %s)\n", STAGING_DIR);
     fprintf(stderr, "  --chroot-path=PATH  Set chroot path (default: %s)\n", CHROOT_PATH);
+    fprintf(stderr, "  --no-staging  Disable staging, install directly (stable mode)\n");
     fprintf(stderr, "  --dry-run       Simulate without changes\n");
     fprintf(stderr, "  -h, --help      Show this help\n");
     fprintf(stderr, "\n");

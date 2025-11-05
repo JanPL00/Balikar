@@ -28,3 +28,36 @@ int user_confirm(const char *prompt, int default_yes);
 Integrace v projektu
 ----
 Používá se v main.c pro parsování argumentů (např. při -h nebo chybě) a v solver.c/installer.c pro interakci s uživatelem (např. potvrzení transakce nebo rerun solveru při konfliktech).
+
+
+
+
+========================================
+                ENGLISH
+========================================
+
+cli_helpers
+=============
+
+Description
+----
+Source file: cli_helpers.c
+
+This module provides helper functions for CLI interaction and printing help, adapted from usage and yesno in solv.c.
+Its purpose is to handle user confirmation (y/n) and print usage information for commands and options of our package manager.
+The module includes error handling for input and support for default responses for non-interactive use.
+
+
+Key functions
+----
+void print_usage(int exit_code);
+    - Prints the CLI usage help, including commands (install, build, resolve, erase, repos), options (--staging-dir, --chroot-path etc.) and examples.
+
+int user_confirm(const char *prompt, int default_yes);
+    - Displays a prompt for confirmation (y/n/q) with default response (if enter is pressed).
+    - Supports upper/lowercase letters, skips whitespace, aborts on q or EOF.
+
+
+Project integration
+----
+Used in main.c for parsing arguments (e.g. with -h or error) and in solver.c/installer.c for user interaction (e.g. confirming transaction or rerunning solver on conflicts).
