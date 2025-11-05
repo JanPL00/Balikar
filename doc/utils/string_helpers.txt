@@ -1,0 +1,33 @@
+========================================
+                 CZECH
+========================================
+
+string_helpers
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: string_helpers.c
+
+Tento modul slouží jako pomocný wrapper pro manipulaci se stringy souvisejícími s entitami z knihovny libsolv.
+Jeho hlavní účel je konvertovat interní identifikátory (jako Solvable ID nebo dependency ID) na čitelné stringy pro logging,
+debugging a uživatelský výstup (např. v CLI nebo transakcích). Modul zajišťuje bezpečnou alokaci paměti (uživatel musí volat free()) a error handling,
+aby se zabránilo buffer overflowům nebo chybám.
+
+
+Klíčové funkce
+----
+char *solvable_to_string(Pool *pool, Id p);
+    - Vrátí string ve formátu "name-version.arch" (např. "glibc-2.39.x86_64") na základě Solvable objektu z Poolu.
+    - Používá libsolv API jako pool_id2str pro extrakci dat.
+
+char *dep_to_string(Pool *pool, Id dep);
+    - Konvertuje dependency ID na čitelný string (např. "requires: gcc >=10").
+    - Duplikuje výstup z pool_dep2str pro bezpečné použití.
+
+
+Integrace v projektu
+----
+Používá se v modulech jako solver.c (pro výpis rozhodnutí), debug.c (pro proofy) nebo print.c (pro transakce).
+Atributy jako "arch" pocházejí z parsovaných metadat (index.jsn přes parcer.c) s fallbackem na default Pool architekturu.

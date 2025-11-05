@@ -1,0 +1,30 @@
+========================================
+                 CZECH
+========================================
+
+cli_helpers
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: cli_helpers.c
+
+Tento modul poskytuje pomocné funkce pro CLI interakci a výpis nápovědy, adaptované z usage a yesno v solv.c.
+Jeho účel je zpracovávat uživatelské potvrzení (y/n) a vypisovat usage informace pro příkazy a options našeho package managera.
+Modul zahrnuje error handling pro vstup a podporu default odpovědí pro non-interaktivní použití.
+
+
+Klíčové funkce
+----
+void print_usage(int exit_code);
+    - Vypíše nápovědu k použití CLI, včetně příkazů (install, build, resolve, erase, repos), options (--staging-dir, --chroot-path atd.) a příkladů.
+
+int user_confirm(const char *prompt, int default_yes);
+    - Zobrazí prompt pro potvrzení (y/n/q) s default odpovědí (pokud stisknuto enter).
+    - Podporuje velká/malá písmena, skip whitespace, abort na q nebo EOF.
+
+
+Integrace v projektu
+----
+Používá se v main.c pro parsování argumentů (např. při -h nebo chybě) a v solver.c/installer.c pro interakci s uživatelem (např. potvrzení transakce nebo rerun solveru při konfliktech).

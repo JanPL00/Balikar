@@ -1,0 +1,31 @@
+========================================
+                 CZECH
+========================================
+
+debug
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: debug.c
+
+Tento modul poskytuje funkce pro debugging a výpis důkazů (proofů) z libsolv solveru, adaptované z doshowproof a showproof v solv.c.
+Jeho účel je vizualizovat rozhodnutí solveru, learnt rules a problémy (např. unsolvable závislosti), což pomáhá při ladění deps řešení.
+Modul integruje libsolv API pro získání decision listů a reason stringů, s přidaným error handlingem.
+
+
+Klíčové funkce
+----
+void display_proof(Solver *solv, Id id, int flags, Queue *lq);
+    - Vypíše důkaz pro specifické rozhodnutí nebo learnt rule. Filtruje "obvious" decisions, používá libsolv funkce jako solver_get_decisionlist, solver_reason2str a solver_decisioninfo2str.
+    - Integruje solvable_to_string pro lepší výpis balíčků.
+
+void display_problem_proof(Solver *solv, int problem);
+    - Vypíše úplný důkaz pro daný problém, včetně learnt rules a hlavního proofu.
+    - Volá display_proof interně pro strukturovaný výstup.
+
+
+Integrace v projektu
+----
+Používá se v solver.c (při handlingu problémů v solving loop) pro výpis chyb (např. konflikty v mkdeps nebo runtime deps).
