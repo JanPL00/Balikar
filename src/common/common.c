@@ -10,6 +10,8 @@
 // GLOBAL UTILS IMPLEMENTATION
 // ========================================
 
+# ifndef UNIT_TESTS
+
 void log_error(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
@@ -53,27 +55,23 @@ void log_warn(const char *fmt, ...) {
     fflush(stderr);
 }
 
+#endif
+
 
 const char *get_pool_arch(const Pool *pool) {
 
-    if (!pool) return "unknown";
-
-    if (pool->id2arch && pool->lastarch > 0) {
-        return pool_id2str(pool, pool->lastarch);
+    if (!pool) {
+        return "unknown";
     }
 
-    // Zkus získat z repodata
-    if (pool->solvables && pool->nsolvables > 0) {
-        for (int i = 1; i < pool->nsolvables; i++) {
-            Solvable *s = pool->solvables + i;
-            if (s->name && s->arch) {
-                const char *arch = pool_id2str(pool, s->arch);
-                if (arch && strcmp(arch, "noarch") != 0) {
-                    return arch;
-                }
-            }
+    // Přímý přístup k lastarch - toto je správný způsob
+    if (pool->lastarch) {
+        const char *arch = pool_id2str(pool, pool->lastarch);
+        if (arch && strlen(arch) > 0) {
+            return arch;
         }
     }
-    //Fallback default
+
+    // Fallback
     return "x86_64";
 }

@@ -60,21 +60,35 @@ target_link_libraries(balikar
 
 add_executable(tests
         src/utils/cli_helpers.c
+        src/utils/system_helpers.c
         src/common/common.c
-        tests/tests-utils/test_cli_helpers.c)
+        tests/tests-utils/test_cli_helpers.c
+        tests/tests-utils/test_system_helpers.c
+        tests/tests-utils/main.c
+)
 
 target_include_directories(tests PRIVATE
         ${CHECK_INCLUDE_DIRS}
-        ${CURL_INCLUDE_DIRS}  # Pokud testy potřebují (např. mock downloader)
+        ${LibSolv_INCLUDE_DIRS}
+        ${CURL_INCLUDE_DIRS}
         src/utils/includes
-        src/common
+        src/common/includes
         tests/tests-utils
 )
 
 target_link_libraries(tests
         ${CHECK_LIBRARIES}
-        # Pokud testy potřebují balikar libs: ${CURL_LIBRARIES} atd. (pro mocky)
+        ${LibSolv_LIBRARIES}
+        OpenSSL::Crypto
+        m
+        pthread
+        rt
+        subunit
 )
+
+target_link_options(tests PRIVATE "LINKER:--wrap=uname")
+
+target_compile_definitions(tests PRIVATE UNIT_TESTS)
 
 add_test(NAME unit_tests COMMAND tests)
 

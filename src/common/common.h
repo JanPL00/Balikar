@@ -17,6 +17,7 @@
 #include <sys/utsname.h> // For architecture (uname in setarch)
 #include <dirent.h>     // For directory recursion in parser (opendir, readdir)
 #include <time.h>       // For timestamps in metadata (time(NULL))
+#include  <check.h>
 
 // ========================================
 // 2. SHARED EXTERNAL LIBRARIES (libsolv, jansson, curl)

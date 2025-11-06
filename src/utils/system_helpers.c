@@ -19,27 +19,26 @@ void set_system_arch(Pool *pool) {
     }
 
     struct utsname un;
-    const char *arch = NULL;
+    const char *detected_arch = NULL;
 
-    // Zkus detekovat arch podle systému
+    // Detekce architektury
     if (uname(&un) == 0) {
-        arch = un.machine;  // Např. "x86_64"
-        log_info("Detected system arch: %s", arch);
+        detected_arch = un.machine;
+        log_info("Detected system arch: %s", detected_arch);
     } else {
         perror("uname failed");
-        log_warn("Falling back to default arch: x86_64");
-        arch = "x86_64";
+        log_warn("Falling back to default arch: x86_64");  // Ujistěte se, že tato řádka existuje
+        detected_arch = "x86_64";
     }
 
-    // Adaptace pro náš projekt: Podpora noarch defaultu
-    // (Později: Pokud parser načte index.json s "noarch", přepište – viz subkrok 2.1)
-    if (strcmp(arch, "x86_64") != 0 && strcmp(arch, "i686") != 0) {
-        log_warn("Non-standard arch '%s' detected; defaulting to x86_64 for compatibility.", arch);
-        arch = "x86_64";
+    // Normalizace architektury
+    const char *final_arch = detected_arch;
+    if (strcmp(detected_arch, "x86_64") != 0 && strcmp(detected_arch, "i686") != 0) {
+        log_warn("Non-standard arch '%s' detected; defaulting to x86_64 for compatibility.", detected_arch);
+        final_arch = "x86_64";
     }
 
-    // Nastav do libsolv poolu
-    const char *set_arch = arch;
-    pool_setarch(pool, arch);
-    log_info("Pool arch set to: %s", set_arch);  // Použij uložený string
-    }
+    // Nastavení architektury
+    pool->lastarch = pool_str2id(pool, final_arch, 1);
+    log_info("Pool arch set to: %s", final_arch);
+}
