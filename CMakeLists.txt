@@ -31,6 +31,7 @@ add_executable(balikar
         src/utils/string_helpers.c
         src/utils/debug.c
         src/utils/print.c
+        src/utils/system_helpers.c
 )
 
 target_include_directories(balikar PRIVATE

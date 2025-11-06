@@ -5,6 +5,8 @@
 #ifndef IMPL_COMMON_H
 #define IMPL_COMMON_H
 
+#define _GNU_SOURCE
+
 // ========================================
 // 1. SHARED STANDARD INCLUDES (C stdlib)
 // ========================================
@@ -72,5 +74,8 @@ typedef struct {
 // (Minimal – most go to module-specific .h; here only core utils like logging)
 void log_error(const char *fmt, ...);  // Global logger (printf + exit on fatal)
 void log_debug(int level, const char *fmt, ...);  // Debug print (if level >= DEBUG_LEVEL)
+void log_info(const char *fmt, ...);   // Info print (always shown)
+void log_warn(const char *fmt, ...);    // Warning print (always shown)
+const char *get_pool_arch(const Pool *pool); // Get architecture string from pool
 
 #endif //IMPL_COMMON_H
