@@ -18,6 +18,7 @@
 #include <dirent.h>     // For directory recursion in parser (opendir, readdir)
 #include <time.h>       // For timestamps in metadata (time(NULL))
 #include  <check.h>
+#include <sys/stat.h>
 
 // ========================================
 // 2. SHARED EXTERNAL LIBRARIES (libsolv, jansson, curl)

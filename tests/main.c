@@ -1,16 +1,11 @@
-//
-// all_tests.c - Jednotný test runner pro všechny unit testy (pomocí Check)
-// Spustí suite z test_system_helpers.c a test_cli_helpers.c.
-// Struktura: Kompiluj s: gcc all_tests.c test_system_helpers.c test_cli_helpers.c ../src/utils/system_helpers.c ../src/utils/cli_helpers.c ../src/common.c -o all_tests -lcheck -lsolv -lm -pthread -lrt -lsubunit
-// Pak: ./all_tests
-// Created by [tvé jméno] on 06/11/2025.
-//
+// Main pro UNIT testy
 
 #include <check.h>
 
 // Deklarace suites z jednotlivých test souborů (přidej do test_*.c extern Suite *..._suite(void); pokud není)
 extern Suite *system_helpers_suite(void);
 extern Suite *cli_helpers_suite(void);
+extern Suite *parser_suite(void);
 
 int main(void) {
     int failures = 0;
@@ -30,6 +25,11 @@ int main(void) {
     srunner_free(sr_cli);
 
     // Přidej další suites zde (např. test_string_helpers_suite() atd.)
+    Suite *s_parser = parser_suite();
+    SRunner *sr_parser = srunner_create(s_parser);
+    srunner_run_all(sr_parser, CK_NORMAL);
+    failures += srunner_ntests_failed(sr_parser);
+    srunner_free(sr_parser);
 
     return (failures == 0) ? 0 : 1;
 }

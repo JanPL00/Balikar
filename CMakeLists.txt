@@ -23,10 +23,9 @@ enable_testing()
 
 add_executable(balikar
         src/balikar/main.c
-        src/balikar/parser.c
         src/balikar/downloader.c
         src/common/common.c
-        src/utils/repo_parser.c
+        src/balikar/parser.c
         src/utils/cli_helpers.c
         src/utils/string_helpers.c
         src/utils/debug.c
@@ -62,23 +61,28 @@ add_executable(tests
         src/utils/cli_helpers.c
         src/utils/system_helpers.c
         src/common/common.c
+        src/balikar/parser.c
         tests/tests-utils/test_cli_helpers.c
         tests/tests-utils/test_system_helpers.c
-        tests/tests-utils/main.c
+        tests/main.c
+        tests/tests-src/test_parser.c
 )
 
 target_include_directories(tests PRIVATE
         ${CHECK_INCLUDE_DIRS}
         ${LibSolv_INCLUDE_DIRS}
         ${CURL_INCLUDE_DIRS}
+        ${Jansson_INCLUDE_DIRS}
         src/utils/includes
         src/common/includes
+        src/balikar/includes
         tests/tests-utils
 )
 
 target_link_libraries(tests
         ${CHECK_LIBRARIES}
         ${LibSolv_LIBRARIES}
+        ${Jansson_LIBRARIES}
         OpenSSL::Crypto
         m
         pthread
