@@ -4,6 +4,8 @@
 
 #include "includes/parser.h"
 
+#include <errno.h>
+
 // Function to load JSON from file
 json_t* load_json(const char* filepath) {
     json_error_t error;
@@ -38,7 +40,7 @@ char* generate_package_key(json_t* index) {
 void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo) {
     DIR* dir = opendir(root_path);
     if (!dir) {
-        log_error("Error opening directory %s\n", root_path);
+        log_error("Error opening directory %s\n", root_path, strerror(errno));
         return;
     }
 
@@ -178,8 +180,6 @@ void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo 
                             }
                         }
 
-                        // POZOR: NEPŘIDÁVEJ znovu - s už je v repo díky repo_add_solvable()
-                        // repo_add_solvable(repo, s);  // TOTO ODSTRAN - způsobuje duplikaci
 
                     } else {
                         log_warn("Failed to create Solvable for %s", filepath);
