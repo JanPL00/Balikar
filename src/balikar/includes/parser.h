@@ -31,4 +31,6 @@ int get_custom_no_package(Repodata *data, Id p, Pool *pool);  // Podobně pro "n
 // Pro internalizaci repo po načtení (z pool manpage: nutné pro lookup funkce)
 void internalize_repo(Repo *repo);  // Volá repo_internalize(repo) pro indexaci whatprovides
 
+Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);  // Nové: Přidání tar.bz2 balíčku
+
 #endif //IMPL_REPO_PARSER_H

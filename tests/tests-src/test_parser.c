@@ -1,4 +1,3 @@
-
 #include "../../src/balikar/includes/parser.h"
 #include "../../src/utils/includes/debug.h"
 
@@ -30,6 +29,76 @@ static void teardown_fixture(TestFixture* fixture) {
     system(command);
     free(fixture->temp_dir);
     free(fixture->repo_path);
+}
+
+// Helper function to create a test tar.bz2 package
+static int create_test_tar_bz2(const char* tar_path, const char* index_content, int create_nested_source) {
+    char tmp_dir_template[] = "/tmp/test_pkg_XXXXXX";
+    char* tmp_dir = mkdtemp(tmp_dir_template);
+    if (!tmp_dir) return 0;
+
+    // Create package structure
+    char info_dir[1024];
+    snprintf(info_dir, sizeof(info_dir), "%s/info", tmp_dir);
+    mkdir(info_dir, 0755);
+
+    // Create index.json
+    char index_path[1024];
+    snprintf(index_path, sizeof(index_path), "%s/index.json", tmp_dir);
+    create_test_json(index_path, index_content);
+
+    // Create .build file
+    char build_path[1024];
+    snprintf(build_path, sizeof(build_path), "%s/.build", tmp_dir);
+    create_test_json(build_path, "#!/bin/bash\necho \"Building package\"\n");
+
+    // Create install script
+    char install_dir[1024];
+    snprintf(install_dir, sizeof(install_dir), "%s/.install", tmp_dir);
+    mkdir(install_dir, 0755);
+    char install_path[1024];
+    snprintf(install_path, sizeof(install_path), "%s/install.sh", install_dir);
+    create_test_json(install_path, "#!/bin/bash\necho \"Installing package\"\n");
+
+    // Optional: Create nested source tar.xz
+    if (create_nested_source) {
+        char source_dir[1024];
+        snprintf(source_dir, sizeof(source_dir), "%s/source", tmp_dir);
+        mkdir(source_dir, 0755);
+        
+        // Create source files
+        char makefile_path[1024];
+        snprintf(makefile_path, sizeof(makefile_path), "%s/Makefile", source_dir);
+        create_test_json(makefile_path, "all:\n\techo \"Building from source\"\n");
+        
+        char src_path[1024];
+        snprintf(src_path, sizeof(src_path), "%s/main.c", source_dir);
+        create_test_json(src_path, "int main() { return 0; }\n");
+        
+        // Create nested tar.xz
+        char nested_tar_path[1024];
+        snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/source.tar.xz", tmp_dir);
+        char cmd[2048];
+        snprintf(cmd, sizeof(cmd), "tar -cJf \"%s\" -C \"%s\" .", nested_tar_path, source_dir);
+        system(cmd);
+    }
+
+    // Create the final tar.bz2
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd), "tar -cjf \"%s\" -C \"%s\" .", tar_path, tmp_dir);
+    int result = system(cmd);
+
+    // Cleanup
+    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
+    system(cmd);
+
+    return result == 0;
+}
+
+// Helper function to get repodata from repo
+static Repodata* get_repodata_from_repo(Repo* repo) {
+    if (!repo) return NULL;
+    return repo_last_repodata(repo);
 }
 
 
@@ -348,7 +417,7 @@ START_TEST(test_custom_fields_storage_and_retrieval_fn) {
 
     repo_internalize(repo);
 
-    // Test retrieval functions - OPRAVA TYPŮ
+    // Test retrieval functions
     json_t* mkdeps = get_custom_mkdeps(data, p, pool);
     ck_assert_ptr_ne(mkdeps, NULL);
     ck_assert_int_eq(json_array_size(mkdeps), 2);
@@ -365,6 +434,246 @@ START_TEST(test_custom_fields_storage_and_retrieval_fn) {
     pool_free(pool);
 }
 END_TEST
+
+// TESTY PRO TAR.BZ2 PARSOVÁNÍ - NOVÉ
+START_TEST(test_add_package_tar_bz2_basic) {
+    TestFixture fixture;
+    setup_fixture(&fixture);
+
+    Pool* pool = pool_create();
+    Repo* repo = repo_create(pool, "test-repo");
+
+    // Create test tar.bz2 package
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/test-pkg-1.0-0.tar.bz2", fixture.repo_path);
+
+    const char* index_content =
+        "{\"name\": \"test-pkg\", \"version\": \"1.0\", \"build\": \"0\", "
+        "\"arch\": \"x86_64\", \"depends\": [\"bash\"], "
+        "\"mkdeps\": [\"gcc\", \"make\"], \"source\": \"http://example.com/src.tar.gz\"}";
+
+    int created = create_test_tar_bz2(tar_path, index_content, 0);
+    ck_assert_int_ne(created, 0);
+
+    // Test adding the package
+    Id p = add_package_tar_bz2(tar_path, pool, repo);
+    ck_assert_int_ne(p, 0);
+
+    // Verify the solvable was created correctly
+    Solvable* s = pool->solvables + p;
+    ck_assert_int_ne(s->name, 0);
+    ck_assert_int_ne(s->evr, 0);
+    ck_assert_int_ne(s->arch, 0);
+
+    // Verify custom fields - use existing repodata from repo
+    Repodata* data = get_repodata_from_repo(repo);
+    ck_assert_ptr_ne(data, NULL);
+
+    const char* source_url = get_custom_source(data, p, pool);
+    ck_assert_ptr_ne(source_url, NULL);
+    ck_assert_str_eq(source_url, "http://example.com/src.tar.gz");
+
+    json_t* mkdeps = get_custom_mkdeps(data, p, pool);
+    ck_assert_ptr_ne(mkdeps, NULL);
+    ck_assert_int_eq(json_array_size(mkdeps), 2);
+    json_decref(mkdeps);
+
+    repo_free(repo, 1);
+    pool_free(pool);
+    teardown_fixture(&fixture);
+}
+END_TEST
+
+START_TEST(test_add_package_tar_bz2_with_nested_source) {
+    TestFixture fixture;
+    setup_fixture(&fixture);
+
+    Pool* pool = pool_create();
+    Repo* repo = repo_create(pool, "test-repo");
+
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/glibc-2.38-5.tar.bz2", fixture.repo_path);
+
+    const char* index_content =
+        "{\"name\": \"glibc\", \"version\": \"2.38\", \"build\": \"5\", "
+        "\"arch\": \"x86_64\", \"depends\": [\"linux-headers\"], "
+        "\"mkdeps\": [\"gcc\", \"binutils\", \"make\"], "
+        "\"source\": \"http://ftp.gnu.org/gnu/glibc/glibc-2.38.tar.xz\"}";
+
+    // Create package with nested source
+    int created = create_test_tar_bz2(tar_path, index_content, 1);
+    ck_assert_int_ne(created, 0);
+
+    Id p = add_package_tar_bz2(tar_path, pool, repo);
+    ck_assert_int_ne(p, 0);
+
+    Solvable* s = pool->solvables + p;
+    ck_assert_str_eq(pool_id2str(pool, s->name), "glibc");
+    ck_assert_str_eq(pool_id2str(pool, s->arch), "x86_64");
+
+    // Verify dependencies were parsed
+    ck_assert_int_ne(s->requires, 0);
+
+    repo_free(repo, 1);
+    pool_free(pool);
+    teardown_fixture(&fixture);
+}
+END_TEST
+
+START_TEST(test_add_package_tar_bz2_without_index_json) {
+    TestFixture fixture;
+    setup_fixture(&fixture);
+
+    Pool* pool = pool_create();
+    Repo* repo = repo_create(pool, "test-repo");
+
+    // Create a minimal tar.bz2 without index.json
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/gzip-1.12-3.tar.bz2", fixture.repo_path);
+
+    char tmp_dir_template[] = "/tmp/minimal_pkg_XXXXXX";
+    char* tmp_dir = mkdtemp(tmp_dir_template);
+
+    // Only create essential files, no index.json
+    char build_path[1024];
+    snprintf(build_path, sizeof(build_path), "%s/.build", tmp_dir);
+    create_test_json(build_path, "#!/bin/bash\necho \"Build gzip\"\n");
+
+    // Create the tar.bz2
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd), "tar -cjf \"%s\" -C \"%s\" .", tar_path, tmp_dir);
+    system(cmd);
+
+    // Cleanup temp dir
+    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
+    system(cmd);
+
+    // This should generate default metadata from filename
+    Id p = add_package_tar_bz2(tar_path, pool, repo);
+    ck_assert_int_ne(p, 0);
+
+    Solvable* s = pool->solvables + p;
+    ck_assert_str_eq(pool_id2str(pool, s->name), "gzip");
+    ck_assert_str_eq(pool_id2str(pool, s->evr), "1.12-3");
+
+    repo_free(repo, 1);
+    pool_free(pool);
+    teardown_fixture(&fixture);
+}
+END_TEST
+
+START_TEST(test_add_package_tar_bz2_invalid_file) {
+    Pool* pool = pool_create();
+    Repo* repo = repo_create(pool, "test-repo");
+
+    // Test with non-existent file
+    Id p = add_package_tar_bz2("/nonexistent/file.tar.bz2", pool, repo);
+    ck_assert_int_eq(p, 0);
+
+    // Test with invalid tar file
+    char invalid_path[] = "/tmp/invalid_XXXXXX";
+    int fd = mkstemp(invalid_path);
+    const char* garbage = "This is not a tar file";
+    write(fd, garbage, strlen(garbage));
+    close(fd);
+
+    p = add_package_tar_bz2(invalid_path, pool, repo);
+    ck_assert_int_eq(p, 0);
+
+    unlink(invalid_path);
+    repo_free(repo, 1);
+    pool_free(pool);
+}
+END_TEST
+
+START_TEST(test_add_package_tar_bz2_complex_metadata) {
+    TestFixture fixture;
+    setup_fixture(&fixture);
+
+    Pool* pool = pool_create();
+    Repo* repo = repo_create(pool, "test-repo");
+
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/complex-pkg-3.2.1-rc1.tar.bz2", fixture.repo_path);
+
+    const char* index_content =
+        "{\"name\": \"complex-pkg\", \"version\": \"3.2.1\", \"build\": \"rc1\", "
+        "\"arch\": \"noarch\", \"depends\": [\"dep1 >= 2.0\", \"dep2 < 5.0\", \"dep3\"], "
+        "\"mkdeps\": [\"gcc\", \"cmake\", \"ninja\"], "
+        "\"extras\": [\"optional-feature\", \"docs\"], "
+        "\"is_group\": true, \"no_package\": false, "
+        "\"license\": \"GPL-3.0\", \"summary\": \"A complex test package\"}";
+
+    int created = create_test_tar_bz2(tar_path, index_content, 0);
+    ck_assert_int_ne(created, 0);
+
+    Id p = add_package_tar_bz2(tar_path, pool, repo);
+    ck_assert_int_ne(p, 0);
+
+    // Test all custom fields - use existing repodata from repo
+    Repodata* data = get_repodata_from_repo(repo);
+    ck_assert_ptr_ne(data, NULL);
+
+    // Test makedeps
+    json_t* mkdeps = get_custom_mkdeps(data, p, pool);
+    ck_assert_ptr_ne(mkdeps, NULL);
+    ck_assert_int_eq(json_array_size(mkdeps), 3);
+    json_decref(mkdeps);
+
+    // Test extras
+    json_t* extras = get_custom_extras(data, p, pool);
+    ck_assert_ptr_ne(extras, NULL);
+    ck_assert_int_eq(json_array_size(extras), 2);
+    json_decref(extras);
+
+    // Test boolean fields
+    int is_group = get_custom_is_group(data, p, pool);
+    ck_assert_int_ne(is_group, 0);
+
+    int no_package = get_custom_no_package(data, p, pool);
+    ck_assert_int_eq(no_package, 0);
+
+    repo_free(repo, 1);
+    pool_free(pool);
+    teardown_fixture(&fixture);
+}
+END_TEST
+
+START_TEST(test_add_package_tar_bz2_local_source) {
+    TestFixture fixture;
+    setup_fixture(&fixture);
+
+    Pool* pool = pool_create();
+    Repo* repo = repo_create(pool, "test-repo");
+
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/local-pkg-1.0-1.tar.bz2", fixture.repo_path);
+
+    // Package with local source (no source URL)
+    const char* index_content =
+        "{\"name\": \"local-pkg\", \"version\": \"1.0\", \"build\": \"1\", "
+        "\"arch\": \"x86_64\", \"depends\": [], \"mkdeps\": []}";
+
+    int created = create_test_tar_bz2(tar_path, index_content, 0);
+    ck_assert_int_ne(created, 0);
+
+    Id p = add_package_tar_bz2(tar_path, pool, repo);
+    ck_assert_int_ne(p, 0);
+
+    // Should use tar_path as local source - use existing repodata from repo
+    Repodata* data = get_repodata_from_repo(repo);
+    ck_assert_ptr_ne(data, NULL);
+
+    const char* source = get_custom_source(data, p, pool);
+    ck_assert_ptr_ne(source, NULL);
+    ck_assert_str_eq(source, tar_path);
+
+    repo_free(repo, 1);
+    pool_free(pool);
+    teardown_fixture(&fixture);
+}
+END_TEST
+
 
 // TESTY SUITE SETUP
 Suite* parser_suite(void) {
@@ -396,7 +705,7 @@ Suite* parser_suite(void) {
     tcase_set_timeout(tc_repodata, 10);
     suite_add_tcase(s, tc_repodata);
 
-    // Dependency parsing tests - NOVÉ
+    // Dependency parsing tests
     TCase* tc_depends = tcase_create("ParseDepends");
     tcase_add_test(tc_depends, test_parse_depends_basic_name_only);
     tcase_add_test(tc_depends, test_parse_depends_with_operators);
@@ -405,8 +714,19 @@ Suite* parser_suite(void) {
     tcase_add_test(tc_depends, test_parse_depends_unknown_operator);
     tcase_add_test(tc_depends, test_parse_depends_non_string_items);
     tcase_add_test(tc_depends, test_parse_depends_edge_cases);
-    tcase_add_test(tc_depends, test_custom_fields_storage_and_retrieval_fn);  // PŘIDÁNO
+    tcase_add_test(tc_depends, test_custom_fields_storage_and_retrieval_fn);
     suite_add_tcase(s, tc_depends);
+
+    // Tar.bz2 parsing tests - NOVÉ
+    TCase* tc_tar = tcase_create("TarBz2Parsing");
+    tcase_add_test(tc_tar, test_add_package_tar_bz2_basic);
+    tcase_add_test(tc_tar, test_add_package_tar_bz2_with_nested_source);
+    tcase_add_test(tc_tar, test_add_package_tar_bz2_without_index_json);
+    tcase_add_test(tc_tar, test_add_package_tar_bz2_invalid_file);
+    tcase_add_test(tc_tar, test_add_package_tar_bz2_complex_metadata);
+    tcase_add_test(tc_tar, test_add_package_tar_bz2_local_source);
+    tcase_set_timeout(tc_tar, 30); // Longer timeout for tar operations
+    suite_add_tcase(s, tc_tar);
 
     return s;
 }
