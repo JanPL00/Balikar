@@ -20,13 +20,15 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  -d               Increase debug level\n");
     fprintf(stderr, "  --staging-dir=PATH  Set staging directory (default: %s)\n", STAGING_DIR);
     fprintf(stderr, "  --chroot-path=PATH  Set chroot path (default: %s)\n", CHROOT_PATH);
-    fprintf(stderr, "  --no-staging  Disable staging, install directly (stable mode)\n");
+    fprintf(stderr, "  --no-staging     Disable staging, install directly (stable mode)\n");
     fprintf(stderr, "  --dry-run       Simulate without changes\n");
+    fprintf(stderr, "  --local-package=PATH  Install from local tar.bz2 (out of repo)\n");
     fprintf(stderr, "  -h, --help      Show this help\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  pm install glibc\n");
     fprintf(stderr, "  pm build gcc --staging-dir=/tmp/stage\n");
+    fprintf(stderr, "  pm install --local-package=/path/to/gzip.tar.bz2\n");
     exit(exit_code);
 }
 

@@ -615,19 +615,21 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
         return 0;
     }
 
+    Id p = 0; // INICIALIZOVAT NA 0
     char tmp_template[] = "/tmp/balikar_extract_XXXXXX";
     char *tmp_dir = mkdtemp(tmp_template);
     if (!tmp_dir) {
         log_error("Failed to create tmp dir: %s", strerror(errno));
         return 0;
     }
-    log_debug(1, "Extracting %s to %s", tar_path, tmp_dir);
 
+    log_debug(1, "Extracting %s to %s", tar_path, tmp_dir);
     char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "tar xjf \"%s\" -C \"%s\"", tar_path, tmp_dir);
+    snprintf(cmd, sizeof(cmd), "tar xjf \"%s\" -C \"%s\" 2>/dev/null", tar_path, tmp_dir);
     int extract_ret = system(cmd);
     if (extract_ret != 0) {
         log_error("Failed to extract %s (exit %d)", tar_path, extract_ret);
+        // Pokračuj na cleanup, p zůstane 0
         goto cleanup;
     }
     log_info("Extracted %s to %s successfully", tar_path, tmp_dir);
@@ -645,16 +647,15 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
     }
 
     // Zpracuj (jen libsolv, bez packages, fallback_source = tar_path)
-    Id p = process_index_json(index, NULL, pool, repo, tar_path);
+    p = process_index_json(index, NULL, pool, repo, tar_path);
 
-    // Cleanup
-cleanup:
-    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
+    cleanup:
+        snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
     system(cmd);
 
     if (p != 0) {
         log_info("Added %s as solvable %d", tar_path, p);
     }
 
-    return p;
+    return p; // Pokud došlo k chybě, p bude 0
 }
