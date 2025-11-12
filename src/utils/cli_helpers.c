@@ -7,7 +7,7 @@
 #include <stdarg.h>       // For va_list in potential extensions (not used yet)
 
 void print_usage(int exit_code) {
-    fprintf(stderr, "Usage: pm [OPTIONS] COMMAND [ARGS]\n");
+    fprintf(stderr, "Usage: balikar [OPTIONS] COMMAND [ARGS]\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Commands:\n");
     fprintf(stderr, "  install <pkg>    Install package with deps resolution\n");

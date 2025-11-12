@@ -10,50 +10,82 @@ Popis
 ----
 Zdrojový soubor: parser.c
 
-Tento modul poskytuje funkce pro parsování repozitáře balíčků v Conda-like formátu (index.json pro každý balíček), rekurzivní procházení adresářové struktury, generování repodata.json a integraci metadat do libsolv struktur (Solvables a Repodata). Podporuje custom pole inspirovaná LFS/LLD (mkdeps pro build-time závislosti, source pro URL stažení, extras pro patche/skripty, is_group/no_package pro meta/virtual balíčky). Zahrnuje parsování závislostí (depends array do SOLVABLE_REQUIRES) a error handling s loggingem.
+Tento modul poskytuje funkce pro parsování repozitáře balíčků v Conda-like formátu (index.json pro každý balíček),
+rekurzivní procházení adresářové struktury, generování repodata.json a integraci metadat do libsolv struktur (Solvables a Repodata).
+Podporuje custom pole inspirovaná LFS/LLD (mkdeps pro build-time závislosti, source pro URL stažení, extras pro patche/skripty,
+is_group/no_package pro meta/virtual balíčky).
+Zahrnuje parsování závislostí (depends array do SOLVABLE_REQUIRES) a error handling s loggingem.
+Rozšířeno o podporu tar.bz2 balíčků (extrakce, rekurzní hledání index.json, generování default metadat pokud chybí),
+což umožňuje parsování mixu adresářů a archivů v repo i lokálně mimo repo.
+
 
 Klíčové funkce
 ----
+static char* trim_str(const char* str);
+- Ořízne leading/trailing whitespace z stringu; vrací nový mallocovaný string nebo NULL.
+
 json_t* load_json(const char* filepath);
-    - Načte JSON soubor (např. index.json) pomocí jansson; vrací root objekt nebo NULL při chybě (s log_error).
+- Načte JSON soubor (např. index.json) pomocí jansson; vrací root objekt nebo NULL při chybě (s log_error).
+
+static json_t* find_and_load_index(const char* dir_path);
+- Rekurzivně hledá a načte první index.json v adresáři (podporuje root/info/ a podadresáře); vrací JSON nebo NULL; použito pro tar.bz2 extrakty.
+
+static void add_default_fields(json_t* index);
+- Doplňuje defaultní pole do index JSON (build_number=0, license="unknown", md5="", sha256="", size=0, subdir="noarch", timestamp=aktuální).
+
+static Id init_solvable_from_json(json_t *index, Pool *pool, Repo *repo);
+- Inicializuje Solvable z JSON (nastaví name, evr z version+build, arch s fallbackem na get_pool_arch, parsuje depends); vrací Id Solvable nebo 0.
+
+static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, Pool *pool);
+- Přidává custom pole (mkdeps, download_url, extras, is_group, no_package) do Repodata jako stringy (json_dumps pro array).
+
+static json_t* generate_default_metadata(const char* filename);
+- Generuje default JSON metadata z filename (sscanf name-version-build, depends/mkdeps/extras=[], is_group/no_package=false, source=""); vrací JSON nebo NULL.
+
+static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo repo, const char fallback_source);
+- Obecný processor JSON: Doplňuje defaulty, inicializuje Solvable, přidává custom do Repodata, volitelně přidá do packages (pro repodata.json), nastaví fallback source pokud chybí; vrací Id Solvable.
 
 char* generate_package_key(json_t* index);
-    - Generuje unikátní klíč balíčku ("name-version-build.tar.bz2") z polí name/version/build; vrací mallocovaný string nebo NULL.
+- Generuje unikátní klíč balíčku ("name-version-build.tar.bz2") z polí name/version/build; vrací mallocovaný string nebo NULL.
 
 void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo);
-    - Rekurzivně prochází adresář repo, načítá index.json, doplňuje defaultní pole (build_number, license atd.), vytváří Solvables (s name/EVR/arch), ukládá custom metadata do Repodata (mkdeps/source/extras/is_group/no_package) a parsuje depends; přidává do packages objektu pro repodata.json.
+- Rekurzivně prochází adresář repo, načítá index.json (pro plain adresáře), nebo volá add_package_tar_bz2 pro tar.bz2 soubory (DT_REG a končí .tar.bz2); doplňuje defaultní pole, vytváří Solvables (s name/EVR/arch), ukládá custom metadata do Repodata (mkdeps/source/extras/is_group/no_package) a parsuje depends; přidává do packages objektu pro repodata.json.
 
 int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
-    - Hlavní entry point: Vytváří repodata.json (s info/packages sekcemi), volá collect_packages a zapisuje výstup; volitelně integruje s libsolv (pool/repo); vrací 0 při úspěchu.
+- Hlavní entry point: Vytváří repodata.json (s info/packages sekcemi), volá collect_packages (nyní s tar.bz2 podporou) a zapisuje výstup; volitelně integruje s libsolv (pool/repo); vrací 0 při úspěchu.
 
 void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
-    - Parsuje depends array (stringy jako "pkg >= 1.0") do Reldep Id (pool_rel2id s REL_* konstantami) a přidává do s->requires (solvable_add_deparray); skipuje invalidní položky.
+- Parsuje depends array (stringy jako "pkg >= 1.0") do Reldep Id (pool_rel2id s REL_* konstantami) a přidává do s->requires (solvable_add_deparray); skipuje invalidní položky; používá trim_str pro ořez stringů.
 
 json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
-    - Lookup "makedeps" string z Repodata, parsuje zpět do json_array (json_loads); vrací array (caller json_decref) nebo NULL.
+- Lookup "makedeps" string z Repodata, parsuje zpět do json_array (json_loads); vrací array (caller json_decref) nebo NULL.
 
 const char* get_custom_source(Repodata *data, Id p, Pool *pool);
-    - Lookup "download_url" string z Repodata; vrací URL nebo NULL (bez free).
+- Lookup "download_url" string z Repodata; vrací URL nebo NULL (bez free).
 
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
-    - Lookup "extras" string z Repodata, parsuje do json_array; vrací array (caller json_decref) nebo NULL.
+- Lookup "extras" string z Repodata, parsuje do json_array; vrací array (caller json_decref) nebo NULL.
 
 int get_custom_is_group(Repodata *data, Id p, Pool *pool);
-    - Lookup "is_group" string ("true"/"false") z Repodata; vrací bool (1/0).
+- Lookup "is_group" string ("true"/"false") z Repodata; vrací bool (1/0).
 
 int get_custom_no_package(Repodata *data, Id p, Pool *pool);
-    - Lookup "no_package" string ("true"/"false") z Repodata; vrací bool (1/0).
+- Lookup "no_package" string ("true"/"false") z Repodata; vrací bool (1/0).
 
 void internalize_repo(Repo *repo);
-    - Volá repo_internalize pro indexaci repo (whatprovides/obsoletes); loguje info.
+- Volá repo_internalize pro indexaci repo (whatprovides/obsoletes); loguje info.
 
+Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
+- Přidává tar.bz2 balíček do Repo: Extrahuje do tmp (tar xjf), rekurzivně hledá index.json (find_and_load_index),
+  generuje default pokud chybí (generate_default_metadata), zpracovává JSON (process_index_json s fallback_source=tar_path pro lokální skip v downloaderu), internalize; vrací Id Solvable nebo 0 při chybě; cleanup tmp.
 
 Integrace v projektu
 ----
-Používá se v main.c pro inicializaci repo (generate_repodata("/tmp/test_repo", pool, repo)) a v solver.c pro
-načtení metadat (get_custom_* pro mkdeps rekurzi, parse_depends_to_solvable). Volitelná libsolv integrace (pool/repo parametry)
-umožňuje standalone použití (jen repodata.json). Testováno v test_parser.c (Check framework) s /tmp/test_repo; coverage ~80% pro core funkce.
-
+Používá se v main.c pro inicializaci repo (generate_repodata("/tmp/test_repo", pool, repo)) a v solver.c pro načtení metadat
+(get_custom_* pro mkdeps rekurzi, parse_depends_to_solvable).
+Podpora tar.bz2 umožňuje mix adresářů a archivů v repo (collect_packages volá add_package_tar_bz2 pro .tar.bz2 soubory)
+i lokálně mimo repo (přímé volání add_package_tar_bz2).
+Testováno v test_parser.c (Check framework) s /tmp/test_repo; ~80% coverage pro core funkce, včetně tar.bz2 scénářů.
 
 ========================================
                 ENGLISH
@@ -66,46 +98,78 @@ Description
 ----
 Source file: parser.c
 
-This module provides functions for parsing a package repository in Conda-like format (index.json per package), recursive directory traversal, generating repodata.json, and integrating metadata into libsolv structures (Solvables and Repodata). It supports custom fields inspired by LFS/LLD (mkdeps for build-time dependencies, source for download URL, extras for patches/scripts, is_group/no_package for meta/virtual packages). Includes dependency parsing (depends array to SOLVABLE_REQUIRES) and error handling with logging.
+This module provides functions for parsing a package repository in Conda-like format (index.json per package),
+recursive directory traversal, generating repodata.json, and integrating metadata into libsolv structures (Solvables and Repodata).
+It supports custom fields inspired by LFS/LLD (mkdeps for build-time dependencies, source for download URL, extras for patches/scripts,
+is_group/no_package for meta/virtual packages).
+Includes dependency parsing (depends array to SOLVABLE_REQUIRES) and error handling with logging.
+Extended to support tar.bz2 packages (extraction, recursive index.json search, default metadata generation if missing),
+allowing parsing of mixed directories and archives in repo or locally outside repo.
 
 Key functions
 ----
+static char* trim_str(const char* str);
+- Trims leading/trailing whitespace from string; returns new malloc'd string or NULL.
+
 json_t* load_json(const char* filepath);
-    - Loads JSON file (e.g., index.json) using jansson; returns root object or NULL on error (with log_error).
+- Loads JSON file (e.g., index.json) using jansson; returns root object or NULL on error (with log_error).
+
+static json_t* find_and_load_index(const char* dir_path);
+- Recursively searches and loads the first index.json in directory (supports root/info/ and subdirs); returns JSON or NULL; used for tar.bz2 extracts.
+
+static void add_default_fields(json_t* index);
+- Adds default fields to index JSON (build_number=0, license="unknown", md5="", sha256="", size=0, subdir="noarch", timestamp=current).
+
+static Id init_solvable_from_json(json_t *index, Pool *pool, Repo *repo);
+- Initializes Solvable from JSON (sets name, evr from version+build, arch with fallback to get_pool_arch, parses depends); returns Solvable Id or 0.
+
+static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, Pool *pool);
+- Adds custom fields (mkdeps, download_url, extras, is_group, no_package) to Repodata as strings (json_dumps for arrays).
+
+static json_t* generate_default_metadata(const char* filename);
+- Generates default JSON metadata from filename (sscanf name-version-build, depends/mkdeps/extras=[], is_group/no_package=false, source=""); returns JSON or NULL.
+
+static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo repo, const char fallback_source);
+- Generic JSON processor: Adds defaults, initializes Solvable, adds custom to Repodata, optionally adds to packages (for repodata.json), sets fallback source if missing; returns Solvable Id.
 
 char* generate_package_key(json_t* index);
-    - Generates unique package key ("name-version-build.tar.bz2") from name/version/build fields; returns malloc'd string or NULL.
+- Generates unique package key ("name-version-build.tar.bz2") from name/version/build fields; returns malloc'd string or NULL.
 
 void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo);
-    - Recursively traverses repo directory, loads index.json, adds default fields (build_number, license etc.), creates Solvables (with name/EVR/arch), stores custom metadata in Repodata (mkdeps/source/extras/is_group/no_package), and parses depends; adds to packages object for repodata.json.
+- Recursively traverses repo directory, loads index.json (for plain directories), or calls add_package_tar_bz2 for tar.bz2 files (DT_REG ending .tar.bz2); adds default fields, creates Solvables (with name/EVR/arch), stores custom metadata in Repodata (mkdeps/source/extras/is_group/no_package), and parses depends; adds to packages object for repodata.json.
 
 int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
-    - Main entry point: Creates repodata.json (with info/packages sections), calls collect_packages, and writes output; optionally integrates with libsolv (pool/repo); returns 0 on success.
+- Main entry point: Creates repodata.json (with info/packages sections), calls collect_packages (now with tar.bz2 support), and writes output; optionally integrates with libsolv (pool/repo); returns 0 on success.
 
 void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
-    - Parses depends array (strings like "pkg >= 1.0") into Reldep Id (pool_rel2id with REL_* constants) and adds to s->requires (solvable_add_deparray); skips invalid items.
+- Parses depends array (strings like "pkg >= 1.0") into Reldep Id (pool_rel2id with REL_* constants) and adds to s->requires (solvable_add_deparray); skips invalid items; uses trim_str for string trimming.
 
 json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
-    - Looks up "makedeps" string from Repodata, parses back to json_array (json_loads); returns array (caller json_decref) or NULL.
+- Looks up "makedeps" string from Repodata, parses back to json_array (json_loads); returns array (caller json_decref) or NULL.
 
 const char* get_custom_source(Repodata *data, Id p, Pool *pool);
-    - Looks up "download_url" string from Repodata; returns URL or NULL (no free).
+- Looks up "download_url" string from Repodata; returns URL or NULL (no free).
 
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
-    - Looks up "extras" string from Repodata, parses to json_array; returns array (caller json_decref) or NULL.
+- Looks up "extras" string from Repodata, parses to json_array; returns array (caller json_decref) or NULL.
 
 int get_custom_is_group(Repodata *data, Id p, Pool *pool);
-    - Looks up "is_group" string ("true"/"false") from Repodata; returns bool (1/0).
+- Looks up "is_group" string ("true"/"false") from Repodata; returns bool (1/0).
 
 int get_custom_no_package(Repodata *data, Id p, Pool *pool);
-    - Looks up "no_package" string ("true"/"false") from Repodata; returns bool (1/0).
+- Looks up "no_package" string ("true"/"false") from Repodata; returns bool (1/0).
 
 void internalize_repo(Repo *repo);
-    - Calls repo_internalize to index repo (whatprovides/obsoletes); logs info.
+- Calls repo_internalize to index repo (whatprovides/obsoletes); logs info.
 
+Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
+- Adds tar.bz2 package to Repo: Extracts to tmp (tar xjf), recursively searches for index.json (find_and_load_index),
+generates default if missing (generate_default_metadata), processes JSON (process_index_json with fallback_source=tar_path for local skip in downloader),
+internalize; returns Solvable Id or 0 on error; cleans up tmp.
 
 Project integration
 ----
 Used in main.c for repo initialization (generate_repodata("/tmp/test_repo", pool, repo)) and in solver.c for metadata loading
-(get_custom_* for mkdeps recursion, parse_depends_to_solvable). Optional libsolv integration (pool/repo parameters)
-allows standalone use (just repodata.json). Tested in test_parser.c (Check framework) with /tmp/test_repo; ~80% coverage for core functions.
+(get_custom_* for mkdeps recursion, parse_depends_to_solvable). tar.bz2 support allows mixing directories and archives in repo
+(collect_packages calls add_package_tar_bz2 for .tar.bz2 files) and locally outside repo (direct call to add_package_tar_bz2).
+Tested in test_parser.c (Check framework) with /tmp/test_repo; ~80% coverage for core functions, including tar.bz2 scenarios.

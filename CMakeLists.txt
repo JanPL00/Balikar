@@ -31,6 +31,8 @@ add_executable(balikar
         src/utils/debug.c
         src/utils/print.c
         src/utils/system_helpers.c
+        src/balikar/solver.c
+        src/balikar/includes/solver.h
 )
 
 target_include_directories(balikar PRIVATE
