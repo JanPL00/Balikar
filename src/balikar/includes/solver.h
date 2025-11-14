@@ -8,6 +8,9 @@
 #include "../../common/common.h"
 #include "../../utils/includes/debug.h"   // Pro display_problem_proof atd.
 #include "../../utils/includes/system_helpers.h"  // Pro set_system_arch
+#include "../../utils/includes/cli_helpers.h"
+#include "../../utils/includes/print.h"  // Pro display_transaction
+#include "../../utils/includes/string_helpers.h"  // Pro solvable_to_string
 #include "parser.h"  // Pro get_custom_*
 
 // Konstanty pro rekurzi a limity (proti cirkulárním deps)

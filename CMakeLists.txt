@@ -53,6 +53,8 @@ add_executable(balikar
         src/utils/system_helpers.c
         src/balikar/solver.c
         src/balikar/includes/solver.h
+        src/balikar/builder.c
+        src/balikar/includes/builder.h
 )
 
 target_include_directories(balikar PRIVATE
@@ -94,12 +96,14 @@ add_executable(tests
         src/balikar/parser.c
         src/balikar/solver.c
         src/balikar/downloader.c
+        src/balikar/builder.c
         tests/tests-utils/test_cli_helpers.c
         tests/tests-utils/test_system_helpers.c
         tests/main.c
         tests/tests-src/test_parser.c
         tests/tests-src/test_solver.c
         tests/tests-src/test_downloader.c
+        tests/tests-src/test_builder.c
 )
 
 target_include_directories(tests PRIVATE

@@ -1,0 +1,426 @@
+================================================================================
+BALIKAR PACKAGE MANAGER - UŽIVATELSKÝ MANUÁL
+================================================================================
+
+POPIS
+-----
+Balikar je package manager založený na libsolv, který automatizuje celý
+workflow build-from-source pro LFS/LLD styly distribuce. Podporuje dependency
+resolution, stahování zdrojů, aplikaci patchů, build do stagingu a instalaci.
+
+ARCHITEKTURA
+------------
+Workflow se skládá z následujících fází:
+  1. PARSE    - Načtení repository (repodata.json) a solvables
+  2. SOLVE    - Dependency resolution včetně makedeps rekurze
+  3. DOWNLOAD - Stažení tar.bz2 archivů a extras (patches)
+  4. BUILD    - Extrakce, aplikace patches, spuštění .build skriptu
+  5. INSTALL  - Merge staging $P do chroot (TODO)
+
+POUŽITÍ
+-------
+Základní syntaxe:
+  balikar [OPTIONS] COMMAND [ARGS]
+
+PŘÍKAZY
+-------
+
+install <pkg>
+    Plný workflow: resolve dependencies → download → build → install
+    Příklad:
+      balikar install glibc
+      balikar install --staging-dir=/mnt/stage gcc
+
+build <pkg>
+    Alias pro install (zatím bez install fáze do chrootu)
+    Používá se pro build-from-source s dependency resolution.
+    Příklad:
+      balikar build gzip
+      balikar build --no-staging hello
+
+resolve <pkg>
+    Pouze dependency resolution - zobrazí plán bez změn (dry-run solver).
+    Užitečné pro kontrolu závislostí před buildem.
+    Příklad:
+      balikar resolve glibc
+      # Zobrazí: glibc → tzdata, linux-headers, ...
+
+repos
+    Zobraz načtené repozitáře a počet balíčků.
+    Příklad:
+      balikar repos
+      # Output: Enabled repositories:
+      #         - ./repo (5 packages)
+
+erase <pkg>
+    Odinstalování balíčku (TODO - vyžaduje installer.c).
+
+GLOBÁLNÍ OPTIONS
+----------------
+
+-h, --help
+    Zobraz nápovědu a ukonči program.
+
+-d
+    Zvýš debug level (lze opakovat pro více verbosity).
+    Příklad:
+      balikar -d resolve gcc          # DEBUG 1
+      balikar -d -d build glibc       # DEBUG 2
+
+--dry-run
+    Simulační režim - zobrazí plán bez skutečných změn.
+    Download a build neproběhnou.
+    Příklad:
+      balikar --dry-run install glibc
+
+--no-staging
+    Vypne staging režim - instalace přímo bez $P mezikroku.
+    Výchozí: staging ZAPNUT (používá DESTDIR=$P).
+    Příklad:
+      balikar --no-staging build hello
+
+--staging-dir=PATH
+    Nastaví vlastní staging adresář místo výchozího $P.
+    Příklad:
+      balikar --staging-dir=/mnt/lfs/stage install gcc
+
+--chroot-path=PATH
+    Cesta k chroot pro instalaci (výchozí: /tmp/pm-chroot).
+    Příklad:
+      balikar --chroot-path=/mnt/lfs install glibc
+
+--build-tmp-dir=PATH
+    Vlastní tmp adresář pro build extrakci a patches.
+    Výchozí: /tmp. Užitečné pro izolaci nebo jiný filesystem.
+    Příklad:
+      balikar --build-tmp-dir=/var/tmp/builds build gcc
+
+--repo=PATH
+    Cesta k repository s repodata.json.
+    Výchozí: ./repo
+    Příklad:
+      balikar --repo=/srv/repo install hello
+
+--local-package=PATH
+    Instalace z lokálního tar.bz2 mimo repository (TODO).
+    Příklad:
+      balikar --local-package=/path/to/gzip-1.2.tar.bz2
+
+FORMÁT BALÍČKU
+--------------
+Standardizovaná struktura tar.bz2 archivu:
+
+  package-1.0.tar.bz2
+    └── package-1.0/
+        ├── .build                  # Build skript (povinný pro build)
+        ├── .install/               # Install skripty (volitelné)
+        │   └── install.sh
+        ├── info/
+        │   └── index.json          # Metadata (name, version, depends, ...)
+        └── src/                    # Zdrojové soubory (volitelné)
+
+index.json struktura:
+  {
+    "name": "package",
+    "version": "1.0",
+    "build": "0",
+    "arch": "x86_64",
+    "depends": ["libc", "zlib"],
+    "makedeps": ["gcc", "make"],      # Build-time dependencies
+    "extras": [                        # Patches/extras ke stažení
+      "https://example.com/patch1.patch"
+    ],
+    "license": "GPL-3.0",
+    "summary": "Package description",
+    "download_url": "repo/p/package/package-1.0.tar.bz2",
+    "is_group": false,                 # Meta-package (pouze data)
+    "no_package": false                # Virtual package (skip build)
+  }
+
+.build skript:
+  #!/bin/bash
+  set -e
+  # DESTDIR je automaticky nastaveno (např. $P nebo vlastní staging)
+  # MAKEFLAGS je nastaveno na -j$(nproc)
+  
+  ./configure --prefix=/usr
+  make
+  make install  # Instaluje do $DESTDIR/usr/...
+
+POUŽITÍ CASES
+-------------
+
+1. ZÁKLADNÍ BUILD BALÍČKU
+   
+   $ balikar build hello
+   
+   Workflow:
+   - Načte ./repo/repodata.json
+   - Resolvne dependencies pro hello
+   - Stáhne hello-1.0.tar.bz2
+   - Extrahuje do /tmp/balikar_build_hello_XXXXXX
+   - Najde .build skript (rekurzivně i v nested tar)
+   - Spustí: bash -e .build s DESTDIR=$P
+   - Výsledek v $P/usr/bin/hello
+   - Cleanup build dir
+
+2. BUILD S VLASTNÍM STAGING
+   
+   $ balikar --staging-dir=/mnt/lfs/stage build glibc
+   
+   Výhody:
+   - Izolace do vlastního filesystému
+   - Možnost mount different FS (btrfs snapshot, tmpfs, ...)
+   - Snadné rollback před install
+   
+3. DRY-RUN PRO TESTOVÁNÍ
+   
+   $ balikar --dry-run install gcc
+   
+   Zobrazí:
+   - Dependency tree (gcc → binutils, glibc, ...)
+   - Makedeps rekurzi
+   - Transaction plán
+   - Disk usage changes
+   - BEZ skutečného downloadu/buildu
+
+4. BUILD S DEBUG MÓDEM
+   
+   $ balikar -d -d build glibc
+   
+   Zobrazí:
+   - DEBUG 1: Solver steps, mkdeps lookup
+   - DEBUG 2: Repodata internals, custom metadata
+   - Build.log output
+   - Extract paths
+
+5. BUILD DO IZOLOVANÉHO TMP
+   
+   $ balikar --build-tmp-dir=/var/tmp/isolated build gcc
+   
+   Použití:
+   - /var/tmp má větší prostor než /tmp
+   - Izolace od ostatních procesů
+   - Persistentní tmp (přežije reboot bez tmpfs)
+
+6. VYPNUTÍ STAGINGU (PŘÍMÁ INSTALACE)
+   
+   $ balikar --no-staging build hello
+   
+   Pozor: Instaluje PŘÍMO do systému bez $P mezikroku!
+   Použití:
+   - Testing v disposable VM
+   - Jednoduché utility bez dependencies
+   - Rollback není možný
+
+7. DEPENDENCY RESOLUTION TEST
+   
+   $ balikar resolve glibc
+   
+   Zobrazí:
+   - Dependency tree
+   - Install order (deps first)
+   - Makedeps (build-time)
+   - No download/build
+
+8. ZOBRAZENÍ REPOSITORIES
+   
+   $ balikar repos
+   
+   Output:
+   - Cesta k repo
+   - Počet balíčků
+   - Metadata status
+
+9. BUILD S PATCHES (EXTRAS)
+   
+   Balíček s patches v metadata:
+   {
+     "extras": [
+       "https://example.com/glibc-fhs-1.patch",
+       "https://example.com/tzdata.tar.gz"
+     ]
+   }
+   
+   $ balikar build glibc
+   
+   Workflow:
+   - Download glibc-2.39.tar.xz
+   - Download extras do cache/extras/glibc/
+   - Extract glibc tar
+   - Apply patches: cd source && patch -p1 < fhs-1.patch
+   - Build s patches aplikovanými
+
+10. BUILD NESTED TAR STRUKTURY
+    
+    Struktura archivu:
+    gzip-1.2.tar.bz2
+      └── gzip-1.2/
+          └── src/
+              └── .build
+    
+    $ balikar build gzip
+    
+    Rekurzivní vyhledávání:
+    - find_source_path() prohledá až 3 úrovně
+    - Najde .build i v nested subdirectory
+    - Priorita: .build > Makefile > configure
+    - Fallback na první subdir
+
+ENVIRONMENT
+-----------
+Builder automaticky nastavuje:
+  DESTDIR       - Staging dir ($P nebo --staging-dir)
+  MAKEFLAGS     - -j$(nproc) pro paralelní make
+  
+Solver respektuje:
+  - Arch detection z uname
+  - Pool whatprovides indexing
+
+SOUBORY
+-------
+./repo/repodata.json
+    Aggregovaná metadata všech balíčků (generuje se automaticky).
+
+~/.balikar/cache/downloads/
+    Cache stažených tar archivů a jejich SHA256 sidecar souborů.
+
+~/.balikar/cache/extras/<pkg>/
+    Cache extras (patches) pro jednotlivé balíčky.
+
+/tmp/balikar_build_<pkg>_XXXXXX
+    Dočasný build dir (vyčistí se automaticky po buildu).
+
+$P/  (nebo --staging-dir)
+    Staging directory pro DESTDIR během buildu.
+
+RETURN CODES
+------------
+0   - Úspěch
+1   - Chyba načtení repository (ERR_NO_REPO)
+2   - Solver selhání (ERR_SOLVE_FAIL)
+3   - Download selhání (ERR_DOWNLOAD_FAIL)
+4   - Build selhání (ERR_BUILD_FAIL)
+
+PŘÍKLADY
+--------
+
+# Jednoduchý build
+balikar build hello
+
+# Plný workflow s vlastním staging
+balikar --staging-dir=/mnt/lfs/stage install glibc
+
+# Debug mode
+balikar -d -d build gcc
+
+# Dry-run pro test
+balikar --dry-run install bash
+
+# Build do vlastního tmp
+balikar --build-tmp-dir=/var/tmp/builds build gcc
+
+# Přímá instalace (bez staging)
+balikar --no-staging build hello
+
+# Resolve dependencies
+balikar resolve glibc
+
+# Zobraz repos
+balikar repos
+
+# Build z vlastního repo
+balikar --repo=/srv/custom-repo build mypackage
+
+POKROČILÉ POUŽITÍ
+-----------------
+
+1. CUSTOM REPODATA GENERATION
+   
+   Pokud repodata.json neexistuje nebo je zastaralá:
+   $ rm repo/repodata.json
+   $ balikar repos  # Automaticky regeneruje
+   
+2. MANUAL PACKAGE ADD
+   
+   Přidání balíčku do repo:
+   1. Vytvoř strukturu: repo/p/package/package-1.0/
+   2. Přidej info/index.json s metadata
+   3. Přidej .build skript
+   4. Zabal: tar -cjf package-1.0.tar.bz2 package-1.0/
+   5. Regeneruj: rm repo/repodata.json && balikar repos
+
+3. STAGING WORKFLOW
+   
+   Build → Verify → Install:
+   $ balikar --staging-dir=/stage build glibc
+   $ ls -la /stage/usr/lib/  # Verify staging obsah
+   $ # TODO: balikar install-from-staging /stage glibc
+
+4. BATCH BUILD
+   
+   Build více balíčků:
+   for pkg in glibc zlib bash; do
+     balikar build $pkg || exit 1
+   done
+
+5. CHROOT BUILD IZOLACE
+   
+   TODO: run_with_chroot() integrace
+   $ balikar --chroot=/mnt/lfs build glibc
+
+TROUBLESHOOTING
+---------------
+
+Problem: "Package not found in pool string table"
+Solution: Balíček neexistuje v repo. Zkontroluj:
+          $ balikar repos
+          Nebo přidej balíček do repo struktury.
+
+Problem: "Build failed (256)"
+Solution: .build skript selhal. Zkontroluj:
+          - build.log v build dir (před cleanup)
+          - Dependencies jsou nainstalované
+          - Použij -d pro debug output
+
+Problem: "Download failed"
+Solution: Zkontroluj download_url v index.json:
+          - Je URL validní?
+          - Je soubor dostupný?
+          - Zkus local path místo URL
+
+Problem: "Solver found problems"
+Solution: Dependency conflict. Použij:
+          $ balikar resolve <pkg>  # Zobraz problém
+          Nebo zkontroluj depends v index.json.
+
+Problem: "No source URL for <pkg>"
+Solution: index.json neobsahuje download_url.
+          Přidej: "download_url": "repo/p/pkg/pkg.tar.bz2"
+
+AUTOR
+-----
+Balikar Package Manager - LFS/LLD build automation
+Implementace: parser.c, solver.c, downloader.c, builder.c
+Založeno na: libsolv, jansson, libcurl
+
+POZNÁMKY
+--------
+- Builder podporuje .tar.bz2, .tar.xz a .tar formáty
+- Rekurzivní vyhledávání .build až do depth=3
+- SHA256 verifikace stažených souborů
+- Automatický cleanup build dirs
+- Interaktivní potvrzení transakcí (y/n/q)
+- Parallel make s -j$(nproc)
+
+SEE ALSO
+--------
+doc/balikar/parser.txt    - Repository parsing
+doc/balikar/solver.txt    - Dependency resolution
+doc/balikar/downloader.txt - Download & cache
+doc/balikar/builder.txt   - Build automation
+doc/utils/cli_helpers.txt - CLI utilities
+
+VERZE
+-----
+Balikar 1.0 - Listopad 2025

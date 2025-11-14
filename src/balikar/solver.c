@@ -9,9 +9,6 @@
 //
 
 #include "includes/solver.h"
-#include "../utils/includes/cli_helpers.h"
-#include "../utils/includes/print.h"  // Pro display_transaction
-#include "../utils/includes/string_helpers.h"  // Pro solvable_to_string
 
 // Privátní helper pro rekurzi (interní, ne v .h)
 static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq);

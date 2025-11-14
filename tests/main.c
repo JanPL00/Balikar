@@ -8,6 +8,7 @@ extern Suite *cli_helpers_suite(void);
 extern Suite *parser_suite(void);
 extern Suite *solver_suite(void);
 extern Suite *downloader_suite(void);
+extern Suite *builder_suite(void);
 
 int main(void) {
     int failures = 0;
@@ -46,6 +47,13 @@ int main(void) {
     srunner_run_all(sr_downloader, CK_NORMAL);
     failures += srunner_ntests_failed(sr_downloader);
     srunner_free(sr_downloader);
+
+    // Spusť builder tests
+    Suite *s_builder = builder_suite();
+    SRunner *sr_builder = srunner_create(s_builder);
+    srunner_run_all(sr_builder, CK_NORMAL);
+    failures += srunner_ntests_failed(sr_builder);
+    srunner_free(sr_builder);
 
     return (failures == 0) ? 0 : 1;
 }

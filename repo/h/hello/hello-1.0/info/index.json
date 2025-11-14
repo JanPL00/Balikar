@@ -1,0 +1,10 @@
+{
+  "name": "hello",
+  "version": "1.0",
+  "build": "0",
+  "arch": "x86_64",
+  "depends": [],
+  "license": "MIT",
+  "summary": "Test hello package",
+  "download_url": "repo/h/hello/hello-1.0.tar.bz2"
+}
