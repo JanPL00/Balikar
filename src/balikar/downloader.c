@@ -53,6 +53,27 @@ static int verify_hash_from_file(const char *file_path, const char *expected_sha
     return match;
 }
 
+// Helper: read expected SHA256 from sidecar file if present
+static char* read_sha256_sidecar(const char *cache_path) {
+    if (!cache_path) return NULL;
+    char sidecar[2048];
+    snprintf(sidecar, sizeof(sidecar), "%s.sha256", cache_path);
+    FILE *fp = fopen(sidecar, "r");
+    if (!fp) return NULL;
+    char buf[128] = {0};
+    if (!fgets(buf, sizeof(buf), fp)) {
+        fclose(fp);
+        return NULL;
+    }
+    fclose(fp);
+    size_t n = strlen(buf);
+    while (n && (buf[n-1] == '\n' || buf[n-1] == '\r' || buf[n-1] == ' ' || buf[n-1] == '\t')) buf[--n] = '\0';
+    char *sha = malloc(n + 1);
+    if (!sha) return NULL;
+    memcpy(sha, buf, n + 1);
+    return sha;
+}
+
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data) {
     if (!s || !loc) {
         log_error("Invalid arguments in download_package.");
@@ -80,12 +101,18 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     Id sha_key = pool_str2id(pool, "sha256", 0);
     const char *sha = repodata_lookup_str(data, p, sha_key);
 
-    // Check cache + verify
-    if (access(cache_path, F_OK) == 0 && verify_hash_from_file(cache_path, sha)) {
+    // If metadata lacks sha, try sidecar for validation
+    char *sidecar_sha = NULL;
+    if (!sha) sidecar_sha = read_sha256_sidecar(cache_path);
+
+    // Check cache + verify (prefer metadata sha, fallback to sidecar sha)
+    if (access(cache_path, F_OK) == 0 && verify_hash_from_file(cache_path, sha ? sha : sidecar_sha)) {
         log_info("Using cached file: %s", cache_path);
         free(cache_dir);
+        if (sidecar_sha) free(sidecar_sha);
         return fopen(cache_path, "r");
     }
+    if (sidecar_sha) { free(sidecar_sha); sidecar_sha = NULL; }
 
     // Vytvoř tmp session dir v cache
     char tmp_dir[2048];
@@ -97,7 +124,11 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     }
 
     // Download nebo copy
-    int is_local = (loc[0] == '/' || strncmp(loc, "./", 2) == 0 || strncmp(loc, "../", 3) == 0);
+    // Check if it's a local path (absolute, relative, or not a URL)
+    // URLs typically start with http://, https://, ftp://, etc.
+    int is_local = (loc[0] == '/' || strncmp(loc, "./", 2) == 0 || strncmp(loc, "../", 3) == 0 ||
+                    (strncmp(loc, "http://", 7) != 0 && strncmp(loc, "https://", 8) != 0 &&
+                     strncmp(loc, "ftp://", 6) != 0 && strncmp(loc, "file://", 7) != 0));
     if (is_local) {
         snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", loc, cache_path);
         if (system(cmd) != 0) {

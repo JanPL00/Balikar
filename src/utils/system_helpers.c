@@ -38,7 +38,7 @@ void set_system_arch(Pool *pool) {
         final_arch = "x86_64";
     }
 
-    // Nastavení architektury
-    pool->lastarch = pool_str2id(pool, final_arch, 1);
+    // Nastavení architektury pomocí libsolv pool_setarch (správně inicializuje arch scoring)
+    pool_setarch(pool, final_arch);
     log_info("Pool arch set to: %s", final_arch);
 }

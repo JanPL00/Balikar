@@ -111,7 +111,6 @@ int main(int argc, char **argv) {
         log_error("Failed to create pool.");
         return 1;
     }
-    set_system_arch(pool);
     
     // Načti repozitář
     Repo *repo = load_repository(pool, cfg.repo_path);
@@ -149,7 +148,7 @@ int main(int argc, char **argv) {
             goto cleanup;
         }
         
-        // 3. Zobraz transakci
+        // 3. Vytvoř a zobraz transakci
         Transaction *trans = solver_create_transaction(solv);
         if (!trans) {
             log_error("Failed to create transaction.");

@@ -32,14 +32,14 @@ Solver *create_solver(Pool *pool) {
     solver_set_flag(solv, SOLVER_FLAG_ALLOW_DOWNGRADE, 0);     // Zakáž downgrade pro bezpečnost (uprav podle potřeby)
     solver_set_flag(solv, SOLVER_FLAG_NO_AUTOTARGET, 1);       // Žádný auto-target pro explicitní jobs
 
-    // Pro Conda kompatibilitu (z plánu, i když není v constantids – předpokládám existenci)
+    // Para Conda kompatibilitu (z plánu, i když není v constantids – předpokládám existenci)
     // pool_set_flag(pool, POOL_FLAG_WHATPROVIDESUSESCONDA, 1);  // Pokud existuje, nastav na pool
 
-    // Nastav arch z utils/system_helpers.c (z pool.3: pool_setarch)
-    set_system_arch(pool);
+    // Note: Pool arch should already be set by caller (main.c)
+    // Do NOT call set_system_arch here as it reinitializes the pool
 
-    // Vytvoř whatprovides index (z pool.3: nutné po načtení repos)
-    pool_createwhatprovides(pool);
+    // Note: pool_createwhatprovides should already be called by load_repository
+    // Do NOT call it again here as it would invalidate the whatprovides mapping
 
     log_info("Solver created with flags set and whatprovides indexed.");
     return solv;
@@ -141,7 +141,8 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
 
     // Pak runtime deps: Přidej hlavní pkg jako SOLVER_INSTALL (z constantids.3)
-    queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE_NAME, name_id);
+    // Použij SOLVER_SOLVABLE s Id solvable (main_p), ne SOLVER_SOLVABLE_NAME
+    queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
 
     // Spusť solver (z bindings.3: solver_solve(solv, &job))
     int problem_count = solver_solve(solv, &job);  // Vrátí počet problémů
@@ -161,24 +162,9 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         log_debug(1, "Solver completed successfully with no problems.");
     }
 
-    // Vytvoř transaction (z bindings.3: solver_create_transaction)
-    Transaction *trans = solver_create_transaction(solv);
-    if (!trans) {
-        log_error("Failed to create transaction.");
-        goto cleanup;
-    }
-
-    // Order transaction (z solv.c a bindings.3: transaction_order)
-    transaction_order(trans, 0);  // 0 pro default (deps ordering)
-
-    // Získej installed result (z bindings.3: transaction_installedresult)
-    transaction_installedresult(trans, result);
-
-    // Pro debug: Display transaction (z utils/print.c)
-    display_transaction(trans);
-
-    // Cleanup transaction
-    transaction_free(trans);
+    // Note: Transaction is created by caller (main.c), not here
+    // Just set a success flag in result to indicate solver completed
+    queue_push(result, 1);  // Dummy value to indicate success
 
 cleanup:
     queue_free(&job);

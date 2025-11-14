@@ -380,6 +380,11 @@ static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo *
             }
         }
 
+        // Ensure solvable provides itself (self-provide) - critical for solver
+        // Add to repodata before internalize
+        repodata_add_idarray(data, p, SOLVABLE_PROVIDES, s->name);
+        log_debug(1, "Added self-provide for solvable %d (%s)", p, name);
+
         add_custom_fields_to_repodata(index, data, p, pool, fallback_source);
         repodata_internalize(data);
         log_info("Found and customized solvable %d for %s", p, name);
@@ -632,6 +637,9 @@ int generate_repodata(const char* repo_path) {
 Repo *load_repository(Pool *pool, const char *repo_path) {
     if (!pool || !repo_path) return NULL;
 
+    // Set arch before loading any repos
+    set_system_arch(pool);
+
     char repodata_path[2048];
     snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
 
@@ -656,7 +664,126 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
     repo_add_conda(repo, fp, 0);
     fclose(fp);
 
+    // Load JSON again to add custom fields that repo_add_conda ignores
+    json_error_t error;
+    json_t *root = json_load_file(repodata_path, 0, &error);
+    if (root) {
+        json_t *packages = json_object_get(root, "packages");
+        if (packages && json_is_object(packages)) {
+            // Use the main repodata from repo (created by repo_add_conda)
+            // We need to add fields before internalize
+            Repodata *data = repo_id2repodata(repo, 1);  // ID 1 is typically the main repodata
+            if (!data) {
+                log_warn("No repodata found, cannot add custom fields");
+                json_decref(root);
+            } else {
+            
+            // Iterate through all solvables and add custom fields
+            Id p;
+            Solvable *s;
+            FOR_REPO_SOLVABLES(repo, p, s) {
+                if (!s->name) continue;
+                
+                const char *name = pool_id2str(pool, s->name);
+                const char *evr = pool_id2str(pool, s->evr);
+                
+                                log_debug(2, "Looking for custom fields for solvable %d: %s-%s", p, name, evr);
+                
+                // Find matching package in JSON
+                const char *key;
+                json_t *pkg_json;
+                                int found_match = 0;
+                json_object_foreach(packages, key, pkg_json) {
+                    const char *pkg_name = json_string_value(json_object_get(pkg_json, "name"));
+                    const char *pkg_version = json_string_value(json_object_get(pkg_json, "version"));
+                    
+                                        log_debug(2, "Checking package %s: name=%s, version=%s", key, pkg_name, pkg_version);
+                    
+                    if (pkg_name && name && strcmp(pkg_name, name) == 0 &&
+                        pkg_version && evr && strstr(evr, pkg_version)) {
+                        
+                                                found_match = 1;
+                                                log_debug(1, "Found match for %s-%s in JSON", name, evr);
+                        
+                        // Add source/download_url
+                        json_t *source = json_object_get(pkg_json, "source");
+                        if (!source) source = json_object_get(pkg_json, "download_url");
+                        if (source && json_is_string(source)) {
+                            const char *source_val = json_string_value(source);
+                                                        log_debug(1, "Set download_url for %s to: %s", name, source_val);
+                            repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), source_val);
+                        }
+                        
+                        // Add mkdeps
+                
+                                        if (!found_match) {
+                                            log_debug(2, "No JSON match found for solvable %d (%s-%s)", p, name, evr);
+                                        }
+                        json_t *mkdeps = json_object_get(pkg_json, "mkdeps");
+                        if (mkdeps && json_is_array(mkdeps)) {
+                            char *str = json_dumps(mkdeps, JSON_COMPACT);
+                            if (str) {
+                                repodata_set_str(data, p, pool_str2id(pool, "makedeps", 1), str);
+                                free(str);
+                            }
+                        }
+                        
+                        // Add extras
+                        json_t *extras = json_object_get(pkg_json, "extras");
+                        if (extras && json_is_array(extras)) {
+                            char *str = json_dumps(extras, JSON_COMPACT);
+                            if (str) {
+                                repodata_set_str(data, p, pool_str2id(pool, "extras", 1), str);
+                                free(str);
+                            }
+                        }
+                        
+                        // Add is_group
+                        json_t *is_group = json_object_get(pkg_json, "is_group");
+                        if (is_group && json_is_boolean(is_group)) {
+                            repodata_set_str(data, p, pool_str2id(pool, "is_group", 1),
+                                           json_is_true(is_group) ? "true" : "false");
+                        }
+                        
+                        // Add no_package
+                        json_t *no_package = json_object_get(pkg_json, "no_package");
+                        if (no_package && json_is_boolean(no_package)) {
+                            repodata_set_str(data, p, pool_str2id(pool, "no_package", 1),
+                                           json_is_true(no_package) ? "true" : "false");
+                        }
+                        
+                        break;
+                    }
+                }
+            }
+            }
+        }
+        json_decref(root);
+    }
+    
     repo_internalize(repo);
+    
+    // Ensure all solvables have self-provides (critical for solver)
+    // Must be done AFTER internalize but BEFORE pool_createwhatprovides
+    // repo_add_conda sometimes sets provides to invalid values (like 1), so overwrite it
+    Id p;
+    Solvable *s;
+    FOR_REPO_SOLVABLES(repo, p, s) {
+        if (s->name) {
+            // Always set self-provide, even if provides is non-zero (may be invalid)
+            s->provides = repo_addid_dep(repo, 0, s->name, 0);
+            log_debug(1, "Set self-provide for solvable %d (%s)", p, pool_id2str(pool, s->name));
+            
+            // Fix arch if it's not set properly - use noarch for compatibility
+            // noarch packages should be installable on any architecture
+            if (!s->arch || s->arch == 0 || s->arch == 1) {
+                s->arch = pool_str2id(pool, "noarch", 1);
+                log_debug(1, "Set arch for solvable %d to noarch", p);
+            }
+        }
+    }
+    
+    // Create whatprovides index AFTER adding all provides
     pool_createwhatprovides(pool);
 
     log_info("Repository loaded from %s", repodata_path);
