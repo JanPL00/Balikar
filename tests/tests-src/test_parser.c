@@ -35,15 +35,12 @@
     }
 
     static void teardown_fixture(TestFixture* fixture) {
-        // Clean up temporary files and directories
         char command[1024];
         snprintf(command, sizeof(command), "rm -rf %s", fixture->temp_dir);
         system(command);
-        // No need to free temp_dir as it points to the created directory name
         free(fixture->repo_path);
     }
 
-    // Helper function to create a test tar.bz2 package
     static int create_test_tar_bz2(const char* tar_path, const char* index_content, int create_nested_source) {
         char tmp_dir_template[] = "/tmp/test_pkg_XXXXXX";
         char* tmp_dir = mkdtemp(tmp_dir_template);
@@ -78,7 +75,6 @@
             snprintf(source_dir, sizeof(source_dir), "%s/source", tmp_dir);
             mkdir(source_dir, 0755);
 
-            // Create source files
             char makefile_path[1024];
             snprintf(makefile_path, sizeof(makefile_path), "%s/Makefile", source_dir);
             create_test_json(makefile_path, "all:\n\techo \"Building from source\"\n");
@@ -87,7 +83,6 @@
             snprintf(src_path, sizeof(src_path), "%s/main.c", source_dir);
             create_test_json(src_path, "int main() { return 0; }\n");
 
-            // Create nested tar.xz
             char nested_tar_path[1024];
             snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/source.tar.xz", tmp_dir);
             char cmd[2048];
@@ -107,14 +102,12 @@
         return result == 0;
     }
 
-    // Helper function to create test repodata.json
     static void create_test_repodata(const char* repo_path, const char* repodata_content) {
         char repodata_path[1024];
         snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
         create_test_json(repodata_path, repodata_content);
     }
 
-    // Modified helper function to get repodata from repo
     static Repodata* get_repodata_from_repo(Repo* repo) {
         if (!repo) return NULL;
         return repo_last_repodata(repo);
@@ -124,6 +117,92 @@
     static void init_pool_arch(Pool* pool) {
         pool_setarch(pool, "x86_64");
     }
+
+    // New SHA behavior tests (top-level)
+    START_TEST(test_generate_repodata_sha_for_dir_with_local_tar) {
+        TestFixture fixture; setup_fixture(&fixture);
+
+        // Create directory package with index.json
+        char dirpkg_dir[1024];
+        snprintf(dirpkg_dir, sizeof(dirpkg_dir), "%s/dirpkg", fixture.repo_path);
+        mkdir(dirpkg_dir, 0755);
+        char info_dir[1024];
+        snprintf(info_dir, sizeof(info_dir), "%s/info", dirpkg_dir);
+        mkdir(info_dir, 0755);
+        char index_path[1024];
+        snprintf(index_path, sizeof(index_path), "%s/index.json", info_dir);
+        create_test_json(index_path, "{\"name\":\"dirpkg\",\"version\":\"1.0\",\"build\":\"0\"}");
+
+        // Create a local tar.gz matching name-version in same directory
+        char src_dir[1024];
+        snprintf(src_dir, sizeof(src_dir), "%s/src", dirpkg_dir);
+        mkdir(src_dir, 0755);
+        char src_file[1024];
+        snprintf(src_file, sizeof(src_file), "%s/hello.txt", src_dir);
+        create_test_json(src_file, "hello");
+        char tar_path[1024];
+        snprintf(tar_path, sizeof(tar_path), "%s/dirpkg-1.0.tar.gz", dirpkg_dir);
+        char cmd[2048];
+        snprintf(cmd, sizeof(cmd), "tar -czf \"%s\" -C \"%s\" .", tar_path, src_dir);
+        system(cmd);
+
+        // Generate repodata
+        int rc = generate_repodata(fixture.repo_path);
+        ck_assert_int_eq(rc, 0);
+
+        // Load repodata and assert sha256 set for dirpkg
+        char repodata_path[1024];
+        snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", fixture.repo_path);
+        json_t *repodata = load_json(repodata_path);
+        ck_assert_ptr_ne(repodata, NULL);
+        json_t *packages = json_object_get(repodata, "packages");
+        ck_assert_ptr_ne(packages, NULL);
+
+        json_t *pkg = json_object_get(packages, "dirpkg-1.0-0.tar.bz2");
+        ck_assert_ptr_ne(pkg, NULL);
+        const char *sha = json_string_value(json_object_get(pkg, "sha256"));
+        ck_assert_ptr_ne(sha, NULL);
+        ck_assert_int_eq(strlen(sha), 64);
+        json_decref(repodata);
+
+        teardown_fixture(&fixture);
+    }
+    END_TEST
+
+    START_TEST(test_generate_repodata_sha_empty_for_remote_only_dir) {
+        TestFixture fixture; setup_fixture(&fixture);
+
+        // Create directory package with index.json containing only remote source
+        char pkg_dir[1024];
+        snprintf(pkg_dir, sizeof(pkg_dir), "%s/remotepkg", fixture.repo_path);
+        mkdir(pkg_dir, 0755);
+        char info_dir2[1024];
+        snprintf(info_dir2, sizeof(info_dir2), "%s/info", pkg_dir);
+        mkdir(info_dir2, 0755);
+        char index_path2[1024];
+        snprintf(index_path2, sizeof(index_path2), "%s/index.json", info_dir2);
+        create_test_json(index_path2, "{\"name\":\"remotepkg\",\"version\":\"1.0\",\"build\":\"0\",\"source\":\"http://example.com/remotepkg-1.0.tar.gz\"}");
+
+        int rc = generate_repodata(fixture.repo_path);
+        ck_assert_int_eq(rc, 0);
+
+        char repodata_path[1024];
+        snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", fixture.repo_path);
+        json_t *repodata = load_json(repodata_path);
+        ck_assert_ptr_ne(repodata, NULL);
+        json_t *packages = json_object_get(repodata, "packages");
+        ck_assert_ptr_ne(packages, NULL);
+
+        json_t *pkg = json_object_get(packages, "remotepkg-1.0-0.tar.bz2");
+        ck_assert_ptr_ne(pkg, NULL);
+        const char *sha = json_string_value(json_object_get(pkg, "sha256"));
+        ck_assert_ptr_ne(sha, NULL);
+        ck_assert_int_eq(strlen(sha), 0);
+        json_decref(repodata);
+
+        teardown_fixture(&fixture);
+    }
+    END_TEST
 
     // TESTY PRO LOAD JSON A CONDÁ INTEGRACI
     START_TEST(test_load_json_valid) {
@@ -439,6 +518,13 @@ START_TEST(test_add_package_tar_bz2_with_repo_add_conda) {
         tcase_add_test(tc_conda, test_internalize_repo);
         tcase_set_timeout(tc_conda, 15);
         suite_add_tcase(s, tc_conda);
+
+        // New: repodata SHA behavior tests
+        TCase* tc_sha = tcase_create("SHABehavior");
+        tcase_add_test(tc_sha, test_generate_repodata_sha_for_dir_with_local_tar);
+        tcase_add_test(tc_sha, test_generate_repodata_sha_empty_for_remote_only_dir);
+        tcase_set_timeout(tc_sha, 20);
+        suite_add_tcase(s, tc_sha);
 
         return s;
     }

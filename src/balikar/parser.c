@@ -484,6 +484,53 @@ static void collect_packages_recursive(const char* current_path, json_t* package
             if (index) {
                 // Našli jsme balíček s index.json
                 log_info("Found package at: %s", full_path);
+                
+                // For directory packages, try to compute SHA if there's a source tarball
+                // Look for <name>-<version>.tar.* in current or parent directory
+                const char *pkg_name = json_string_value(json_object_get(index, "name"));
+                const char *pkg_version = json_string_value(json_object_get(index, "version"));
+                
+                if (pkg_name && pkg_version) {
+                    // Try various patterns: name-version.tar.gz, name-version.tar.bz2, name-version-build.tar.*
+                    const char *extensions[] = {".tar.gz", ".tar.bz2", ".tar.xz", NULL};
+                    char tar_candidate[2048];
+                    int found = 0;
+                    
+                    for (int i = 0; extensions[i] && !found; i++) {
+                        // Try in current directory first
+                        snprintf(tar_candidate, sizeof(tar_candidate), "%s/%s-%s%s", 
+                                 full_path, pkg_name, pkg_version, extensions[i]);
+                        if (access(tar_candidate, F_OK) == 0) {
+                            found = 1;
+                            break;
+                        }
+                        
+                        // Try with build number if available
+                        const char *pkg_build = json_string_value(json_object_get(index, "build"));
+                        if (pkg_build) {
+                            snprintf(tar_candidate, sizeof(tar_candidate), "%s/%s-%s-%s%s", 
+                                     full_path, pkg_name, pkg_version, pkg_build, extensions[i]);
+                            if (access(tar_candidate, F_OK) == 0) {
+                                found = 1;
+                                break;
+                            }
+                        }
+                    }
+                    
+                    if (found) {
+                        char *computed_sha = compute_file_sha256(tar_candidate);
+                        if (computed_sha) {
+                            json_t *existing_sha = json_object_get(index, "sha256");
+                            if (!existing_sha || !json_is_string(existing_sha) || 
+                                strlen(json_string_value(existing_sha)) == 0) {
+                                json_object_set_new(index, "sha256", json_string(computed_sha));
+                                log_info("Computed SHA256 from source tarball %s: %s", tar_candidate, computed_sha);
+                            }
+                            free(computed_sha);
+                        }
+                    }
+                }
+                
                 process_index_json(index, packages, pool, repo, NULL);
                 json_decref(index);
             } else {
@@ -510,10 +557,27 @@ static void collect_packages_recursive(const char* current_path, json_t* package
                 continue;
             }
 
+            // Compute SHA256 of tar file for metadata
+            char *computed_sha = compute_file_sha256(full_path);
+            if (computed_sha) {
+                log_info("Computed SHA256 for %s: %s", full_path, computed_sha);
+            }
+
             json_t* index = find_and_load_index(tmp_dir);
             if (!index) {
                 log_warn("No index.json in %s – generating default", full_path);
                 index = generate_default_metadata(entry->d_name);
+            }
+
+            // Inject computed SHA256 into index if missing
+            if (computed_sha) {
+                json_t *existing_sha = json_object_get(index, "sha256");
+                if (!existing_sha || !json_is_string(existing_sha) || 
+                    strlen(json_string_value(existing_sha)) == 0) {
+                    json_object_set_new(index, "sha256", json_string(computed_sha));
+                    log_info("Injected SHA256 into metadata for %s", full_path);
+                }
+                free(computed_sha);
             }
 
             process_index_json(index, packages, pool, repo, full_path);  // fallback_source = full_path

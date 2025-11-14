@@ -18,6 +18,12 @@ Zahrnuje parsování závislostí (depends array do SOLVABLE_REQUIRES) a error h
 Rozšířeno o podporu tar.bz2 balíčků (extrakce, rekurzní hledání index.json, generování default metadat pokud chybí),
 což umožňuje parsování mixu adresářů a archivů v repo i lokálně mimo repo.
 
+SHA256 chování
+----
+- Archivní balíčky (.tar.bz2): SHA256 se počítá přímo z daného archivu a injektuje do metadat při parsování.
+- Plain adresář s lokálním tarball-em (např. name-version.tar.gz/.bz2/.xz ve stejném adresáři): SHA256 se počítá z tohoto tarballu a uloží do metadat.
+- Plain adresář pouze s remote URL (bez lokálního taru): SHA256 se během parsování nepočítá (pole zůstává prázdné) a dopočítá se až po stažení v downloaderu (uloží se do .sha256 sidecar v cache).
+
 
 Klíčové funkce
 ----
@@ -109,6 +115,12 @@ is_group/no_package for meta/virtual packages).
 Includes dependency parsing (depends array to SOLVABLE_REQUIRES) and error handling with logging.
 Extended to support tar.bz2 packages (extraction, recursive index.json search, default metadata generation if missing),
 allowing parsing of mixed directories and archives in repo or locally outside repo.
+
+SHA256 behavior
+----
+- Archive packages (.tar.bz2): SHA256 is computed from the archive itself and injected into metadata during parsing.
+- Plain directory with a local tarball (e.g., name-version.tar.gz/.bz2/.xz in same dir): SHA256 is computed from that tarball and saved into metadata.
+- Plain directory with only a remote URL (no local tar): SHA256 is not computed at parse time (field remains empty) and will be computed on first download in the downloader (stored as a .sha256 sidecar in cache).
 
 Key functions
 ----
