@@ -29,7 +29,7 @@ int main(int argc, char **argv) {
         }
 
         // Spusť generate_repodata (načte index.json, vytvoří Solvables, custom metadata, vygeneruje repodata.json)
-        if (generate_repodata(repo_path, pool, repo) != 0) {
+        if (generate_repodata(repo_path) != 0) {
             log_error("Failed to generate repodata for %s.", repo_path);
             repo_free(repo, 1);
             pool_free(pool);
@@ -103,3 +103,5 @@ int main(int argc, char **argv) {
 
         return 0;
 }
+
+

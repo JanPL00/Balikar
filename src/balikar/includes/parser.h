@@ -15,7 +15,7 @@ char* generate_package_key(json_t* index);
 
 void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo);  // Přidej pool a repo parametry
 
-int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
+int generate_repodata(const char* repo_path);
 
 // Nové funkce
 // Pro parsing depends array do Solvable requires (pomocí SOLVABLE_REQUIRES z constantids)

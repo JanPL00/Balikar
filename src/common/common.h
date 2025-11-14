@@ -33,9 +33,15 @@
 #include <solv/selection.h>     // For globs and provides
 #include <solv/poolarch.h>      // Architecture
 #include <solv/evr.h>           // Version comparison
+#include <ctype.h>
+#include <errno.h>
+
 
 // Jansson – for JSON parsing (index.json, repodata.json)
 #include <jansson.h>            // json_t, json_load_file, etc.
+
+// Conda extension for libsolv installed using miniconda
+#include <solv/repo_conda.h>   // conda repo handling
 
 // Curl – for downloader (fetching source tarballs)
 #include <curl/curl.h>          // curl_easy_init, etc.

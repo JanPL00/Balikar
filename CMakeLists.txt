@@ -2,20 +2,40 @@ cmake_minimum_required(VERSION 3.10)
 project(impl C)
 
 set(CMAKE_C_STANDARD 11)
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Wextra -g")
 
 find_package(PkgConfig REQUIRED)
 find_package(OpenSSL REQUIRED)
 
-# Použij pkg-config pro všechny knihovny
+# Použij pkg-config pro všechny knihovny KROMĚ LibSolv
 pkg_check_modules(CURL REQUIRED libcurl)
 pkg_check_modules(Jansson REQUIRED jansson)
 pkg_check_modules(LibArchive REQUIRED libarchive)
-pkg_check_modules(LibSolv REQUIRED libsolv)
 pkg_check_modules(CHECK REQUIRED check)
 
-enable_testing()
+# Nastav Conda prefix (z ENV)
+if(NOT CONDA_PREFIX)
+    set(CONDA_PREFIX $ENV{CONDA_PREFIX})
+endif()
+if(NOT CONDA_PREFIX)
+    message(FATAL_ERROR "CONDA_PREFIX not set - set it in CLion CMake Environment!")
+endif()
+message(STATUS "Using CONDA_PREFIX: ${CONDA_PREFIX}")  # Debug: Ověř v outputu
 
+# LibSolv z Conda
+set(LibSolv_INCLUDE_DIRS "\( {CONDA_PREFIX}/include" " \){CONDA_PREFIX}/include/solv")
+set(LibSolv_LIBRARIES "${CONDA_PREFIX}/lib/libsolv.so" "${CONDA_PREFIX}/lib/libsolvext.so")
+
+# NOVÉ: Explicitní -I flags pro Conda (nahrazuje CMAKE_C_FLAGS pro lepší expanzi)
+add_compile_options(
+        -Wall -Wextra -g
+        -I${CONDA_PREFIX}/include
+        -I${CONDA_PREFIX}/include/solv
+)
+
+# Debug pro include dirs
+message(STATUS "LibSolv_INCLUDE_DIRS: ${LibSolv_INCLUDE_DIRS}")
+
+enable_testing()
 
 ## ========================================
 ## MAIN EXECUTABLE FOR BALIKAR
@@ -36,10 +56,10 @@ add_executable(balikar
 )
 
 target_include_directories(balikar PRIVATE
+        ${LibSolv_INCLUDE_DIRS}  # Conda první
         ${CURL_INCLUDE_DIRS}
         ${Jansson_INCLUDE_DIRS}
         ${LibArchive_INCLUDE_DIRS}
-        ${LibSolv_INCLUDE_DIRS}
         ${OPENSSL_INCLUDE_DIR}
         src/balikar/includes
         src/utils/includes
@@ -47,13 +67,18 @@ target_include_directories(balikar PRIVATE
 )
 
 target_link_libraries(balikar
+        ${LibSolv_LIBRARIES}
         ${CURL_LIBRARIES}
         ${Jansson_LIBRARIES}
         ${LibArchive_LIBRARIES}
-        ${LibSolv_LIBRARIES}
-        OpenSSL::Crypto  # Přidáno pro linking OpenSSL (Crypto pro EVP/SHA256)
+        OpenSSL::Crypto
 )
 
+# RPATH pro runtime
+set_target_properties(balikar PROPERTIES
+        INSTALL_RPATH "${CONDA_PREFIX}/lib"
+        BUILD_WITH_INSTALL_RPATH TRUE
+)
 
 ## ========================================
 ## UNIT TESTS
@@ -97,4 +122,3 @@ target_link_options(tests PRIVATE "LINKER:--wrap=uname")
 target_compile_definitions(tests PRIVATE UNIT_TESTS)
 
 add_test(NAME unit_tests COMMAND tests)
-

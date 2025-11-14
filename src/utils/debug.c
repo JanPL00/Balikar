@@ -68,26 +68,3 @@ void display_proof(Solver *solv, Id id, int flags, Queue *lq) {
     printf("\n");
 }
 
-void display_problem_proof(Solver *solv, int problem) {
-    if (!solv) {
-        log_error("Invalid solver in display_problem_proof.");
-        return;
-    }
-
-    Queue lq;
-    int i;
-
-    printf("\n");
-    queue_init(&lq);
-    solver_get_learnt(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
-
-    for (i = 0; i < lq.count; i++) {
-        printf("Learnt rule #%d:\n", i + 1);
-        display_proof(solv, lq.elements[i], SOLVER_DECISIONLIST_LEARNTRULE, &lq);
-    }
-
-    printf("Proof:\n");
-    display_proof(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
-
-    queue_free(&lq);
-}
