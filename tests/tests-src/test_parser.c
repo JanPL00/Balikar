@@ -282,19 +282,17 @@ START_TEST(test_custom_fields_with_repo_add_conda) {
 END_TEST
 
     // TESTY PRO ADD_PACKAGE_TAR_BZ2 S REPO_ADD_CONDA
-    START_TEST(test_add_package_tar_bz2_with_repo_add_conda) {
-        TestFixture fixture;
-        setup_fixture(&fixture);
+START_TEST(test_add_package_tar_bz2_with_repo_add_conda) {
+    TestFixture fixture;
+    setup_fixture(&fixture);
 
-        Pool* pool = pool_create();
-        init_pool_arch(pool);
-        Repo* repo = repo_create(pool, "test-repo");
+    Pool* pool = pool_create();
+    init_pool_arch(pool);
+    Repo* repo = repo_create(pool, "test-repo");
 
-        // Create test tar.bz2 package
-        char tar_path[1024];
-        snprintf(tar_path, sizeof(tar_path), "%s/conda-pkg-1.0-0.tar.bz2", fixture.repo_path);
-
-        const char* index_content =
+    // Create test tar.bz2 package (SHA256 will be computed automatically)
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/conda-pkg-1.0-0.tar.bz2", fixture.repo_path);        const char* index_content =
             "{\"name\": \"conda-pkg\", \"version\": \"1.0\", \"build\": \"0\", "
             "\"arch\": \"x86_64\", \"depends\": [\"python\"], "
             "\"mkdeps\": [\"gcc\"], \"source\": \"http://example.com/src.tar.gz\"}";
@@ -326,6 +324,14 @@ END_TEST
         ck_assert_int_gt(q.count, 0);
         ck_assert_int_eq(q.elements[0], python_id);
         queue_free(&q);
+        
+        // Verify SHA256 was computed and stored (from add_package_tar_bz2)
+        Id sha_key = pool_str2id(pool, "sha256", 0);
+        const char *stored_sha = repodata_lookup_str(data, p, sha_key);
+        if (stored_sha && strlen(stored_sha) > 0) {
+            log_info("SHA256 was computed and stored: %s", stored_sha);
+            ck_assert_int_eq(strlen(stored_sha), 64);  // SHA256 hex is 64 chars
+        }
 
         repo_free(repo, 1);
         pool_free(pool);

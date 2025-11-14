@@ -19,6 +19,8 @@
 #include <time.h>       // For timestamps in metadata (time(NULL))
 #include  <check.h>
 #include <sys/stat.h>
+#include <openssl/sha.h>  // Pro verify_hash (nainstaluj openssl v CMake)
+
 
 // ========================================
 // 2. SHARED EXTERNAL LIBRARIES (libsolv, jansson, curl)

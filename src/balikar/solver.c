@@ -1,4 +1,4 @@
-//
+
 // Created by placeja5 on 11/12/25.
 // Kostra pro solver.c podle akčního plánu (subkrok 2.1).
 // Adaptováno z solv.c a libsolv manuálů (pool_create, solver_create, queue_init, solver_solve, transaction_create atd.).

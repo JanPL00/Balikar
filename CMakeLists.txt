@@ -93,11 +93,13 @@ add_executable(tests
         src/common/common.c
         src/balikar/parser.c
         src/balikar/solver.c
+        src/balikar/downloader.c
         tests/tests-utils/test_cli_helpers.c
         tests/tests-utils/test_system_helpers.c
         tests/main.c
         tests/tests-src/test_parser.c
         tests/tests-src/test_solver.c
+        tests/tests-src/test_downloader.c
 )
 
 target_include_directories(tests PRIVATE
@@ -115,6 +117,7 @@ target_link_libraries(tests
         ${CHECK_LIBRARIES}
         ${LibSolv_LIBRARIES}
         ${Jansson_LIBRARIES}
+        ${CURL_LIBRARIES}
         OpenSSL::Crypto
         m
         pthread

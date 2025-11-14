@@ -21,6 +21,9 @@ což umožňuje parsování mixu adresářů a archivů v repo i lokálně mimo 
 
 Klíčové funkce
 ----
+static char* compute_file_sha256(const char* file_path);
+- Vypočítá SHA256 hash souboru a vrací hex string (64 znaků + null terminator); caller musí free; používá OpenSSL SHA256_Init/Update/Final; vrací NULL při chybě (soubor neexistuje).
+
 static char* trim_str(const char* str);
 - Ořízne leading/trailing whitespace z stringu; vrací nový mallocovaný string nebo NULL.
 
@@ -76,8 +79,9 @@ void internalize_repo(Repo *repo);
 - Volá repo_internalize pro indexaci repo (whatprovides/obsoletes); loguje info.
 
 Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
-- Přidává tar.bz2 balíček do Repo: Extrahuje do tmp (tar xjf), rekurzivně hledá index.json (find_and_load_index),
-  generuje default pokud chybí (generate_default_metadata), zpracovává JSON (process_index_json s fallback_source=tar_path pro lokální skip v downloaderu), internalize; vrací Id Solvable nebo 0 při chybě; cleanup tmp.
+- Přidává tar.bz2 balíček do Repo: Extrahuje do tmp (tar xjf), počítá SHA256 hash tar souboru (compute_file_sha256), rekurzivně hledá index.json (find_and_load_index),
+  generuje default pokud chybí (generate_default_metadata), injektuje vypočítané SHA do JSON pole "sha256" pokud chybí (pro budoucí verify v downloaderu),
+  zpracovává JSON (process_index_json s fallback_source=tar_path), finalizuje (repo_internalize, pool_createwhatprovides); vrací Id Solvable nebo 0 při chybě; cleanup tmp a free(computed_sha).
 
 Integrace v projektu
 ----
@@ -108,6 +112,9 @@ allowing parsing of mixed directories and archives in repo or locally outside re
 
 Key functions
 ----
+static char* compute_file_sha256(const char* file_path);
+- Computes SHA256 hash of file and returns hex string (64 chars + null terminator); caller must free; uses OpenSSL SHA256_Init/Update/Final; returns NULL on error (file doesn't exist).
+
 static char* trim_str(const char* str);
 - Trims leading/trailing whitespace from string; returns new malloc'd string or NULL.
 
@@ -163,9 +170,9 @@ void internalize_repo(Repo *repo);
 - Calls repo_internalize to index repo (whatprovides/obsoletes); logs info.
 
 Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
-- Adds tar.bz2 package to Repo: Extracts to tmp (tar xjf), recursively searches for index.json (find_and_load_index),
-generates default if missing (generate_default_metadata), processes JSON (process_index_json with fallback_source=tar_path for local skip in downloader),
-internalize; returns Solvable Id or 0 on error; cleans up tmp.
+- Adds tar.bz2 package to Repo: Extracts to tmp (tar xjf), computes SHA256 hash of tar file (compute_file_sha256), recursively searches for index.json (find_and_load_index),
+generates default if missing (generate_default_metadata), injects computed SHA into JSON field "sha256" if missing (for future verify in downloader),
+processes JSON (process_index_json with fallback_source=tar_path), finalizes (repo_internalize, pool_createwhatprovides); returns Solvable Id or 0 on error; cleans up tmp and free(computed_sha).
 
 Project integration
 ----

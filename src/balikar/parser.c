@@ -1,5 +1,38 @@
 #include "includes/parser.h"
 
+// Helper: Compute SHA256 hash of file and return hex string (caller must free)
+static char* compute_file_sha256(const char* file_path) {
+    if (!file_path) return NULL;
+    
+    FILE *fp = fopen(file_path, "rb");
+    if (!fp) {
+        log_debug(2, "Cannot open file for SHA256: %s", file_path);
+        return NULL;
+    }
+    
+    SHA256_CTX ctx;
+    SHA256_Init(&ctx);
+    unsigned char buffer[4096];
+    size_t n;
+    while ((n = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
+        SHA256_Update(&ctx, buffer, n);
+    }
+    fclose(fp);
+    
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_Final(hash, &ctx);
+    
+    char *hex = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
+    if (!hex) return NULL;
+    
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        snprintf(hex + i * 2, 3, "%02x", hash[i]);
+    }
+    hex[SHA256_DIGEST_LENGTH * 2] = '\0';
+    
+    return hex;
+}
+
 // Helper: Ořízni trailing/leading whitespace z stringu (vrací nový strdup)
 static char* trim_str(const char* str) {
     if (!str) return NULL;
@@ -674,6 +707,12 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
     }
     log_info("Extracted %s to %s successfully", tar_path, tmp_dir);
 
+    // Compute SHA256 of tar file for metadata
+    char *computed_sha = compute_file_sha256(tar_path);
+    if (computed_sha) {
+        log_info("Computed SHA256 for %s: %s", tar_path, computed_sha);
+    }
+
     // Načti index.json rekurzivně
     json_t* index = find_and_load_index(tmp_dir);
     if (!index) {
@@ -681,8 +720,20 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
         char *basename = strrchr(tar_path, '/') ? strrchr(tar_path, '/') + 1 : (char *)tar_path;
         index = generate_default_metadata(basename);
         if (!index) {
+            if (computed_sha) free(computed_sha);
             goto cleanup;
         }
+    }
+
+    // Inject computed SHA256 into index if missing
+    if (computed_sha) {
+        json_t *existing_sha = json_object_get(index, "sha256");
+        if (!existing_sha || !json_is_string(existing_sha) || 
+            strlen(json_string_value(existing_sha)) == 0) {
+            json_object_set_new(index, "sha256", json_string(computed_sha));
+            log_info("Injected SHA256 into metadata for %s", tar_path);
+        }
+        free(computed_sha);
     }
 
     // Zpracuj (repo_add_conda + custom)
