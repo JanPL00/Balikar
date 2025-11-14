@@ -63,6 +63,12 @@ void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo 
 int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
 - Hlavní entry point: Vytváří repodata.json (s info/packages sekcemi), volá collect_packages (nyní s tar.bz2 podporou) a zapisuje výstup; volitelně integruje s libsolv (pool/repo); vrací 0 při úspěchu.
 
+Repo *load_repository(Pool *pool, const char *repo_path);
+- Načítá repository do libsolv struktury: Nastaví system arch (set_system_arch), volitelně generuje repodata.json pokud chybí,
+  volá repo_add_conda (načte standardní conda pole), poté znovu načítá JSON a manuálně injektuje custom pole (download_url, mkdeps, extras, is_group, no_package)
+  pomocí repodata_set_str (repo_add_conda ignoruje custom pole). Opravuje arch na "noarch" pro solvables s neplatnou arch (0 nebo 1).
+  Finalizuje repo_internalize, nastavuje self-provides pro všechny solvables, volá pool_createwhatprovides; vrací Repo* nebo NULL při chybě.
+
 void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
 - Parsuje depends array (stringy jako "pkg >= 1.0") do Reldep Id (pool_rel2id s REL_* konstantami) a přidává do s->requires (solvable_add_deparray); skipuje invalidní položky; používá trim_str pro ořez stringů.
 
@@ -70,7 +76,7 @@ json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
 - Lookup "makedeps" string z Repodata, parsuje zpět do json_array (json_loads); vrací array (caller json_decref) nebo NULL.
 
 const char* get_custom_source(Repodata *data, Id p, Pool *pool);
-- Lookup "download_url" string z Repodata; vrací URL nebo NULL (bez free).
+- Lookup "download_url" string z Repodata; vrací URL nebo local path nebo NULL (bez free). Hodnota může být remote URL (http/https/ftp) nebo local path (relativní nebo absolutní cesta k balíčku).
 
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
 - Lookup "extras" string z Repodata, parsuje do json_array; vrací array (caller json_decref) nebo NULL.
@@ -160,6 +166,12 @@ void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo 
 int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
 - Main entry point: Creates repodata.json (with info/packages sections), calls collect_packages (now with tar.bz2 support), and writes output; optionally integrates with libsolv (pool/repo); returns 0 on success.
 
+Repo *load_repository(Pool *pool, const char *repo_path);
+- Loads repository into libsolv structure: Sets system arch (set_system_arch), optionally generates repodata.json if missing,
+  calls repo_add_conda (loads standard conda fields), then re-loads JSON and manually injects custom fields (download_url, mkdeps, extras, is_group, no_package)
+  via repodata_set_str (repo_add_conda ignores custom fields). Fixes arch to "noarch" for solvables with invalid arch (0 or 1).
+  Finalizes with repo_internalize, sets self-provides for all solvables, calls pool_createwhatprovides; returns Repo* or NULL on error.
+
 void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
 - Parses depends array (strings like "pkg >= 1.0") into Reldep Id (pool_rel2id with REL_* constants) and adds to s->requires (solvable_add_deparray); skips invalid items; uses trim_str for string trimming.
 
@@ -167,7 +179,7 @@ json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
 - Looks up "makedeps" string from Repodata, parses back to json_array (json_loads); returns array (caller json_decref) or NULL.
 
 const char* get_custom_source(Repodata *data, Id p, Pool *pool);
-- Looks up "download_url" string from Repodata; returns URL or NULL (no free).
+- Looks up "download_url" string from Repodata; returns URL or local path or NULL (no free). Value can be a remote URL (http/https/ftp) or local path (relative or absolute path to package).
 
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
 - Looks up "extras" string from Repodata, parses to json_array; returns array (caller json_decref) or NULL.

@@ -35,7 +35,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth);
 Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo);
 - Hlavní entry point pro řešení závislostí: Najde Solvable pro pkg_name (pool_str2id, FOR_REPO_SOLVABLES),
   inicializuje job Queue (queue_init), rekurzivně přidá mkdeps (add_mkdeps_to_queue, depth=0),
-  přidá hlavní package jako SOLVER_INSTALL | SOLVER_SOLVABLE_NAME, spustí solver (solver_solve),
+  přidá hlavní package jako SOLVER_INSTALL | SOLVER_SOLVABLE (používá Id solvable main_p místo name_id), spustí solver (solver_solve),
   pokud problém: zobrazí proof (display_problem_proof) a v non-test módu ptá se uživatele (user_confirm),
   vytvoří transakci (solver_create_transaction), seřadí (transaction_order), získá installed result
   (transaction_installedresult), zobrazí transakci (display_transaction z utils/print.c), cleanup (transaction_free, queue_free);

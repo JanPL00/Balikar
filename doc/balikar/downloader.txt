@@ -36,11 +36,16 @@ static int verify_hash_from_file(const char *file_path, const char *expected_sha
   porovná výsledek (strcmp), loguje warning při neshodě (log_warn); vrací 1 při shodě, 0 při neshodě;
   skipuje verifikaci pokud expected_sha je NULL (return 1); používá se pro cache validation a post-download verify.
 
+static char* read_sha256_sidecar(const char *cache_path);
+- Načte SHA256 hash z sidecar souboru "<cache_path>.sha256"; vrací mallocovaný 64-char hex string nebo NULL;
+  používá se pro cache validaci když metadata neobsahují SHA256; caller musí free.
+
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
 - Hlavní funkce pro stažení balíčku: Alokuje cache_dir (CACHE_DIR macro -> get_cache_dir inline funkce),
   vytvoří cache path ("<cache_dir>/<name>-<version><ext>"), načte SHA256 z Repodata (repodata_lookup_str, key="sha256"),
+  pokud SHA chybí, zkusí načíst z sidecar (read_sha256_sidecar),
   zkontroluje cache existence (access) a verify hash (verify_hash_from_file) -> pokud OK, vrátí fopen(cache_path, "r");
-  vytvoří tmp session dir (mkdtemp v cache_dir), detekuje lokální vs remote (loc[0]=='/' nebo "./", "../"),
+  vytvoří tmp session dir (mkdtemp v cache_dir), detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://"; remote = začíná těmito protokoly),
   LOKÁLNÍ: cp příkazem kopíruje do cache, ověří hash pokud existuje (verify_hash_from_file), při mismatch: remove + error;
   REMOTE: fopen(cache_path, "wb"), inicializuje CURL (curl_easy_init), nastaví URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
   stáhne (curl_easy_perform), při chybě: remove + error, po úspěchu: ověří hash pokud existuje (verify_hash_from_file),
@@ -111,11 +116,16 @@ static int verify_hash_from_file(const char *file_path, const char *expected_sha
   compares result (strcmp), logs warning on mismatch (log_warn); returns 1 on match, 0 on mismatch;
   skips verification if expected_sha is NULL (return 1); used for cache validation and post-download verify.
 
+static char* read_sha256_sidecar(const char *cache_path);
+- Reads SHA256 hash from sidecar file "<cache_path>.sha256"; returns malloc'd 64-char hex string or NULL;
+  used for cache validation when metadata lacks SHA256; caller must free.
+
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
 - Main function for package download: Allocates cache_dir (CACHE_DIR macro -> get_cache_dir inline function),
   creates cache path ("<cache_dir>/<name>-<version><ext>"), loads SHA256 from Repodata (repodata_lookup_str, key="sha256"),
+  if SHA is missing, tries to load from sidecar (read_sha256_sidecar),
   checks cache existence (access) and verifies hash (verify_hash_from_file) -> if OK, returns fopen(cache_path, "r");
-  creates tmp session dir (mkdtemp in cache_dir), detects local vs remote (loc[0]=='/' or "./", "../"),
+  creates tmp session dir (mkdtemp in cache_dir), detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://"; remote = starts with these protocols),
   LOCAL: copies to cache using cp command, verifies hash if exists (verify_hash_from_file), on mismatch: remove + error;
   REMOTE: fopen(cache_path, "wb"), initializes CURL (curl_easy_init), sets URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
   downloads (curl_easy_perform), on error: remove + error, on success: verifies hash if exists (verify_hash_from_file),
