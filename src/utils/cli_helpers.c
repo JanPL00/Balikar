@@ -15,6 +15,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  resolve <pkg>    Resolve dependencies only (dry-run)\n");
     fprintf(stderr, "  erase <pkg>      Erase installed package\n");
     fprintf(stderr, "  repos            List enabled repositories\n");
+    fprintf(stderr, "  repo-update      Regenerate repodata.json from repository\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -d               Increase debug level\n");
@@ -26,9 +27,9 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  -h, --help      Show this help\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Examples:\n");
-    fprintf(stderr, "  pm install glibc\n");
-    fprintf(stderr, "  pm build gcc --staging-dir=/tmp/stage\n");
-    fprintf(stderr, "  pm install --local-package=/path/to/gzip.tar.bz2\n");
+    fprintf(stderr, "  balikar install glibc\n");
+    fprintf(stderr, "  balikar build gcc --staging-dir=/tmp/stage\n");
+    fprintf(stderr, "  balikar install --local-package=/path/to/gzip.tar.bz2\n");
     exit(exit_code);
 }
 

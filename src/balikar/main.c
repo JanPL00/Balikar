@@ -263,6 +263,43 @@ int main(int argc, char **argv) {
         log_info("Enabled repositories:");
         log_info("  - %s (%d packages)", cfg.repo_path, repo->nsolvables);
         
+    } else if (strcmp(cfg.command, "repo-update") == 0) {
+        log_info("Updating repository metadata: %s", cfg.repo_path);
+        
+        // Uvolni současné repo a pool
+        repo_free(repo, 1);
+        pool_free(pool);
+        
+        // Znovu vytvoř pool pro čerstvý start
+        pool = pool_create();
+        if (!pool) {
+            log_error("Failed to recreate pool.");
+            return 1;
+        }
+        
+        // Vygeneruj nové repodata.json
+        int rc = generate_repodata(cfg.repo_path);
+        if (rc != 0) {
+            log_error("Failed to update repository metadata.");
+            exit_code = ERR_SOLVE_FAIL;
+            pool_free(pool);
+            goto cleanup_no_repo;
+        }
+        
+        log_info("Repository metadata updated successfully.");
+        log_info("Reloading repository...");
+        
+        // Načti znovu repository s novými metadaty
+        repo = load_repository(pool, cfg.repo_path);
+        if (!repo) {
+            log_error("Failed to reload repository.");
+            exit_code = ERR_SOLVE_FAIL;
+            pool_free(pool);
+            goto cleanup_no_repo;
+        }
+        
+        log_info("Repository reloaded: %d packages found.", repo->nsolvables);
+        
     } else {
         log_error("Unknown command: %s", cfg.command);
         print_usage(1);
@@ -273,6 +310,7 @@ cleanup:
     repo_free(repo, 1);
     pool_free(pool);
     
+cleanup_no_repo:
     if (cfg.staging_dir) free(cfg.staging_dir);
     if (cfg.chroot_path) free(cfg.chroot_path);
     if (cfg.build_tmp_dir) free(cfg.build_tmp_dir);

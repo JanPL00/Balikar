@@ -52,6 +52,16 @@ repos
       # Output: Enabled repositories:
       #         - ./repo (5 packages)
 
+repo-update
+    Regeneruje repodata.json z aktuálního obsahu repozitáře.
+    Prochází adresářovou strukturu repo/, načítá index.json soubory,
+    zpracovává tar.bz2 archivy, počítá SHA256 hashe a vytváří
+    nový repodata.json. Po vygenerování znovu načte repository.
+    Příklad:
+      balikar repo-update
+      # Output: Repository metadata updated successfully.
+      #         Repository reloaded: 5 packages found.
+
 erase <pkg>
     Odinstalování balíčku (TODO - vyžaduje installer.c).
 
