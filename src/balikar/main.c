@@ -20,24 +20,13 @@ int main(int argc, char **argv) {
         }
         set_system_arch(pool);  // Nastav default arch (z system_helpers.c)
 
-        // Vytvoř Repo
-        Repo *repo = repo_create(pool, "test_repo");
+        // Načti repozitář (generuje repodata.json pokud neexistuje a načte balíčky)
+        Repo *repo = load_repository(pool, repo_path);
         if (!repo) {
-            log_error("Failed to create repo.");
+            log_error("Failed to load repository from %s.", repo_path);
             pool_free(pool);
             return 1;
         }
-
-        // Spusť generate_repodata (načte index.json, vytvoří Solvables, custom metadata, vygeneruje repodata.json)
-        if (generate_repodata(repo_path) != 0) {
-            log_error("Failed to generate repodata for %s.", repo_path);
-            repo_free(repo, 1);
-            pool_free(pool);
-            return 1;
-        }
-
-        // Internalizuj repo (pro indexaci whatprovides a lookup)
-        repo_internalize(repo);
 
         // Test: Iteruj Solvables a ověř custom metadata
         log_info("Testing loaded solvables...");

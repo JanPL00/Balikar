@@ -8,9 +8,8 @@
 // Použití: Integruj s main.c (načti pool/repo z parser.c, zavolej solve_dependencies, print transaction z utils/print.c).
 //
 
-#include "../includes/solver.h"
-
-#include "cli_helpers.h"
+#include "includes/solver.h"
+#include "../utils/includes/cli_helpers.h"
 #include "../utils/includes/print.h"  // Pro display_transaction
 #include "../utils/includes/string_helpers.h"  // Pro solvable_to_string
 
@@ -67,8 +66,15 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
     // Získej mkdeps jako json_t* array (z parser.c)
     json_t *mkdeps = get_custom_mkdeps(data, p, pool);
     if (!mkdeps || !json_is_array(mkdeps)) {
-        log_warn("Invalid or missing mkdeps for solvable %d.", p);
+        log_debug(2, "No mkdeps for solvable %d.", p);
         if (mkdeps) json_decref(mkdeps);
+        return;
+    }
+
+    size_t mkdep_count = json_array_size(mkdeps);
+    if (mkdep_count == 0) {
+        log_debug(2, "Empty mkdeps array for solvable %d.", p);
+        json_decref(mkdeps);
         return;
     }
 
@@ -83,19 +89,21 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
 
         // Přidej do job jako SOLVER_INSTALL | SOLVER_SOLVABLE_NAME (z constantids.3 a bindings.3)
         queue_push2(job, SOLVER_INSTALL | SOLVER_SOLVABLE_NAME, pkg_id);
+        log_debug(2, "Added mkdep '%s' to job queue at depth %d.", pkg_name, depth);
 
-        // Rekurze: Najdi Solvable pro tento pkg a zavolej rekurzivně (z pool.3: FOR_PROVIDES)
-        Id q, qq;
-        FOR_PROVIDES(q, qq, pkg_id) {
-            if (pool->solvables[q].name == pkg_id) {  // Match name Id
+        // Rekurze: Najdi Solvable pro tento pkg a zavolej rekurzivně
+        Id q;
+        Solvable *s;
+        FOR_REPO_SOLVABLES(repo, q, s) {
+            if (s->name == pkg_id) {  // Match name Id
                 add_mkdeps_to_queue(job, q, pool, repo, depth + 1);
-                break;  // Předpokládáme unikátní name v repo (uprav pro multi-version)
+                break;  // Předpokládáme unikátní name v repo
             }
         }
     }
 
     json_decref(mkdeps);  // Cleanup (z jansson, jak v parser.c)
-    log_debug(1, "Added mkdeps for solvable %d at depth %d.", p, depth);
+    log_debug(1, "Added %zu mkdeps for solvable %d at depth %d.", mkdep_count, p, depth);
 }
 
 // Hlavní funkce: Resolvuj deps pro pkg_name (mkdeps rekurze + runtime, solver_solve, transaction)
@@ -113,22 +121,24 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     Queue job;
     queue_init(&job);
 
-    // Najdi hlavní Solvable pro pkg_name (z pool.3: pool_str2id + FOR_PROVIDES)
+    // Najdi hlavní Solvable pro pkg_name
     Id name_id = pool_str2id(pool, pkg_name, 0);  // create=0, pokud neexistuje -> 0
     if (!name_id) {
-        log_error("Package '%s' not found in repo.", pkg_name);
+        log_error("Package '%s' not found in pool string table.", pkg_name);
         goto cleanup;
     }
 
     Id main_p = 0;
-    Id pp;
-    FOR_PROVIDES(main_p, pp, name_id) {
-        if (pool->solvables[main_p].name == name_id) break;  // První match (uprav pro verze)
+    Solvable *s;
+    FOR_REPO_SOLVABLES(repo, main_p, s) {
+        if (s->name == name_id) break;  // První match
     }
     if (!main_p) {
-        log_error("No solvable found for '%s'.", pkg_name);
+        log_error("No solvable found for '%s' in repository.", pkg_name);
         goto cleanup;
     }
+    
+    log_debug(1, "Found solvable %d for package '%s'.", main_p, pkg_name);
 
     // Nejdřív rekurze pro mkdeps (build-time, separace od runtime)
     add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
@@ -143,11 +153,15 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         for (int prob = 1; prob <= problem_count; prob++) {
             display_problem_proof(solv, prob);  // Zobraz proof (adaptace z solv.c)
         }
-        // Zde: user_confirm("Continue?") – pokud ne, goto cleanup
-        // Pro kostru: Předpokládáme OK, ale v plné impl. přidej yesno z utils/cli_helpers.c
-        if (user_confirm("Problems found. Continue anyway? [y/n]", 0)) {
+        // V testech chceme pokračovat i s problémy, v produkci by se ptal uživatele
+        #ifndef UNIT_TESTS
+        if (!user_confirm("Problems found. Continue anyway? [y/n]", 0)) {
             goto cleanup;
         }
+        #endif
+        log_info("Continuing despite solver problems...");
+    } else {
+        log_debug(1, "Solver completed successfully with no problems.");
     }
 
     // Vytvoř transaction (z bindings.3: solver_create_transaction)

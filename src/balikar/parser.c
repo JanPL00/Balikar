@@ -25,7 +25,14 @@ static char* trim_str(const char* str) {
     return trimmed;
 }
 
-// Function to load JSON from file
+// Helper: Load JSON quietly (no error logging for missing files)
+static json_t* load_json_quiet(const char* filepath) {
+    json_error_t error;
+    json_t* root = json_load_file(filepath, 0, &error);
+    return root;  // NULL if failed, no logging
+}
+
+// Function to load JSON from file (with error logging)
 json_t* load_json(const char* filepath) {
     json_error_t error;
     json_t* root = json_load_file(filepath, 0, &error);
@@ -42,7 +49,7 @@ static json_t* find_and_load_index(const char* dir_path) {
 
     DIR* d = opendir(dir_path);
     if (!d) {
-        log_error("Cannot open dir for index search: %s", dir_path);
+        log_debug(2, "Cannot open dir for index search: %s", dir_path);
         return NULL;
     }
 
@@ -53,17 +60,17 @@ static json_t* find_and_load_index(const char* dir_path) {
             continue;
         }
 
-        char full_path[1024];
+        char full_path[2048];  // Zvětšeno pro bezpečnost
         snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
 
         if (entry->d_type == DT_DIR) {
             // Nejdřív zkus přímo v tomto podadresáři (root/info pattern)
-            char index_path[1024];
+            char index_path[2048];
             snprintf(index_path, sizeof(index_path), "%s/index.json", full_path);
-            json_t* index = load_json(index_path);
+            json_t* index = load_json_quiet(index_path);
             if (!index) {
                 snprintf(index_path, sizeof(index_path), "%s/info/index.json", full_path);
-                index = load_json(index_path);
+                index = load_json_quiet(index_path);
             }
             if (index) {
                 log_info("Found index.json in subdir: %s", index_path);
@@ -78,7 +85,7 @@ static json_t* find_and_load_index(const char* dir_path) {
                 return index;
             }
         } else if (entry->d_type == DT_REG && strcmp(entry->d_name, "index.json") == 0) {
-            json_t* index = load_json(full_path);
+            json_t* index = load_json_quiet(full_path);
             if (index) {
                 log_info("Found index.json directly: %s", full_path);
                 closedir(d);
@@ -92,16 +99,16 @@ static json_t* find_and_load_index(const char* dir_path) {
 
 // Helper function to load JSON from directory structure (pro plain: jen root/info)
 static json_t* load_json_from_directory(const char* dir_path) {
-    char index_path[1024];
+    char index_path[2048];
 
-    // Try root directory first
+    // Try root directory first (quietly - no error logging)
     snprintf(index_path, sizeof(index_path), "%s/index.json", dir_path);
-    json_t* index = load_json(index_path);
+    json_t* index = load_json_quiet(index_path);
 
     if (!index) {
         // Try info/ subdirectory
         snprintf(index_path, sizeof(index_path), "%s/info/index.json", dir_path);
-        index = load_json(index_path);
+        index = load_json_quiet(index_path);
     }
 
     return index;
@@ -134,8 +141,9 @@ static void add_default_fields(json_t* index) {
 }
 
 // Helper to find Solvable by name and version (pro matching po repo_add_conda)
+// Opravená funkce: lépe matchuj solvable
 static Id find_solvable_by_name_version(Pool *pool, Repo *repo, const char *name, const char *version) {
-    if (!pool || !repo || !name || !version) return 0;
+    if (!pool || !repo || !name) return 0;
 
     Id name_id = pool_str2id(pool, name, 0);
     if (!name_id) return 0;
@@ -144,15 +152,18 @@ static Id find_solvable_by_name_version(Pool *pool, Repo *repo, const char *name
     Id p;
     FOR_REPO_SOLVABLES(repo, p, s) {
         if (s->name == name_id) {
-            const char *evr_str = pool_id2evr(pool, s->evr);
-            if (evr_str && strncmp(evr_str, version, strlen(version)) == 0) {  // Přibližný match, protože evr = version-build
+            // Pokud není specifikována verze, vrať první match
+            if (!version) return p;
+
+            // Jinak zkontroluj EVR
+            const char *evr_str = pool_id2str(pool, s->evr);
+            if (evr_str && strcmp(evr_str, version) == 0) {
                 return p;
             }
         }
     }
     return 0;
 }
-
 // Společná funkce pro přidání custom polí do Repodata (s fallback pro source)
 static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, Pool *pool, const char* fallback_source) {
     if (!index || !data) return;
@@ -167,17 +178,15 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
         }
     }
 
-    // Source/download_url (s trim)
+    // Source/download_url
     json_t *source = json_object_get(index, "source");
     int source_set = 0;
     if (source && json_is_string(source)) {
         const char* source_val = json_string_value(source);
-        char* trimmed_source = trim_str(source_val);
-        if (trimmed_source && trimmed_source[0] != '\0') {
-            repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), trimmed_source);
+        if (source_val && source_val[0] != '\0') {
+            repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), source_val);
             source_set = 1;
         }
-        free(trimmed_source);
     }
     if (!source_set && fallback_source) {
         repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), fallback_source);
@@ -197,134 +206,260 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
     // is_group
     json_t *is_group = json_object_get(index, "is_group");
     if (is_group && json_is_boolean(is_group)) {
-        repodata_set_str(data, p, pool_str2id(pool, "is_group", 1), json_is_true(is_group) ? "true" : "false");
+        repodata_set_str(data, p, pool_str2id(pool, "is_group", 1),
+                        json_is_true(is_group) ? "true" : "false");
+    } else {
+        repodata_set_str(data, p, pool_str2id(pool, "is_group", 1), "false");
     }
 
     // no_package
     json_t *no_package = json_object_get(index, "no_package");
     if (no_package && json_is_boolean(no_package)) {
-        repodata_set_str(data, p, pool_str2id(pool, "no_package", 1), json_is_true(no_package) ? "true" : "false");
+        repodata_set_str(data, p, pool_str2id(pool, "no_package", 1),
+                        json_is_true(no_package) ? "true" : "false");
+    } else {
+        repodata_set_str(data, p, pool_str2id(pool, "no_package", 1), "false");
     }
+
 }
 
-// Process index JSON: Vytvoř tmp repodata pro repo_add_conda, přidej custom
+// Process index JSON: Vytvoř tmp repodata.json pro repo_add_conda, přidej custom
+// Přidej processingu depends -> requires konverzi
 static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo *repo, const char *fallback_source) {
     if (!index) return 0;
 
-    add_default_fields(index);  // Přidej defaulty
+    add_default_fields(index);
 
-    // Pro agregaci do packages (pro generate_repodata)
     if (packages) {
         const char *name = json_string_value(json_object_get(index, "name"));
         const char *version = json_string_value(json_object_get(index, "version"));
         const char *build = json_string_value(json_object_get(index, "build"));
-        char pkg_key[1024];
-        snprintf(pkg_key, sizeof(pkg_key), "%s-%s-%s.tar.xz", name ? name : "unknown", version ? version : "0", build ? build : "0");
-        json_object_set(packages, pkg_key, index);  // Přidá reference, ne copy (OK pro generate)
+        char pkg_key[2048];
+        snprintf(pkg_key, sizeof(pkg_key), "%s-%s-%s.tar.bz2", name ? name : "unknown", version ? version : "0", build ? build : "0");
+        json_object_set(packages, pkg_key, index);
     }
 
-    if (!pool || !repo) return 0;  // Pokud no repo, jen pro generate
+    if (!pool || !repo) return 0;
 
-    // Vytvoř tmp repodata.json pro single package
-    json_t *tmp_repodata = json_object();
-    json_t *tmp_packages = json_object();
     const char *name = json_string_value(json_object_get(index, "name"));
     const char *version = json_string_value(json_object_get(index, "version"));
-    char dummy_key[1024];
-    snprintf(dummy_key, sizeof(dummy_key), "%s-%s.tar.bz2", name ? name : "dummy", version ? version : "0");
-    json_object_set(tmp_packages, dummy_key, index);
-    json_object_set(tmp_repodata, "packages", tmp_packages);
+    const char *build = json_string_value(json_object_get(index, "build"));
 
-    char tmp_path[] = "/tmp/conda_tmp_repodata_XXXXXX.json";
-    int fd = mkstemps(tmp_path, 5);  // .json suffix
+    if (!name) {
+        log_error("Missing 'name' in index.json");
+        return 0;
+    }
+
+    json_t *index_copy = json_deep_copy(index);
+    json_t *depends = json_object_get(index_copy, "depends");
+
+    if (depends && json_is_array(depends)) {
+        json_object_del(index_copy, "requires");
+        json_t *requires = json_array();
+        size_t i;
+        json_t *dep;
+        json_array_foreach(depends, i, dep) {
+            if (json_is_string(dep)) {
+                const char *dep_str = json_string_value(dep);
+                if (dep_str && strlen(dep_str) > 0) {
+                    json_array_append(requires, dep);
+                }
+            }
+        }
+        json_object_set(index_copy, "requires", requires);
+        json_decref(requires);
+        log_info("Converted %zu depends to requires for %s", json_array_size(depends), name);
+    }
+
+    json_t *tmp_repodata = json_object();
+    json_t *tmp_packages = json_object();
+
+    char dummy_key[2048];
+    snprintf(dummy_key, sizeof(dummy_key), "%s-%s-%s.tar.bz2", name, version ? version : "0", build ? build : "0");
+    json_object_set(tmp_packages, dummy_key, index_copy);
+    json_object_set(tmp_repodata, "packages", tmp_packages);
+    json_decref(index_copy); // index_copy je nyní vlastněn tmp_packages
+
+    char tmp_path[2048];
+    strcpy(tmp_path, "/tmp/tmp_repodata_XXXXXX.json");
+    int fd = mkstemps(tmp_path, 5);
     if (fd == -1) {
         log_error("Failed to create tmp repodata file");
         json_decref(tmp_repodata);
         return 0;
     }
-    close(fd);
 
-    if (json_dump_file(tmp_repodata, tmp_path, 0) != 0) {
+    FILE *tmp_fp = fdopen(fd, "w");
+    if (json_dumpf(tmp_repodata, tmp_fp, JSON_COMPACT) != 0) {
         log_error("Failed to dump tmp repodata");
+        fclose(tmp_fp);
         unlink(tmp_path);
         json_decref(tmp_repodata);
         return 0;
     }
+    fclose(tmp_fp);
     json_decref(tmp_repodata);
 
-    FILE *fp = fopen(tmp_path, "r");
-    if (!fp) {
-        log_error("Failed to open tmp repodata");
+    tmp_fp = fopen(tmp_path, "r");
+    if (!tmp_fp) {
+        log_error("Failed to reopen tmp repodata");
         unlink(tmp_path);
         return 0;
     }
 
-    // Přidej přes repo_add_conda
-    repo_add_conda(repo, fp, 0);  // 0 pro default flags
-    fclose(fp);
+    repo_add_conda(repo, tmp_fp, 0);
+    fclose(tmp_fp);
     unlink(tmp_path);
 
-    // Najdi přidaný Solvable
     Id p = find_solvable_by_name_version(pool, repo, name, version);
-    if (!p) {
-        log_error("Failed to find added solvable for %s-%s", name, version);
-        return 0;
-    }
+    if (p) {
+        Solvable *s = pool_id2solvable(pool, p);
+        Repodata *data = repo_last_repodata(repo);
 
-    // Přidej custom fields
-    Repodata *data = repo_last_repodata(repo);
-    add_custom_fields_to_repodata(index, data, p, pool, fallback_source);
+        // repo_add_conda should have added requires from the JSON, but if it didn't work,
+        // manually add them from the original depends array
+        json_t *original_depends = json_object_get(index, "depends");
+        if (original_depends && json_is_array(original_depends)) {
+            size_t num_deps = json_array_size(original_depends);
+            if (num_deps > 0) {
+                // Use libsolv Queue for dependency IDs
+                Queue q;
+                queue_init(&q);
+
+                for (size_t i = 0; i < num_deps; i++) {
+                    json_t *dep_json = json_array_get(original_depends, i);
+                    if (json_is_string(dep_json)) {
+                        const char *dep_str = json_string_value(dep_json);
+                        // Create ID for dependency name
+                        Id dep_name_id = pool_str2id(pool, dep_str, 1);
+                        queue_push(&q, dep_name_id);
+                    }
+                }
+
+                if (q.count > 0) {
+                    // Add dependency array from queue to repodata
+                    repodata_set_idarray(data, p, SOLVABLE_REQUIRES, &q);
+                    log_info("Manually set %d requires for solvable %d", q.count, p);
+                }
+
+                // Free queue memory
+                queue_free(&q);
+            }
+        }
+
+        add_custom_fields_to_repodata(index, data, p, pool, fallback_source);
+        repodata_internalize(data);
+        log_info("Found and customized solvable %d for %s", p, name);
+
+        if (s->requires) {
+            const char *req_str = pool_dep2str(pool, s->requires);
+            log_debug(1, "Solvable %d requires: '%s'", p, req_str ? req_str : "(null)");
+        } else {
+            log_warn("Solvable %d has no requires set", p);
+        }
+    } else {
+        log_warn("Solvable not found for %s-%s", name, version ? version : "0");
+    }
 
     return p;
 }
 
-// Generate default metadata if missing
-json_t* generate_default_metadata(const char* basename) {
+// Generate default metadata from filename if index.json missing
+json_t* generate_default_metadata(const char* filename) {
+    if (!filename) return NULL;
+
     json_t* index = json_object();
     if (!index) return NULL;
 
-    char name[256], version[256];
-    if (sscanf(basename, "%255[^-]-%255[^-]", name, version) < 2) {
-        strcpy(name, "unknown");
-        strcpy(version, "0");
+    // Get basename
+    const char *basename = strrchr(filename, '/');
+    basename = basename ? basename + 1 : filename;
+
+    // Copy and remove .tar.bz2 extension
+    char name_buf[256] = {0};
+    strncpy(name_buf, basename, sizeof(name_buf) - 1);
+    char *ext = strstr(name_buf, ".tar.bz2");
+    if (ext) *ext = '\0';
+
+    // Parse: name-version-build (find LAST two dashes)
+    char *last_dash = strrchr(name_buf, '-');
+    char *second_last_dash = NULL;
+    if (last_dash) {
+        *last_dash = '\0';
+        second_last_dash = strrchr(name_buf, '-');
+        *last_dash = '-';  // Restore temporarily
     }
 
-    json_object_set_nocheck(index, "name", json_string(name));
-    json_object_set_nocheck(index, "version", json_string(version));
-    json_object_set_nocheck(index, "build", json_string("0"));
-    json_object_set_nocheck(index, "arch", json_string("noarch"));
-    json_object_set_nocheck(index, "depends", json_array());
+    char name[256] = {0}, version[256] = {0}, build[256] = {0};
+
+    if (second_last_dash && last_dash) {
+        // Found name-version-build
+        size_t name_len = second_last_dash - name_buf;
+        strncpy(name, name_buf, name_len);
+        name[name_len] = '\0';
+
+        size_t version_len = last_dash - second_last_dash - 1;
+        strncpy(version, second_last_dash + 1, version_len);
+        version[version_len] = '\0';
+
+        strcpy(build, last_dash + 1);
+    } else if (last_dash) {
+        // Only name-version
+        size_t name_len = last_dash - name_buf;
+        strncpy(name, name_buf, name_len);
+        name[name_len] = '\0';
+        strcpy(version, last_dash + 1);
+        strcpy(build, "0");
+    } else {
+        // Just name
+        strcpy(name, name_buf);
+        strcpy(version, "0");
+        strcpy(build, "0");
+    }
+
+    json_object_set_new(index, "name", json_string(name));
+    json_object_set_new(index, "version", json_string(version));
+    json_object_set_new(index, "build", json_string(build));
+    json_object_set_new(index, "arch", json_string("noarch"));
+    json_object_set_new(index, "depends", json_array());
 
     add_default_fields(index);
-
     return index;
 }
 
-// Collect packages from repo_path (pro generate_repodata)
-void collect_packages(const char* repo_path, json_t* packages, Pool *pool, Repo *repo) {
-    DIR* dir = opendir(repo_path);
+// Helper: Rekurzivní procházení adresářů pro collect_packages
+static void collect_packages_recursive(const char* current_path, json_t* packages, Pool *pool, Repo *repo) {
+    DIR* dir = opendir(current_path);
     if (!dir) {
-        log_error("Cannot open repo directory: %s", repo_path);
+        log_debug(1, "Cannot open directory: %s", current_path);
         return;
     }
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
-        if (entry->d_type == DT_DIR && entry->d_name[0] != '.') {
-            char full_path[1024];
-            snprintf(full_path, sizeof(full_path), "%s/%s", repo_path, entry->d_name);
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
 
+        char full_path[2048];
+        snprintf(full_path, sizeof(full_path), "%s/%s", current_path, entry->d_name);
+
+        if (entry->d_type == DT_DIR) {
+            // Zkus načíst index.json z tohoto adresáře
             json_t* index = load_json_from_directory(full_path);
-            if (!index) continue;
-
-            process_index_json(index, packages, pool, repo, NULL);  // fallback_source NULL pro dir
-            json_decref(index);  // Protože process bere reference
-
+            if (index) {
+                // Našli jsme balíček s index.json
+                log_info("Found package at: %s", full_path);
+                process_index_json(index, packages, pool, repo, NULL);
+                json_decref(index);
+            } else {
+                // Rekurzivně prohledej podadresáře
+                collect_packages_recursive(full_path, packages, pool, repo);
+            }
         } else if (entry->d_type == DT_REG && strstr(entry->d_name, ".tar.bz2")) {
-            char full_path[1024];
-            snprintf(full_path, sizeof(full_path), "%s/%s", repo_path, entry->d_name);
-
-            char tmp_dir[1024];
+            // Zpracuj .tar.bz2 soubor
+            char tmp_dir[2048];
             snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/balikar_extract_%d", (int)time(NULL));
 
             if (mkdir(tmp_dir, 0755) != 0) {
@@ -332,11 +467,11 @@ void collect_packages(const char* repo_path, json_t* packages, Pool *pool, Repo 
                 continue;
             }
 
-            char cmd[1024];
+            char cmd[2048];
             snprintf(cmd, sizeof(cmd), "tar xjf \"%s\" -C \"%s\" 2>/dev/null", full_path, tmp_dir);
             int extract_ret = system(cmd);
             if (extract_ret != 0) {
-                log_error("Failed to extract %s", full_path);
+                log_error("Failed to extract %s (exit code %d)", full_path, extract_ret);
                 snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
                 system(cmd);
                 continue;
@@ -359,6 +494,12 @@ void collect_packages(const char* repo_path, json_t* packages, Pool *pool, Repo 
     closedir(dir);
 }
 
+// Collect packages from repo_path (pro generate_repodata) - wrapper pro rekurzivní funkci
+void collect_packages(const char* repo_path, json_t* packages, Pool *pool, Repo *repo) {
+    log_info("Collecting packages from: %s", repo_path);
+    collect_packages_recursive(repo_path, packages, pool, repo);
+}
+
 // Main function to generate repodata.json (jen generate soubor, přidávání do repo odděleno)
 int generate_repodata(const char* repo_path) {
     json_t* repodata = json_object();
@@ -377,7 +518,7 @@ int generate_repodata(const char* repo_path) {
     json_t* packages_conda = json_object();
     json_object_set_nocheck(repodata, "packages.conda", packages_conda);
 
-    char output_path[1024];
+    char output_path[2048];
     snprintf(output_path, sizeof(output_path), "%s/repodata.json", repo_path);
     if (json_dump_file(repodata, output_path, JSON_INDENT(4)) != 0) {
         log_error("Error writing repodata.json");
@@ -394,7 +535,7 @@ int generate_repodata(const char* repo_path) {
 Repo *load_repository(Pool *pool, const char *repo_path) {
     if (!pool || !repo_path) return NULL;
 
-    char repodata_path[1024];
+    char repodata_path[2048];
     snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
 
     struct stat st;
@@ -431,14 +572,14 @@ json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool) {
     const char *mkdeps_str = repodata_lookup_str(data, p, key);
 
     if (!mkdeps_str) {
-        log_warn("No 'makedeps' found for solvable %d", p);
+        log_debug(2, "No 'makedeps' found for solvable %d", p);
         return NULL;
     }
 
     json_error_t error;
     json_t *mkdeps = json_loads(mkdeps_str, 0, &error);
     if (!mkdeps || !json_is_array(mkdeps)) {
-        log_warn("Failed to parse 'makedeps' string: %s", error.text);
+        log_warn("Failed to parse 'makedeps' string for solvable %d: %s", p, error.text);
         if (mkdeps) json_decref(mkdeps);
         return NULL;
     }
@@ -524,7 +665,7 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
     }
 
     log_debug(1, "Extracting %s to %s", tar_path, tmp_dir);
-    char cmd[1024];
+    char cmd[2048];
     snprintf(cmd, sizeof(cmd), "tar xjf \"%s\" -C \"%s\" 2>/dev/null", tar_path, tmp_dir);
     int extract_ret = system(cmd);
     if (extract_ret != 0) {
@@ -546,8 +687,16 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
 
     // Zpracuj (repo_add_conda + custom)
     p = process_index_json(index, NULL, pool, repo, tar_path);
-
     json_decref(index);
+
+    if (p != 0) {
+        // Finalize the repository state
+        repo_internalize(repo);
+        pool_createwhatprovides(pool);
+        log_info("Added %s as solvable %d", tar_path, p);
+    } else {
+        log_error("Failed to add %s", tar_path);
+    }
 
 cleanup:
     snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);

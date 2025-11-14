@@ -33,6 +33,7 @@
 #include <solv/selection.h>     // For globs and provides
 #include <solv/poolarch.h>      // Architecture
 #include <solv/evr.h>           // Version comparison
+#include <solv/knownid.h>       // For SOLVABLE_REQUIRES and other constants
 #include <ctype.h>
 #include <errno.h>
 

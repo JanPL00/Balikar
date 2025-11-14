@@ -10,7 +10,9 @@
 
 
 json_t* load_json(const char* filepath);
+Repo *load_repository(Pool *pool, const char *repo_path);
 
+json_t* generate_default_metadata(const char* basename);
 char* generate_package_key(json_t* index);
 
 void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo);  // Přidej pool a repo parametry

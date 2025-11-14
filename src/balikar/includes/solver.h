@@ -18,8 +18,4 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth);
 Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo);
 void display_problem_proof(Solver *solv, int problem);
 
-// Privátní helper pro rekurzi (interní, ne v .h)
-static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq);
-
-
 #endif //IMPL_REPO_SOLVER_H

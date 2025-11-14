@@ -6,6 +6,7 @@
 extern Suite *system_helpers_suite(void);
 extern Suite *cli_helpers_suite(void);
 extern Suite *parser_suite(void);
+extern Suite *solver_suite(void);
 
 int main(void) {
     int failures = 0;
@@ -30,6 +31,13 @@ int main(void) {
     srunner_run_all(sr_parser, CK_NORMAL);
     failures += srunner_ntests_failed(sr_parser);
     srunner_free(sr_parser);
+
+    // Spusť solver tests
+    Suite *s_solver = solver_suite();
+    SRunner *sr_solver = srunner_create(s_solver);
+    srunner_run_all(sr_solver, CK_NORMAL);
+    failures += srunner_ntests_failed(sr_solver);
+    srunner_free(sr_solver);
 
     return (failures == 0) ? 0 : 1;
 }

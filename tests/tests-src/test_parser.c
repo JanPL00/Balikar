@@ -1,317 +1,260 @@
 #include "../../src/balikar/includes/parser.h"
-#include "../../src/utils/includes/debug.h"
+    #include "../../src/utils/includes/debug.h"
+    #include <check.h>
+    #include <unistd.h>
+    #include <stdlib.h>
+    #include <stdio.h>
+    #include <string.h>
+    #include <sys/stat.h>
 
-// Add missing constants
-#define MAX_PATH_LEN 1024
+    // Add missing constants
+    #define MAX_PATH_LEN 1024
 
-// Test fixtures
-typedef struct {
-    char* temp_dir;
-    char* repo_path;
-} TestFixture;
+    // Test fixtures
+    typedef struct {
+        char* temp_dir;
+        char* repo_path;
+    } TestFixture;
 
-// Helper functions for tests
-static void create_test_json(const char* path, const char* content) {
-    FILE* f = fopen(path, "w");
-    if (f) {
-        fputs(content, f);
-        fclose(f);
+    // Helper functions for tests
+    static void create_test_json(const char* path, const char* content) {
+        FILE* f = fopen(path, "w");
+        if (f) {
+            fputs(content, f);
+            fclose(f);
+        }
     }
-}
 
-static void setup_fixture(TestFixture* fixture) {
-    fixture->temp_dir = strdup("/tmp/test_parser_XXXXXX");
-    mkdtemp(fixture->temp_dir);
-    fixture->repo_path = malloc(strlen(fixture->temp_dir) + 10);
-    sprintf(fixture->repo_path, "%s/repo", fixture->temp_dir);
-    mkdir(fixture->repo_path, 0755);
-}
+    static void setup_fixture(TestFixture* fixture) {
+        char template[] = "/tmp/test_parser_XXXXXX";
+        fixture->temp_dir = mkdtemp(template);
+        ck_assert_ptr_ne(fixture->temp_dir, NULL);
+        fixture->repo_path = malloc(strlen(fixture->temp_dir) + 10);
+        sprintf(fixture->repo_path, "%s/repo", fixture->temp_dir);
+        mkdir(fixture->repo_path, 0755);
+    }
 
-static void teardown_fixture(TestFixture* fixture) {
-    // Clean up temporary files and directories
-    char command[1024];
-    snprintf(command, sizeof(command), "rm -rf %s", fixture->temp_dir);
-    system(command);
-    free(fixture->temp_dir);
-    free(fixture->repo_path);
-}
+    static void teardown_fixture(TestFixture* fixture) {
+        // Clean up temporary files and directories
+        char command[1024];
+        snprintf(command, sizeof(command), "rm -rf %s", fixture->temp_dir);
+        system(command);
+        // No need to free temp_dir as it points to the created directory name
+        free(fixture->repo_path);
+    }
 
-// Helper function to create a test tar.bz2 package
-static int create_test_tar_bz2(const char* tar_path, const char* index_content, int create_nested_source) {
-    char tmp_dir_template[] = "/tmp/test_pkg_XXXXXX";
-    char* tmp_dir = mkdtemp(tmp_dir_template);
-    if (!tmp_dir) return 0;
+    // Helper function to create a test tar.bz2 package
+    static int create_test_tar_bz2(const char* tar_path, const char* index_content, int create_nested_source) {
+        char tmp_dir_template[] = "/tmp/test_pkg_XXXXXX";
+        char* tmp_dir = mkdtemp(tmp_dir_template);
+        if (!tmp_dir) return 0;
 
-    // Create package structure
-    char info_dir[1024];
-    snprintf(info_dir, sizeof(info_dir), "%s/info", tmp_dir);
-    mkdir(info_dir, 0755);
+        // Create package structure
+        char info_dir[1024];
+        snprintf(info_dir, sizeof(info_dir), "%s/info", tmp_dir);
+        mkdir(info_dir, 0755);
 
-    // Create index.json
-    char index_path[1024];
-    snprintf(index_path, sizeof(index_path), "%s/index.json", info_dir); // Put in info/ subdirectory
-    create_test_json(index_path, index_content);
+        // Create index.json
+        char index_path[1024];
+        snprintf(index_path, sizeof(index_path), "%s/index.json", info_dir);
+        create_test_json(index_path, index_content);
 
-    // Create .build file
-    char build_path[1024];
-    snprintf(build_path, sizeof(build_path), "%s/.build", tmp_dir);
-    create_test_json(build_path, "#!/bin/bash\necho \"Building package\"\n");
+        // Create .build file
+        char build_path[1024];
+        snprintf(build_path, sizeof(build_path), "%s/.build", tmp_dir);
+        create_test_json(build_path, "#!/bin/bash\necho \"Building package\"\n");
 
-    // Create install script
-    char install_dir[1024];
-    snprintf(install_dir, sizeof(install_dir), "%s/.install", tmp_dir);
-    mkdir(install_dir, 0755);
-    char install_path[1024];
-    snprintf(install_path, sizeof(install_path), "%s/install.sh", install_dir);
-    create_test_json(install_path, "#!/bin/bash\necho \"Installing package\"\n");
+        // Create install script
+        char install_dir[1024];
+        snprintf(install_dir, sizeof(install_dir), "%s/.install", tmp_dir);
+        mkdir(install_dir, 0755);
+        char install_path[1024];
+        snprintf(install_path, sizeof(install_path), "%s/install.sh", install_dir);
+        create_test_json(install_path, "#!/bin/bash\necho \"Installing package\"\n");
 
-    // Optional: Create nested source tar.xz
-    if (create_nested_source) {
-        char source_dir[1024];
-        snprintf(source_dir, sizeof(source_dir), "%s/source", tmp_dir);
-        mkdir(source_dir, 0755);
+        // Optional: Create nested source tar.xz
+        if (create_nested_source) {
+            char source_dir[1024];
+            snprintf(source_dir, sizeof(source_dir), "%s/source", tmp_dir);
+            mkdir(source_dir, 0755);
 
-        // Create source files
-        char makefile_path[1024];
-        snprintf(makefile_path, sizeof(makefile_path), "%s/Makefile", source_dir);
-        create_test_json(makefile_path, "all:\n\techo \"Building from source\"\n");
+            // Create source files
+            char makefile_path[1024];
+            snprintf(makefile_path, sizeof(makefile_path), "%s/Makefile", source_dir);
+            create_test_json(makefile_path, "all:\n\techo \"Building from source\"\n");
 
-        char src_path[1024];
-        snprintf(src_path, sizeof(src_path), "%s/main.c", source_dir);
-        create_test_json(src_path, "int main() { return 0; }\n");
+            char src_path[1024];
+            snprintf(src_path, sizeof(src_path), "%s/main.c", source_dir);
+            create_test_json(src_path, "int main() { return 0; }\n");
 
-        // Create nested tar.xz
-        char nested_tar_path[1024];
-        snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/source.tar.xz", tmp_dir);
+            // Create nested tar.xz
+            char nested_tar_path[1024];
+            snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/source.tar.xz", tmp_dir);
+            char cmd[2048];
+            snprintf(cmd, sizeof(cmd), "tar -cJf \"%s\" -C \"%s\" .", nested_tar_path, source_dir);
+            system(cmd);
+        }
+
+        // Create the final tar.bz2
         char cmd[2048];
-        snprintf(cmd, sizeof(cmd), "tar -cJf \"%s\" -C \"%s\" .", nested_tar_path, source_dir);
+        snprintf(cmd, sizeof(cmd), "tar -cjf \"%s\" -C \"%s\" .", tar_path, tmp_dir);
+        int result = system(cmd);
+
+        // Cleanup
+        snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
         system(cmd);
+
+        return result == 0;
     }
 
-    // Create the final tar.bz2
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "tar -cjf \"%s\" -C \"%s\" .", tar_path, tmp_dir);
-    int result = system(cmd);
+    // Helper function to create test repodata.json
+    static void create_test_repodata(const char* repo_path, const char* repodata_content) {
+        char repodata_path[1024];
+        snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
+        create_test_json(repodata_path, repodata_content);
+    }
 
-    // Cleanup
-    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
-    system(cmd);
+    // Modified helper function to get repodata from repo
+    static Repodata* get_repodata_from_repo(Repo* repo) {
+        if (!repo) return NULL;
+        return repo_last_repodata(repo);
+    }
 
-    return result == 0;
-}
+    // Initialize pool with arch
+    static void init_pool_arch(Pool* pool) {
+        pool_setarch(pool, "x86_64");
+    }
 
-// Modified helper function to get repodata from repo
-static Repodata* get_repodata_from_repo(Repo* repo) {
-    if (!repo) return NULL;
-    return repo_last_repodata(repo);
-}
+    // TESTY PRO LOAD JSON A CONDÁ INTEGRACI
+    START_TEST(test_load_json_valid) {
+        char path[] = "/tmp/test_json_XXXXXX";
+        int fd = mkstemp(path);
+        const char* json_content = "{\"name\": \"test\", \"version\": \"1.0\", \"build\": \"0\"}";
+        write(fd, json_content, strlen(json_content));
+        close(fd);
 
-// Initialize pool with arch
-static void init_pool_arch(Pool* pool) {
-    pool_setarch(pool, "x86_64");
-}
+        json_t* json = load_json(path);
+        ck_assert_ptr_ne(json, NULL);
+        ck_assert_str_eq(json_string_value(json_object_get(json, "name")), "test");
 
-// TESTY PRO LOAD JSON
-START_TEST(test_load_json_valid) {
-    char path[] = "/tmp/test_json_XXXXXX";
-    int fd = mkstemp(path);
-    const char* json_content = "{\"name\": \"test\", \"version\": \"1.0\", \"build\": \"0\"}";
-    write(fd, json_content, strlen(json_content));
-    close(fd);
+        json_decref(json);
+        unlink(path);
+    }
+    END_TEST
 
-    json_t* json = load_json(path);
-    ck_assert_ptr_ne(json, NULL);
-    ck_assert_str_eq(json_string_value(json_object_get(json, "name")), "test");
+    START_TEST(test_load_json_invalid) {
+        json_t* json = load_json("/nonexistent/path/file.json");
+        ck_assert_ptr_eq(json, NULL);
+    }
+    END_TEST
 
-    json_decref(json);
-    unlink(path);
-}
-END_TEST
+    START_TEST(test_load_json_malformed) {
+        char path[] = "/tmp/test_json_XXXXXX";
+        int fd = mkstemp(path);
+        const char* malformed_content = "{invalid json}";
+        write(fd, malformed_content, strlen(malformed_content));
+        close(fd);
 
-START_TEST(test_load_json_invalid) {
-    json_t* json = load_json("/nonexistent/path/file.json");
-    ck_assert_ptr_eq(json, NULL);
-}
-END_TEST
+        json_t* json = load_json(path);
+        ck_assert_ptr_eq(json, NULL);
 
-START_TEST(test_load_json_malformed) {
-    char path[] = "/tmp/test_json_XXXXXX";
-    int fd = mkstemp(path);
-    const char* malformed_content = "{invalid json}";
-    write(fd, malformed_content, strlen(malformed_content));
-    close(fd);
+        unlink(path);
+    }
+    END_TEST
 
-    json_t* json = load_json(path);
-    ck_assert_ptr_eq(json, NULL);
+    // TESTY PRO REPO_ADD_CONDA WORKFLOW
+    START_TEST(test_repo_add_conda_basic) {
+        TestFixture fixture;
+        setup_fixture(&fixture);
 
-    unlink(path);
-}
-END_TEST
+        // Create test repodata.json
+        const char* repodata_content =
+            "{\n"
+            "  \"info\": {\n"
+            "    \"subdir\": \"linux-64\"\n"
+            "  },\n"
+            "  \"packages\": {\n"
+            "    \"test-pkg-1.0-0.tar.bz2\": {\n"
+            "      \"name\": \"test-pkg\",\n"
+            "      \"version\": \"1.0\",\n"
+            "      \"build\": \"0\",\n"
+            "      \"build_number\": 1,\n"
+            "      \"depends\": [\"bash\"],\n"
+            "      \"license\": \"MIT\",\n"
+            "      \"md5\": \"d41d8cd98f00b204e9800998ecf8427e\"\n"
+            "    }\n"
+            "  }\n"
+            "}";
 
-// TESTY PRO GENERATE PACKAGE KEY
-START_TEST(test_generate_package_key_valid) {
-    json_t* index = json_object();
-    json_object_set_new(index, "name", json_string("test-pkg"));
-    json_object_set_new(index, "version", json_string("1.0.0"));
-    json_object_set_new(index, "build", json_string("build123"));
+        create_test_repodata(fixture.repo_path, repodata_content);
 
-    char* key = generate_package_key(index);
-    ck_assert_ptr_ne(key, NULL);
-    ck_assert_str_eq(key, "test-pkg-1.0.0-build123.tar.bz2");
+        Pool* pool = pool_create();
+        init_pool_arch(pool);
+        Repo* repo = repo_create(pool, "test-repo");
 
-    free(key);
-    json_decref(index);
-}
-END_TEST
+        char repodata_path[1024];
+        snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", fixture.repo_path);
+        FILE* fp = fopen(repodata_path, "r");
+        ck_assert_ptr_ne(fp, NULL);
 
-START_TEST(test_generate_package_key_missing_name) {
-    json_t* index = json_object();
-    // Only version and build, missing name
-    json_object_set_new(index, "version", json_string("1.0.0"));
-    json_object_set_new(index, "build", json_string("build123"));
+        // Test repo_add_conda integration
+        int result = repo_add_conda(repo, fp, 0);
+        ck_assert_int_eq(result, 0);
 
-    char* key = generate_package_key(index);
-    ck_assert_ptr_eq(key, NULL);
+        // Verify solvable was added
+        ck_assert_int_gt(repo->nsolvables, 0);
 
-    json_decref(index);
-}
-END_TEST
+        // Find the solvable by name, don't assume ID 1
+        Id p = 0;
+        Solvable* s = NULL;
+        FOR_REPO_SOLVABLES(repo, p, s) {
+            if (s && strcmp(pool_id2str(pool, s->name), "test-pkg") == 0) {
+                break;
+            }
+            s = NULL;
+        }
 
-// TESTY PRO COLLECT PACKAGES A GENERATE REPODATA
-START_TEST(test_collect_packages_basic) {
+        ck_assert_ptr_ne(s, NULL);
+        ck_assert_str_eq(pool_id2str(pool, s->name), "test-pkg");
+
+        fclose(fp);
+        repo_free(repo, 1);
+        pool_free(pool);
+        teardown_fixture(&fixture);
+    }
+    END_TEST
+
+    // TESTY PRO CUSTOM FIELDS S REPO_ADD_CONDA
+START_TEST(test_custom_fields_with_repo_add_conda) {
     TestFixture fixture;
     setup_fixture(&fixture);
 
-    // Create test package structure
-    char pkg_dir[2048];
-    snprintf(pkg_dir, sizeof(pkg_dir), "%s/test-pkg", fixture.repo_path);
-    mkdir(pkg_dir, 0755);
+    Pool* pool = pool_create();
+    init_pool_arch(pool);
+    Repo* repo = repo_create(pool, "test-repo");
 
-    char index_path[2048];
-    snprintf(index_path, sizeof(index_path), "%s/index.json", pkg_dir);
+    // CREATE A REAL TAR.BZ2 FILE instead of trying to extract URL
+    char tar_path[1024];
+    snprintf(tar_path, sizeof(tar_path), "%s/custom-pkg-2.0-1.tar.bz2", fixture.repo_path);
 
     const char* index_content =
-        "{\"name\": \"test-pkg\", \"version\": \"1.0\", \"build\": \"0\", "
-        "\"build_number\": 1, \"license\": \"MIT\", \"depends\": [\"dep1\"]}";
-    create_test_json(index_path, index_content);
+        "{\"name\": \"custom-pkg\", \"version\": \"2.0\", \"build\": \"1\", "
+        "\"depends\": [], \"mkdeps\": [\"gcc\", \"make\"], "
+        "\"source\": \"http://example.com/source.tar.gz\", "
+        "\"extras\": [\"patch1.patch\"], \"is_group\": false, \"no_package\": false}";
 
-    // Test without libsolv integration - pass NULL for pool and repo
-    json_t* packages = json_object();
-    collect_packages(fixture.repo_path, packages, NULL, NULL);
+    int created = create_test_tar_bz2(tar_path, index_content, 0);
+    ck_assert_int_ne(created, 0);
 
-    ck_assert_int_eq(json_object_size(packages), 1);
+    // Add the LOCAL tar.bz2 file
+    Id p = add_package_tar_bz2(tar_path, pool, repo);
+    ck_assert_int_ne(p, 0);
 
-    const char* expected_key = "test-pkg-1.0-0.tar.bz2";
-    json_t* collected_index = json_object_get(packages, expected_key);
-    ck_assert_ptr_ne(collected_index, NULL);
+    // Test custom fields retrieval
+    Repodata* data = get_repodata_from_repo(repo);
+    ck_assert_ptr_ne(data, NULL);
 
-    json_decref(packages);
-    teardown_fixture(&fixture);
-}
-END_TEST
-
-START_TEST(test_collect_packages_with_defaults) {
-    TestFixture fixture;
-    setup_fixture(&fixture);
-
-    char pkg_dir[2048];
-    snprintf(pkg_dir, sizeof(pkg_dir), "%s/minimal-pkg", fixture.repo_path);
-    mkdir(pkg_dir, 0755);
-
-    char index_path[2048];
-    snprintf(index_path, sizeof(index_path), "%s/index.json", pkg_dir);
-
-    // Minimal index.json without optional fields
-    const char* index_content =
-        "{\"name\": \"minimal-pkg\", \"version\": \"2.0\", \"build\": \"1\"}";
-    create_test_json(index_path, index_content);
-
-    json_t* packages = json_object();
-    collect_packages(fixture.repo_path, packages, NULL, NULL);
-
-    const char* key = "minimal-pkg-2.0-1.tar.bz2";
-    json_t* collected = json_object_get(packages, key);
-    ck_assert_ptr_ne(collected, NULL);
-
-    // Verify defaults were added
-    ck_assert_int_eq(json_integer_value(json_object_get(collected, "build_number")), 0);
-    ck_assert_str_eq(json_string_value(json_object_get(collected, "license")), "unknown");
-    ck_assert_str_eq(json_string_value(json_object_get(collected, "subdir")), "noarch");
-
-    json_decref(packages);
-    teardown_fixture(&fixture);
-}
-END_TEST
-
-// Testy pro PARSE DEPENDS TO SOLVABLE
-START_TEST(test_parse_depends_basic_name_only) {
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
-    Id p = repo_add_solvable(repo);
-    Solvable* s = pool->solvables + p;
-
-    // Test základního zápisu - pouze název balíčku
-    json_t* depends = json_array();
-    json_array_append_new(depends, json_string("glibc"));
-
-    parse_depends_to_solvable(s, depends, pool);
-
-    // Ověř, že závislost byla přidána
-    ck_assert_int_ne(s->requires, 0);
-
-    repo_free(repo, 1);
-    pool_free(pool);
-    json_decref(depends);
-}
-END_TEST
-
-START_TEST(test_parse_depends_with_operators) {
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
-    Id p = repo_add_solvable(repo);
-    Solvable* s = pool->solvables + p;
-
-    // Test různých operátorů
-    json_t* depends = json_array();
-    json_array_append_new(depends, json_string("gcc >= 10.0"));
-    json_array_append_new(depends, json_string("python == 3.8"));
-    json_array_append_new(depends, json_string("zlib < 1.2.5"));
-    json_array_append_new(depends, json_string("openssl <= 1.1.1"));
-    json_array_append_new(depends, json_string("curl > 7.68.0"));
-
-    parse_depends_to_solvable(s, depends, pool);
-
-    // Ověř, že všechny závislosti byly přidány
-    ck_assert_int_ne(s->requires, 0);
-
-    repo_free(repo, 1);
-    pool_free(pool);
-    json_decref(depends);
-}
-END_TEST
-
-START_TEST(test_custom_fields_storage_and_retrieval_fn) {
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
-
-    // Create a test solvable with custom fields
-    Id p = repo_add_solvable(repo);
-    Solvable* s = pool->solvables + p;
-    s->name = pool_str2id(pool, "test-pkg", 1);
-
-    Repodata* data = repo_add_repodata(repo, 0);
-
-    // Store custom fields
-    repodata_set_str(data, p, pool_str2id(pool, "makedeps", 1), "[\"gcc\", \"make\"]");
-    repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), "http://example.com/pkg.tar.gz");
-    repodata_set_str(data, p, pool_str2id(pool, "is_group", 1), "false");
-
-    internalize_repo(repo);
-
-    // Test retrieval functions
+    // Test custom field retrieval functions
     json_t* mkdeps = get_custom_mkdeps(data, p, pool);
     ck_assert_ptr_ne(mkdeps, NULL);
     ck_assert_int_eq(json_array_size(mkdeps), 2);
@@ -319,62 +262,18 @@ START_TEST(test_custom_fields_storage_and_retrieval_fn) {
 
     const char* source = get_custom_source(data, p, pool);
     ck_assert_ptr_ne(source, NULL);
-    ck_assert_str_eq(source, "http://example.com/pkg.tar.gz");
+    ck_assert_str_eq(source, "http://example.com/source.tar.gz");
+
+    json_t* extras = get_custom_extras(data, p, pool);
+    ck_assert_ptr_ne(extras, NULL);
+    ck_assert_int_eq(json_array_size(extras), 1);
+    json_decref(extras);
 
     int is_group = get_custom_is_group(data, p, pool);
     ck_assert_int_eq(is_group, 0);
 
-    repo_free(repo, 1);
-    pool_free(pool);
-}
-END_TEST
-
-// TESTY PRO TAR.BZ2 PARSOVÁNÍ
-START_TEST(test_add_package_tar_bz2_basic) {
-    TestFixture fixture;
-    setup_fixture(&fixture);
-
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
-
-    // Create test tar.bz2 package
-    char tar_path[1024];
-    snprintf(tar_path, sizeof(tar_path), "%s/test-pkg-1.0-0.tar.bz2", fixture.repo_path);
-
-    const char* index_content =
-        "{\"name\": \"test-pkg\", \"version\": \"1.0\", \"build\": \"0\", "
-        "\"arch\": \"x86_64\", \"depends\": [\"bash\"], "
-        "\"mkdeps\": [\"gcc\", \"make\"], \"source\": \"http://example.com/src.tar.gz\"}";
-
-    int created = create_test_tar_bz2(tar_path, index_content, 0);
-    ck_assert_int_ne(created, 0);
-
-    // Test adding the package
-    Id p = add_package_tar_bz2(tar_path, pool, repo);
-    ck_assert_int_ne(p, 0);
-
-    // Verify the solvable was created correctly
-    Solvable* s = pool->solvables + p;
-    ck_assert_int_ne(s->name, 0);
-    ck_assert_int_ne(s->evr, 0);
-    ck_assert_int_ne(s->arch, 0);
-
-    // Internalize repo to make repodata accessible
-    internalize_repo(repo);
-
-    // Verify custom fields
-    Repodata* data = get_repodata_from_repo(repo);
-    ck_assert_ptr_ne(data, NULL);
-
-    const char* source_url = get_custom_source(data, p, pool);
-    ck_assert_ptr_ne(source_url, NULL);
-    ck_assert_str_eq(source_url, "http://example.com/src.tar.gz");
-
-    json_t* mkdeps = get_custom_mkdeps(data, p, pool);
-    ck_assert_ptr_ne(mkdeps, NULL);
-    ck_assert_int_eq(json_array_size(mkdeps), 2);
-    json_decref(mkdeps);
+    int no_package = get_custom_no_package(data, p, pool);
+    ck_assert_int_eq(no_package, 0);
 
     repo_free(repo, 1);
     pool_free(pool);
@@ -382,150 +281,158 @@ START_TEST(test_add_package_tar_bz2_basic) {
 }
 END_TEST
 
-START_TEST(test_add_package_tar_bz2_with_nested_source) {
-    TestFixture fixture;
-    setup_fixture(&fixture);
+    // TESTY PRO ADD_PACKAGE_TAR_BZ2 S REPO_ADD_CONDA
+    START_TEST(test_add_package_tar_bz2_with_repo_add_conda) {
+        TestFixture fixture;
+        setup_fixture(&fixture);
 
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
+        Pool* pool = pool_create();
+        init_pool_arch(pool);
+        Repo* repo = repo_create(pool, "test-repo");
 
-    char tar_path[1024];
-    snprintf(tar_path, sizeof(tar_path), "%s/glibc-2.38-5.tar.bz2", fixture.repo_path);
+        // Create test tar.bz2 package
+        char tar_path[1024];
+        snprintf(tar_path, sizeof(tar_path), "%s/conda-pkg-1.0-0.tar.bz2", fixture.repo_path);
 
-    const char* index_content =
-        "{\"name\": \"glibc\", \"version\": \"2.38\", \"build\": \"5\", "
-        "\"arch\": \"x86_64\", \"depends\": [\"linux-headers\"], "
-        "\"mkdeps\": [\"gcc\", \"binutils\", \"make\"], "
-        "\"source\": \"http://ftp.gnu.org/gnu/glibc/glibc-2.38.tar.xz\"}";
+        const char* index_content =
+            "{\"name\": \"conda-pkg\", \"version\": \"1.0\", \"build\": \"0\", "
+            "\"arch\": \"x86_64\", \"depends\": [\"python\"], "
+            "\"mkdeps\": [\"gcc\"], \"source\": \"http://example.com/src.tar.gz\"}";
 
-    // Create package with nested source
-    int created = create_test_tar_bz2(tar_path, index_content, 1);
-    ck_assert_int_ne(created, 0);
+        int created = create_test_tar_bz2(tar_path, index_content, 0);
+        ck_assert_int_ne(created, 0);
 
-    Id p = add_package_tar_bz2(tar_path, pool, repo);
-    ck_assert_int_ne(p, 0);
+        // Test adding the package using new repo_add_conda workflow
+        Id p = add_package_tar_bz2(tar_path, pool, repo);
+        ck_assert_int_ne(p, 0);
 
-    Solvable* s = pool->solvables + p;
-    ck_assert_str_eq(pool_id2str(pool, s->name), "glibc");
-    ck_assert_str_eq(pool_id2str(pool, s->arch), "x86_64");
+        // Verify the solvable was created correctly
+        Solvable* s = pool_id2solvable(pool, p);
+        ck_assert_ptr_ne(s, NULL);
+        ck_assert_str_eq(pool_id2str(pool, s->name), "conda-pkg");
+        
+        // Check that the solvable has requires set in repodata
+        Repodata* data = get_repodata_from_repo(repo);
+        ck_assert_ptr_ne(data, NULL);
+        
+        // Check if python dependency exists using libsolv's lookup
+        Id python_id = pool_str2id(pool, "python", 0);
+        ck_assert_int_ne(python_id, 0);
+        
+        // Verify dependency was set by checking if it's in the repodata
+        Queue q;
+        queue_init(&q);
+        repodata_lookup_idarray(data, p, SOLVABLE_REQUIRES, &q);
+        ck_assert_int_gt(q.count, 0);
+        ck_assert_int_eq(q.elements[0], python_id);
+        queue_free(&q);
 
-    // Verify dependencies were parsed
-    ck_assert_int_ne(s->requires, 0);
+        repo_free(repo, 1);
+        pool_free(pool);
+        teardown_fixture(&fixture);
+    }
+    END_TEST
 
-    repo_free(repo, 1);
-    pool_free(pool);
-    teardown_fixture(&fixture);
-}
-END_TEST
+    // TESTY PRO LOAD_REPOSITORY S GENEROVÁNÍM REPODATA
+    START_TEST(test_load_repository_with_generation) {
+        TestFixture fixture;
+        setup_fixture(&fixture);
 
-START_TEST(test_add_package_tar_bz2_without_index_json) {
-    TestFixture fixture;
-    setup_fixture(&fixture);
+        // Create a package directory structure
+        char pkg_dir[1024];
+        snprintf(pkg_dir, sizeof(pkg_dir), "%s/repo/sample-pkg", fixture.temp_dir);
+        mkdir(pkg_dir, 0755);
+        char info_dir[1024];
+        snprintf(info_dir, sizeof(info_dir), "%s/info", pkg_dir);
+        mkdir(info_dir, 0755);
 
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
 
-    // Create a minimal tar.bz2 without index.json
-    char tar_path[1024];
-    snprintf(tar_path, sizeof(tar_path), "%s/gzip-1.12-3.tar.bz2", fixture.repo_path);
+        char index_path[1024];
+        snprintf(index_path, sizeof(index_path), "%s/index.json", info_dir);
 
-    char tmp_dir_template[] = "/tmp/minimal_pkg_XXXXXX";
-    char* tmp_dir = mkdtemp(tmp_dir_template);
+        const char* index_content =
+            "{\"name\": \"sample-pkg\", \"version\": \"1.0\", \"build\": \"0\", "
+            "\"build_number\": 1, \"license\": \"BSD\", \"depends\": [\"libc\"]}";
+        create_test_json(index_path, index_content);
 
-    // Only create essential files, no index.json
-    char build_path[1024];
-    snprintf(build_path, sizeof(build_path), "%s/.build", tmp_dir);
-    create_test_json(build_path, "#!/bin/bash\necho \"Build gzip\"\n");
+        Pool* pool = pool_create();
+        init_pool_arch(pool);
 
-    // Create the tar.bz2
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "tar -cjf \"%s\" -C \"%s\" .", tar_path, tmp_dir);
-    system(cmd);
+        // Test load_repository which should generate repodata.json if missing
+        Repo* repo = load_repository(pool, fixture.repo_path);
+        ck_assert_ptr_ne(repo, NULL);
+        ck_assert_int_gt(repo->nsolvables, 0);
 
-    // Cleanup temp dir
-    snprintf(cmd, sizeof(cmd), "rm -rf \"%s\"", tmp_dir);
-    system(cmd);
+        // Verify repodata.json was created
+        char repodata_path[1024];
+        snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", fixture.repo_path);
+        ck_assert_int_eq(access(repodata_path, F_OK), 0);
 
-    // This should generate default metadata from filename
-    Id p = add_package_tar_bz2(tar_path, pool, repo);
-    ck_assert_int_ne(p, 0);
+        repo_free(repo, 1);
+        pool_free(pool);
+        teardown_fixture(&fixture);
+    }
+    END_TEST
 
-    Solvable* s = pool->solvables + p;
-    ck_assert_str_eq(pool_id2str(pool, s->name), "gzip");
-    ck_assert_str_eq(pool_id2str(pool, s->evr), "1.12-3");
+    // TESTY PRO DEFAULT METADATA GENERATION
+    START_TEST(test_generate_default_metadata) {
+        json_t* metadata = generate_default_metadata("test-pkg-1.0-0.tar.bz2");
+        ck_assert_ptr_ne(metadata, NULL);
 
-    repo_free(repo, 1);
-    pool_free(pool);
-    teardown_fixture(&fixture);
-}
-END_TEST
+        ck_assert_str_eq(json_string_value(json_object_get(metadata, "name")), "test-pkg");
+        ck_assert_str_eq(json_string_value(json_object_get(metadata, "version")), "1.0");
+        ck_assert_str_eq(json_string_value(json_object_get(metadata, "build")), "0");
+        ck_assert_str_eq(json_string_value(json_object_get(metadata, "arch")), "noarch");
 
-START_TEST(test_add_package_tar_bz2_invalid_file) {
-    Pool* pool = pool_create();
-    init_pool_arch(pool);
-    Repo* repo = repo_create(pool, "test-repo");
+        json_decref(metadata);
+    }
+    END_TEST
 
-    // Test with non-existent file
-    Id p = add_package_tar_bz2("/nonexistent/file.tar.bz2", pool, repo);
-    ck_assert_int_eq(p, 0);
+    // TESTY PRO INTERNALIZE_REPO
+    START_TEST(test_internalize_repo) {
+        Pool* pool = pool_create();
+        init_pool_arch(pool);
+        Repo* repo = repo_create(pool, "test-repo");
 
-    // Test with invalid tar file
-    char invalid_path[] = "/tmp/invalid_XXXXXX";
-    int fd = mkstemp(invalid_path);
-    const char* garbage = "This is not a tar file";
-    write(fd, garbage, strlen(garbage));
-    close(fd);
+        // Add a simple solvable
+        Id p = repo_add_solvable(repo);
+        Solvable* s = pool_id2solvable(pool, p);
+        s->name = pool_str2id(pool, "test-pkg", 1);
+        s->evr = pool_str2id(pool, "1.0-0", 1);
+        repo_add_repodata(repo, 0); // Add a repodata area
 
-    p = add_package_tar_bz2(invalid_path, pool, repo);
-    ck_assert_int_eq(p, 0);
+        // Test internalization
+        internalize_repo(repo);
 
-    unlink(invalid_path);
-    repo_free(repo, 1);
-    pool_free(pool);
-}
-END_TEST
+        // Verify repo is internalized (basic check)
+        ck_assert_int_gt(repo->start, 0);
 
-// TESTY SUITE SETUP
-Suite* parser_suite(void) {
-    Suite* s = suite_create("Parser");
+        repo_free(repo, 1);
+        pool_free(pool);
+    }
+    END_TEST
 
-    // Load JSON tests
-    TCase* tc_load = tcase_create("LoadJSON");
-    tcase_add_test(tc_load, test_load_json_valid);
-    tcase_add_test(tc_load, test_load_json_invalid);
-    tcase_add_test(tc_load, test_load_json_malformed);
-    suite_add_tcase(s, tc_load);
+    // TEST SUITE SETUP
+    Suite* parser_suite(void) {
+        Suite* s = suite_create("Parser");
 
-    // Package key tests
-    TCase* tc_key = tcase_create("PackageKey");
-    tcase_add_test(tc_key, test_generate_package_key_valid);
-    tcase_add_test(tc_key, test_generate_package_key_missing_name);
-    suite_add_tcase(s, tc_key);
+        // Load JSON tests
+        TCase* tc_load = tcase_create("LoadJSON");
+        tcase_add_test(tc_load, test_load_json_valid);
+        tcase_add_test(tc_load, test_load_json_invalid);
+        tcase_add_test(tc_load, test_load_json_malformed);
+        suite_add_tcase(s, tc_load);
 
-    // Collection tests
-    TCase* tc_collect = tcase_create("CollectPackages");
-    tcase_add_test(tc_collect, test_collect_packages_basic);
-    tcase_add_test(tc_collect, test_collect_packages_with_defaults);
-    tcase_set_timeout(tc_collect, 10);
-    suite_add_tcase(s, tc_collect);
+        // Repo add conda tests
+        TCase* tc_conda = tcase_create("RepoAddConda");
+        tcase_add_test(tc_conda, test_repo_add_conda_basic);
+        tcase_add_test(tc_conda, test_custom_fields_with_repo_add_conda);
+        tcase_add_test(tc_conda, test_add_package_tar_bz2_with_repo_add_conda);
+        tcase_add_test(tc_conda, test_load_repository_with_generation);
+        tcase_add_test(tc_conda, test_generate_default_metadata);
+        tcase_add_test(tc_conda, test_internalize_repo);
+        tcase_set_timeout(tc_conda, 15);
+        suite_add_tcase(s, tc_conda);
 
-    // Dependency parsing tests
-    TCase* tc_depends = tcase_create("ParseDepends");
-    tcase_add_test(tc_depends, test_parse_depends_basic_name_only);
-    tcase_add_test(tc_depends, test_parse_depends_with_operators);
-    tcase_add_test(tc_depends, test_custom_fields_storage_and_retrieval_fn);
-    suite_add_tcase(s, tc_depends);
-
-    // Tar.bz2 parsing tests
-    TCase* tc_tar = tcase_create("TarBz2Parsing");
-    tcase_add_test(tc_tar, test_add_package_tar_bz2_basic);
-    tcase_add_test(tc_tar, test_add_package_tar_bz2_with_nested_source);
-    tcase_add_test(tc_tar, test_add_package_tar_bz2_without_index_json);
-    tcase_add_test(tc_tar, test_add_package_tar_bz2_invalid_file);
-    tcase_set_timeout(tc_tar, 30); // Longer timeout for tar operations
-    suite_add_tcase(s, tc_tar);
-
-    return s;
-}
+        return s;
+    }

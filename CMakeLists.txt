@@ -87,12 +87,17 @@ set_target_properties(balikar PROPERTIES
 add_executable(tests
         src/utils/cli_helpers.c
         src/utils/system_helpers.c
+        src/utils/debug.c
+        src/utils/print.c
+        src/utils/string_helpers.c
         src/common/common.c
         src/balikar/parser.c
+        src/balikar/solver.c
         tests/tests-utils/test_cli_helpers.c
         tests/tests-utils/test_system_helpers.c
         tests/main.c
         tests/tests-src/test_parser.c
+        tests/tests-src/test_solver.c
 )
 
 target_include_directories(tests PRIVATE
