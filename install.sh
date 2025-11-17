@@ -48,14 +48,61 @@ mkdir -p "$INSTALL_DIR"
 cp build/balikar "$INSTALL_DIR/balikar"
 chmod 755 "$INSTALL_DIR/balikar"
 
-# Add to PATH if needed
+# Add to PATH if needed (user installation only)
 if [ "$SYSTEM_INSTALL" = false ]; then
+    PATH_ADDED=false
+    
+    # Check if already in PATH
     if ! echo "$PATH" | grep -q "$HOME/.local/bin"; then
         echo ""
-        echo "⚠️  Add $HOME/.local/bin to your PATH:"
-        echo "    echo 'export PATH=\"\$HOME/.local/bin:\$PATH\"' >> ~/.bashrc"
-        echo "    source ~/.bashrc"
+        echo "Adding $HOME/.local/bin to PATH..."
+        
+        # Detect shell and add to appropriate rc file
+        if [ -n "$BASH_VERSION" ]; then
+            # Bash
+            RC_FILE="$HOME/.bashrc"
+            if ! grep -q "export PATH=\"\$HOME/.local/bin:\$PATH\"" "$RC_FILE" 2>/dev/null; then
+                echo "" >> "$RC_FILE"
+                echo "# Added by Balikar installer" >> "$RC_FILE"
+                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
+                PATH_ADDED=true
+                echo "✓ Added to $RC_FILE"
+            fi
+        elif [ -n "$ZSH_VERSION" ]; then
+            # Zsh
+            RC_FILE="$HOME/.zshrc"
+            if ! grep -q "export PATH=\"\$HOME/.local/bin:\$PATH\"" "$RC_FILE" 2>/dev/null; then
+                echo "" >> "$RC_FILE"
+                echo "# Added by Balikar installer" >> "$RC_FILE"
+                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
+                PATH_ADDED=true
+                echo "✓ Added to $RC_FILE"
+            fi
+        else
+            # Generic shell
+            RC_FILE="$HOME/.profile"
+            if ! grep -q "export PATH=\"\$HOME/.local/bin:\$PATH\"" "$RC_FILE" 2>/dev/null; then
+                echo "" >> "$RC_FILE"
+                echo "# Added by Balikar installer" >> "$RC_FILE"
+                echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
+                PATH_ADDED=true
+                echo "✓ Added to $RC_FILE"
+            fi
+        fi
+        
+        if [ "$PATH_ADDED" = true ]; then
+            echo ""
+            echo "⚠️  Restart your shell or run:"
+            echo "    source $RC_FILE"
+        else
+            echo "✓ PATH already configured"
+        fi
+    else
+        echo "✓ $HOME/.local/bin already in PATH"
     fi
+    
+    # Temporarily add to current session
+    export PATH="$HOME/.local/bin:$PATH"
 fi
 
 echo ""
