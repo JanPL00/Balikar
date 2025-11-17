@@ -16,18 +16,31 @@ Source-based package manager inspired by Linux From Scratch (LFS), using libsolv
 
 ### Installation
 
+**Automated (recommended):**
 ```bash
 # Clone repository
 git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
 cd proj6_balikar
 
+# Run installation script
+./install.sh              # User installation (~/.local/bin)
+# OR
+sudo ./install.sh         # System-wide installation (/usr/local/bin)
+```
+
+**Manual:**
+```bash
 # Build (requires libsolv, jansson, curl, openssl)
 cmake -B build
 cmake --build build
 
-# Configure repositories
+# Configure repositories (system-wide)
+sudo mkdir -p /etc/balikar
+sudo cp repos.conf /etc/balikar/repos.conf
+
+# OR configure per-user
 mkdir -p ~/.config/balikar
-cp doc/repos.conf.example ~/.config/balikar/repos.conf
+cp repos.conf ~/.config/balikar/repos.conf
 
 # List available packages
 ./build/balikar repo list

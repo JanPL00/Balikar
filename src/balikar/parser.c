@@ -696,6 +696,51 @@ static int check_index_newer_than_repodata(const char *repo_path, time_t repodat
     return found_newer;
 }
 
+// Helper to download repodata.json from remote URL
+static int download_repodata(const char *repo_url, const char *dest_path) {
+    char url[4096];
+    snprintf(url, sizeof(url), "%s/repodata.json", repo_url);
+    
+    log_info("Downloading repodata.json from: %s", url);
+    
+    CURL *curl = curl_easy_init();
+    if (!curl) {
+        log_error("Failed to initialize curl");
+        return -1;
+    }
+    
+    FILE *fp = fopen(dest_path, "wb");
+    if (!fp) {
+        log_error("Failed to open %s for writing", dest_path);
+        curl_easy_cleanup(curl);
+        return -1;
+    }
+    
+    curl_easy_setopt(curl, CURLOPT_URL, url);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+    curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+    curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+    
+    CURLcode res = curl_easy_perform(curl);
+    fclose(fp);
+    curl_easy_cleanup(curl);
+    
+    if (res != CURLE_OK) {
+        log_error("Failed to download repodata.json: %s", curl_easy_strerror(res));
+        unlink(dest_path);
+        return -1;
+    }
+    
+    log_info("Successfully downloaded repodata.json");
+    return 0;
+}
+
+// Check if path is a remote URL
+static int is_remote_url(const char *path) {
+    return (strncmp(path, "http://", 7) == 0 || 
+            strncmp(path, "https://", 8) == 0);
+}
+
 // Load repository: Generate repodata if needed, then repo_add_conda
 Repo *load_repository(Pool *pool, const char *repo_path) {
     if (!pool || !repo_path) return NULL;
@@ -704,24 +749,38 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
     set_system_arch(pool);
 
     char repodata_path[2048];
-    snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
-
-    struct stat st;
-    int needs_regen = 0;
+    int is_remote = is_remote_url(repo_path);
     
-    if (stat(repodata_path, &st) != 0) {
-        log_info("No repodata.json – generating...");
-        needs_regen = 1;
-    } else {
-        // Check if any index.json is newer than repodata.json
-        if (check_index_newer_than_repodata(repo_path, st.st_mtime)) {
-            log_info("Detected changes in index.json files – regenerating repodata.json...");
-            needs_regen = 1;
+    if (is_remote) {
+        // For remote repos, download repodata.json to cache
+        snprintf(repodata_path, sizeof(repodata_path), "/var/cache/balikar/downloads/repodata.json");
+        
+        // Always download fresh repodata.json for remote repos
+        if (download_repodata(repo_path, repodata_path) != 0) {
+            log_error("Failed to download repodata.json from remote repository");
+            return NULL;
         }
-    }
-    
-    if (needs_regen) {
-        if (generate_repodata(repo_path) != 0) return NULL;
+    } else {
+        // Local repository
+        snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
+        
+        struct stat st;
+        int needs_regen = 0;
+        
+        if (stat(repodata_path, &st) != 0) {
+            log_info("No repodata.json – generating...");
+            needs_regen = 1;
+        } else {
+            // Check if any index.json is newer than repodata.json
+            if (check_index_newer_than_repodata(repo_path, st.st_mtime)) {
+                log_info("Detected changes in index.json files – regenerating repodata.json...");
+                needs_regen = 1;
+            }
+        }
+        
+        if (needs_regen) {
+            if (generate_repodata(repo_path) != 0) return NULL;
+        }
     }
 
     FILE *fp = fopen(repodata_path, "r");
