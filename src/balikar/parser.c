@@ -211,11 +211,30 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
         }
     }
 
-    // Source/download_url
-    json_t *source = json_object_get(index, "source");
+    // Source array (nový formát) - ukládáme jako JSON string
+    json_t *source_array = json_object_get(index, "source");
+    if (source_array && json_is_array(source_array)) {
+        char *str = json_dumps(source_array, JSON_COMPACT);
+        if (str) {
+            repodata_set_str(data, p, pool_str2id(pool, "source", 1), str);
+            free(str);
+            log_debug(1, "Set source array for solvable %d", p);
+        }
+    }
+
+    // Download_url (fallback nebo explicitní)
+    json_t *download_url_json = json_object_get(index, "download_url");
     int source_set = 0;
-    if (source && json_is_string(source)) {
-        const char* source_val = json_string_value(source);
+    if (download_url_json && json_is_string(download_url_json)) {
+        const char* download_val = json_string_value(download_url_json);
+        if (download_val && download_val[0] != '\0') {
+            repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), download_val);
+            source_set = 1;
+        }
+    }
+    // Legacy: source jako string (starý formát)
+    if (!source_set && source_array && json_is_string(source_array)) {
+        const char* source_val = json_string_value(source_array);
         if (source_val && source_val[0] != '\0') {
             repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), source_val);
             source_set = 1;
@@ -761,13 +780,29 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
                                                 found_match = 1;
                                                 log_debug(1, "Found match for %s-%s in JSON", name, evr);
                         
-                        // Add source/download_url
-                        json_t *source = json_object_get(pkg_json, "source");
-                        if (!source) source = json_object_get(pkg_json, "download_url");
-                        if (source && json_is_string(source)) {
-                            const char *source_val = json_string_value(source);
-                                                        log_debug(1, "Set download_url for %s to: %s", name, source_val);
+                        // Add source array (nový formát)
+                        json_t *source_array = json_object_get(pkg_json, "source");
+                        if (source_array && json_is_array(source_array)) {
+                            char *str = json_dumps(source_array, JSON_COMPACT);
+                            if (str) {
+                                repodata_set_str(data, p, pool_str2id(pool, "source", 1), str);
+                                free(str);
+                                log_debug(1, "Set source array for %s", name);
+                            }
+                        }
+                        
+                        // Add download_url (pro zpětnou kompatibilitu nebo samostatné použití)
+                        json_t *download_url = json_object_get(pkg_json, "download_url");
+                        if (download_url && json_is_string(download_url)) {
+                            const char *download_val = json_string_value(download_url);
+                            log_debug(1, "Set download_url for %s to: %s", name, download_val);
+                            repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), download_val);
+                        }
+                        // Legacy: source jako string (starý formát)
+                        else if (source_array && json_is_string(source_array)) {
+                            const char *source_val = json_string_value(source_array);
                             repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), source_val);
+                            log_debug(1, "Set download_url (legacy) for %s to: %s", name, source_val);
                         }
                         
                         // Add mkdeps
@@ -877,6 +912,26 @@ const char* get_custom_source(Repodata *data, Id p, Pool *pool) {
     }
 
     return source_url;
+}
+
+json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool) {
+    Id key = pool_str2id(pool, "source", 0);
+    const char *source_str = repodata_lookup_str(data, p, key);
+
+    if (!source_str) {
+        log_debug(2, "No 'source' array found for solvable %d", p);
+        return NULL;
+    }
+
+    json_error_t error;
+    json_t *source = json_loads(source_str, 0, &error);
+    if (!source || !json_is_array(source)) {
+        log_warn("Failed to parse 'source' string for solvable %d: %s", p, error.text);
+        if (source) json_decref(source);
+        return NULL;
+    }
+
+    return source;
 }
 
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool) {

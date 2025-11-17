@@ -26,6 +26,7 @@ void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);  // P�
 // Pro lookup custom metadat z Repodata (např. pro solver.c rekurzi)
 json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);  // Načte "makedeps" string a parse do json_array
 const char* get_custom_source(Repodata *data, Id p, Pool *pool);  // Načte "download_url"
+json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);  // Načte "source" array z metadat
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);  // Načte "extras" string a parse do json_array
 int get_custom_is_group(Repodata *data, Id p, Pool *pool);  // Načte "is_group" jako bool (z string "true"/"false")
 int get_custom_no_package(Repodata *data, Id p, Pool *pool);  // Podobně pro "no_package"

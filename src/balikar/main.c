@@ -8,6 +8,7 @@
 #include "../utils/includes/system_helpers.h"
 #include "../utils/includes/cli_helpers.h"
 #include "../common/common.h"
+#include "../common/config.h"
 #include <getopt.h>
 
 // Globální konfigurace z CLI
@@ -86,9 +87,10 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         cfg->package_name = argv[optind];
     }
     
-    // Výchozí repo path pokud není zadán
+    // Výchozí repo path pokud není zadán - použij z konfigurace
     if (!cfg->repo_path) {
-        cfg->repo_path = strdup("./repo");
+        init_repo_config();
+        cfg->repo_path = strdup(get_primary_repo_url());
     }
 }
 
@@ -100,6 +102,73 @@ int main(int argc, char **argv) {
     if (!cfg.command) {
         log_error("No command specified. Use -h for help.");
         print_usage(1);
+    }
+
+    // Zpracuj 'repo' příkazy přednostně (nepotřebují pool)
+    if (strcmp(cfg.command, "repo") == 0) {
+        init_repo_config();
+        
+        if (!cfg.package_name) {
+            log_error("Subcommand required for 'repo'. Use: list, add, remove, enable, disable");
+            print_usage(1);
+        }
+        
+        if (strcmp(cfg.package_name, "list") == 0) {
+            list_repositories();
+            free_repo_config();
+            return 0;
+        } else if (strcmp(cfg.package_name, "add") == 0) {
+            // Očekává další argumenty: name url [priority]
+            if (optind + 2 >= argc) {
+                log_error("Usage: balikar repo add <name> <url> [priority]");
+                return 1;
+            }
+            const char *name = argv[optind + 1];
+            const char *url = argv[optind + 2];
+            int priority = (optind + 3 < argc) ? atoi(argv[optind + 3]) : 50;
+            
+            if (add_repository(name, url, priority) == 0) {
+                save_repo_config();
+            }
+            free_repo_config();
+            return 0;
+        } else if (strcmp(cfg.package_name, "remove") == 0) {
+            if (optind + 1 >= argc) {
+                log_error("Usage: balikar repo remove <name>");
+                return 1;
+            }
+            const char *name = argv[optind + 1];
+            if (remove_repository(name) == 0) {
+                save_repo_config();
+            }
+            free_repo_config();
+            return 0;
+        } else if (strcmp(cfg.package_name, "enable") == 0) {
+            if (optind + 1 >= argc) {
+                log_error("Usage: balikar repo enable <name>");
+                return 1;
+            }
+            const char *name = argv[optind + 1];
+            if (enable_repository(name, 1) == 0) {
+                save_repo_config();
+            }
+            free_repo_config();
+            return 0;
+        } else if (strcmp(cfg.package_name, "disable") == 0) {
+            if (optind + 1 >= argc) {
+                log_error("Usage: balikar repo disable <name>");
+                return 1;
+            }
+            const char *name = argv[optind + 1];
+            if (enable_repository(name, 0) == 0) {
+                save_repo_config();
+            }
+            free_repo_config();
+            return 0;
+        } else {
+            log_error("Unknown repo subcommand: %s", cfg.package_name);
+            print_usage(1);
+        }
     }
 
     // Aplikuj konfiguraci
@@ -117,7 +186,8 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    // Načti repozitář
+    // Načti repozitář (z konfigurace nebo CLI override)
+    log_info("Using repository: %s", cfg.repo_path);
     Repo *repo = load_repository(pool, cfg.repo_path);
     if (!repo) {
         log_error("Failed to load repository from %s.", cfg.repo_path);

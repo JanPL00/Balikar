@@ -45,6 +45,7 @@ add_executable(balikar
         src/balikar/main.c
         src/balikar/downloader.c
         src/common/common.c
+        src/common/config.c
         src/balikar/parser.c
         src/utils/cli_helpers.c
         src/utils/string_helpers.c

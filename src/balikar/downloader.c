@@ -124,14 +124,47 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
 
     char *pkg_name = pool_id2str(pool, s->name);
     char *version = pool_id2str(pool, s->evr);
+    
+    // Získej Id p ze Solvable pointer
+    Id p = s - pool->solvables;
+    
+    // Preferuj source[] array (nový formát) před download_url
+    const char *actual_url = loc;  // fallback
+    const char *sha = NULL;
+    
+    // Zkus načíst source array
+    json_t *source_array = get_custom_source_array(data, p, pool);
+    if (source_array && json_array_size(source_array) > 0) {
+        json_t *first_source = json_array_get(source_array, 0);
+        if (first_source && json_is_object(first_source)) {
+            json_t *url_json = json_object_get(first_source, "url");
+            json_t *sha_json = json_object_get(first_source, "sha256");
+            
+            if (url_json && json_is_string(url_json)) {
+                actual_url = json_string_value(url_json);
+                log_info("Using source[0].url: %s", actual_url);
+            }
+            if (sha_json && json_is_string(sha_json)) {
+                sha = json_string_value(sha_json);
+                log_info("Using source[0].sha256: %s", sha);
+            }
+        }
+    }
+    
+    // Fallback na standardní sha256 z metadata
+    if (!sha) {
+        Id sha_key = pool_str2id(pool, "sha256", 0);
+        sha = repodata_lookup_str(data, p, sha_key);
+    }
+    
     char cache_path[2048];
     
     // Detekce extension včetně .tar.* formátů
     const char *ext = ".tar.xz";  // default
-    const char *last_dot = strrchr(loc, '.');
+    const char *last_dot = strrchr(actual_url, '.');
     if (last_dot) {
-        const char *last_slash = strrchr(loc, '/');
-        const char *filename = last_slash ? last_slash + 1 : loc;
+        const char *last_slash = strrchr(actual_url, '/');
+        const char *filename = last_slash ? last_slash + 1 : actual_url;
         
         // Zkontroluj .tar.{xz,gz,bz2} formáty
         if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
@@ -141,12 +174,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         else ext = last_dot;  // jiná extension
     }
     snprintf(cache_path, sizeof(cache_path), "%s/%s-%s%s", cache_dir, pkg_name, version, ext);
-
-    // Získej sha z metadata (custom nebo standard)
-    // Vypočítej Id p ze Solvable pointer
-    Id p = s - pool->solvables;
-    Id sha_key = pool_str2id(pool, "sha256", 0);
-    const char *sha = repodata_lookup_str(data, p, sha_key);
 
     // If metadata lacks sha, try sidecar for validation
     char *sidecar_sha = NULL;
@@ -174,13 +201,14 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     // Download nebo copy
     // Check if it's a local path (absolute, relative, or not a URL)
     // URLs typically start with http://, https://, ftp://, etc.
-    int is_local = (loc[0] == '/' || strncmp(loc, "./", 2) == 0 || strncmp(loc, "../", 3) == 0 ||
-                    (strncmp(loc, "http://", 7) != 0 && strncmp(loc, "https://", 8) != 0 &&
-                     strncmp(loc, "ftp://", 6) != 0 && strncmp(loc, "file://", 7) != 0));
+    int is_local = (actual_url[0] == '/' || strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0 ||
+                    (strncmp(actual_url, "http://", 7) != 0 && strncmp(actual_url, "https://", 8) != 0 &&
+                     strncmp(actual_url, "ftp://", 6) != 0 && strncmp(actual_url, "file://", 7) != 0));
     if (is_local) {
-        snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", loc, cache_path);
+        snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", actual_url, cache_path);
         if (system(cmd) != 0) {
-            log_error("Failed to copy local file to cache: %s", loc);
+            log_error("Failed to copy local file to cache: %s", actual_url);
+            if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
@@ -188,6 +216,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         if (sha && !verify_hash_from_file(cache_path, sha)) {
             log_error("Local file SHA mismatch: %s", cache_path);
             remove(cache_path);
+            if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
@@ -195,6 +224,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         FILE *fp = fopen(cache_path, "wb");
         if (!fp) {
             log_error("Failed to open %s for writing.", cache_path);
+            if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
@@ -203,11 +233,12 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         if (!curl) {
             fclose(fp);
             remove(cache_path);
+            if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
 
-        curl_easy_setopt(curl, CURLOPT_URL, loc);
+        curl_easy_setopt(curl, CURLOPT_URL, actual_url);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
@@ -225,7 +256,8 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
 
         if (res != CURLE_OK) {
             remove(cache_path);
-            log_error("Download failed: %s (%s)", curl_easy_strerror(res), loc);
+            log_error("Download failed: %s (%s)", curl_easy_strerror(res), actual_url);
+            if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
@@ -233,6 +265,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         // Verify po downloadu if SHA provided
         if (sha && !verify_hash_from_file(cache_path, sha)) {
             remove(cache_path);
+            if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
@@ -240,7 +273,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         // Compute and store SHA for remote files (for future verification)
         char *computed_sha = compute_file_sha256(cache_path);
         if (computed_sha) {
-            log_info("Computed SHA256 for remote file %s: %s", loc, computed_sha);
+            log_info("Computed SHA256 for remote file %s: %s", actual_url, computed_sha);
             
             // Store SHA in sidecar file for future cache validation
             char sha_sidecar[2048];
@@ -255,7 +288,10 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         }
     }
 
-    log_info("Downloaded/cached %s to %s", loc, cache_path);
+    log_info("Downloaded/cached %s to %s", actual_url, cache_path);
+
+    // Cleanup JSON if allocated
+    if (source_array) json_decref(source_array);
 
     // Vrať fopen pro builder (z cache)
     FILE *fp = fopen(cache_path, "rb");
