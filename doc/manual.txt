@@ -47,16 +47,23 @@ resolve <pkg>
 
 repos
     Zobraz načtené repozitáře a počet balíčků.
+    Automaticky regeneruje repodata.json pokud jsou některé index.json
+    soubory novější než repodata.json (detekce změn podle mtime).
     Příklad:
       balikar repos
       # Output: Enabled repositories:
       #         - ./repo (5 packages)
+      # Pokud byl upraven nějaký index.json:
+      # Output: Detected changes in index.json files – regenerating repodata.json...
+      #         Enabled repositories:
+      #         - ./repo (5 packages)
 
 repo-update
-    Regeneruje repodata.json z aktuálního obsahu repozitáře.
+    Vynuceně regeneruje repodata.json z aktuálního obsahu repozitáře.
     Prochází adresářovou strukturu repo/, načítá index.json soubory,
     zpracovává tar.bz2 archivy, počítá SHA256 hashe a vytváří
     nový repodata.json. Po vygenerování znovu načte repository.
+    Použij pokud potřebuješ force regeneraci bez ohledu na timestampy.
     Příklad:
       balikar repo-update
       # Output: Repository metadata updated successfully.
@@ -489,6 +496,14 @@ Solution: Zkontroluj a vymaž starou cache:
           Nebo selektivně:
           $ balikar clean-cache --pkg=glibc
           $ balikar clean-cache --pkg=gcc
+
+Problem: "Změny v index.json se neprojeví v repodata.json"
+Solution: Balikar automaticky detekuje změny při načítání repozitáře.
+          Pokud upravíš index.json, při dalším spuštění balikar repos
+          nebo jakéhokoliv příkazu se repodata.json automaticky regeneruje.
+          Detekce funguje podle modification time (mtime) souborů.
+          Pro force regeneraci bez ohledu na timestampy použij:
+          $ balikar repo-update
 
 AUTOR
 -----

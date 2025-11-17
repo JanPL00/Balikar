@@ -63,11 +63,21 @@ void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo 
 int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
 - Hlavní entry point: Vytváří repodata.json (s info/packages sekcemi), volá collect_packages (nyní s tar.bz2 podporou) a zapisuje výstup; volitelně integruje s libsolv (pool/repo); vrací 0 při úspěchu.
 
+static int check_index_newer_than_repodata(const char *repo_path, time_t repodata_mtime);
+- Rekurzivně kontroluje, zda je nějaký index.json soubor novější než repodata.json (podle modification time).
+  Prochází adresářovou strukturu repo, testuje index.json a info/index.json soubory.
+  Vrací 1 pokud najde novější soubor, jinak 0. Používá se pro automatickou detekci změn v metadatech.
+
 Repo *load_repository(Pool *pool, const char *repo_path);
-- Načítá repository do libsolv struktury: Nastaví system arch (set_system_arch), volitelně generuje repodata.json pokud chybí,
-  volá repo_add_conda (načte standardní conda pole), poté znovu načítá JSON a manuálně injektuje custom pole (download_url, mkdeps, extras, is_group, no_package)
-  pomocí repodata_set_str (repo_add_conda ignoruje custom pole). Opravuje arch na "noarch" pro solvables s neplatnou arch (0 nebo 1).
+- Načítá repository do libsolv struktury: Nastaví system arch (set_system_arch), kontroluje existenci a aktuálnost repodata.json
+  (pomocí check_index_newer_than_repodata), automaticky regeneruje repodata.json pokud chybí nebo pokud jsou některé index.json
+  soubory novější (detekce změn podle mtime), volá repo_add_conda (načte standardní conda pole), poté znovu načítá JSON a manuálně 
+  injektuje custom pole (download_url, mkdeps, extras, is_group, no_package) pomocí repodata_set_str (repo_add_conda ignoruje 
+  custom pole). Opravuje arch na "noarch" pro solvables s neplatnou arch (0 nebo 1).
   Finalizuje repo_internalize, nastavuje self-provides pro všechny solvables, volá pool_createwhatprovides; vrací Repo* nebo NULL při chybě.
+  
+POZNÁMKA: Automatická detekce změn znamená, že úpravy v index.json se projeví při příštím načtení repository (např. balikar repos, 
+balikar install). Pro force regeneraci bez ohledu na timestampy použij balikar repo-update příkaz.
 
 void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
 - Parsuje depends array (stringy jako "pkg >= 1.0") do Reldep Id (pool_rel2id s REL_* konstantami) a přidává do s->requires (solvable_add_deparray); skipuje invalidní položky; používá trim_str pro ořez stringů.
@@ -166,11 +176,21 @@ void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo 
 int generate_repodata(const char* repo_path, Pool *pool, Repo *repo);
 - Main entry point: Creates repodata.json (with info/packages sections), calls collect_packages (now with tar.bz2 support), and writes output; optionally integrates with libsolv (pool/repo); returns 0 on success.
 
+static int check_index_newer_than_repodata(const char *repo_path, time_t repodata_mtime);
+- Recursively checks if any index.json file is newer than repodata.json (based on modification time).
+  Traverses repo directory structure, testing index.json and info/index.json files.
+  Returns 1 if newer file found, otherwise 0. Used for automatic change detection in metadata.
+
 Repo *load_repository(Pool *pool, const char *repo_path);
-- Loads repository into libsolv structure: Sets system arch (set_system_arch), optionally generates repodata.json if missing,
-  calls repo_add_conda (loads standard conda fields), then re-loads JSON and manually injects custom fields (download_url, mkdeps, extras, is_group, no_package)
-  via repodata_set_str (repo_add_conda ignores custom fields). Fixes arch to "noarch" for solvables with invalid arch (0 or 1).
+- Loads repository into libsolv structure: Sets system arch (set_system_arch), checks existence and freshness of repodata.json
+  (using check_index_newer_than_repodata), automatically regenerates repodata.json if missing or if any index.json files are newer
+  (change detection based on mtime), calls repo_add_conda (loads standard conda fields), then re-loads JSON and manually injects 
+  custom fields (download_url, mkdeps, extras, is_group, no_package) via repodata_set_str (repo_add_conda ignores custom fields). 
+  Fixes arch to "noarch" for solvables with invalid arch (0 or 1).
   Finalizes with repo_internalize, sets self-provides for all solvables, calls pool_createwhatprovides; returns Repo* or NULL on error.
+  
+NOTE: Automatic change detection means that edits to index.json files will take effect on next repository load (e.g., balikar repos,
+balikar install). For force regeneration regardless of timestamps, use balikar repo-update command.
 
 void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
 - Parses depends array (strings like "pkg >= 1.0") into Reldep Id (pool_rel2id with REL_* constants) and adds to s->requires (solvable_add_deparray); skips invalid items; uses trim_str for string trimming.

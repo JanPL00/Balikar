@@ -633,6 +633,50 @@ int generate_repodata(const char* repo_path) {
     return 0;
 }
 
+// Helper: Check if any index.json is newer than repodata.json
+static int check_index_newer_than_repodata(const char *repo_path, time_t repodata_mtime) {
+    DIR *dir = opendir(repo_path);
+    if (!dir) return 0;
+    
+    struct dirent *entry;
+    int found_newer = 0;
+    
+    while ((entry = readdir(dir)) != NULL && !found_newer) {
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        char full_path[2048];
+        snprintf(full_path, sizeof(full_path), "%s/%s", repo_path, entry->d_name);
+        
+        if (entry->d_type == DT_DIR) {
+            // Check for index.json in this directory
+            char index_paths[3][2048];
+            snprintf(index_paths[0], sizeof(index_paths[0]), "%s/index.json", full_path);
+            snprintf(index_paths[1], sizeof(index_paths[1]), "%s/info/index.json", full_path);
+            
+            for (int i = 0; i < 2; i++) {
+                struct stat index_st;
+                if (stat(index_paths[i], &index_st) == 0) {
+                    if (index_st.st_mtime > repodata_mtime) {
+                        log_info("Found newer index.json: %s", index_paths[i]);
+                        found_newer = 1;
+                        break;
+                    }
+                }
+            }
+            
+            // Recursively check subdirectories
+            if (!found_newer && check_index_newer_than_repodata(full_path, repodata_mtime)) {
+                found_newer = 1;
+            }
+        }
+    }
+    
+    closedir(dir);
+    return found_newer;
+}
+
 // Load repository: Generate repodata if needed, then repo_add_conda
 Repo *load_repository(Pool *pool, const char *repo_path) {
     if (!pool || !repo_path) return NULL;
@@ -644,8 +688,20 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
     snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
 
     struct stat st;
+    int needs_regen = 0;
+    
     if (stat(repodata_path, &st) != 0) {
         log_info("No repodata.json – generating...");
+        needs_regen = 1;
+    } else {
+        // Check if any index.json is newer than repodata.json
+        if (check_index_newer_than_repodata(repo_path, st.st_mtime)) {
+            log_info("Detected changes in index.json files – regenerating repodata.json...");
+            needs_regen = 1;
+        }
+    }
+    
+    if (needs_regen) {
         if (generate_repodata(repo_path) != 0) return NULL;
     }
 
