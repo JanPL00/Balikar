@@ -1,0 +1,21 @@
+{
+  "arch": "x86_64",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+    "glibc"
+  ],
+  "license": "LGPLv3+",
+  "name": "gmp",
+  "platform": "linux",
+  "version": "6.3.0",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/g/gmp/gmp-6.3.0.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+    "sha256": "956dc04e864001a9c22429f761f2c283"
+  }],
+  "extras": [],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": []
+}

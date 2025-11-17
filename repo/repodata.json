@@ -1,0 +1,318 @@
+{
+    "info": {
+        "subdir": "noarch",
+        "platform": "linux",
+        "arch": "x86_64"
+    },
+    "packages": {
+        "hello-1.0-0.tar.bz2": {
+            "name": "hello",
+            "version": "1.0",
+            "build": "0",
+            "arch": "x86_64",
+            "depends": [],
+            "license": "MIT",
+            "summary": "Test hello package",
+            "download_url": "repo/h/hello/hello-1.0.tar.bz2",
+            "build_number": 0,
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "tar-1.35-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc"
+            ],
+            "license": "GPLv3+",
+            "name": "tar",
+            "platform": "linux",
+            "version": "1.35",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/t/tar/tar-1.35.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz",
+                    "sha256": "a2d8042658cfd8ea939e6d911eaf4152"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "iana-etc-20250807-0.tar.bz2": {
+            "arch": "noarch",
+            "build": "0",
+            "build_number": 0,
+            "depends": [],
+            "license": "MIT",
+            "name": "iana-etc",
+            "platform": "linux",
+            "version": "20250807",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/i/iana-etc/iana-etc-20250807.tar.bz2",
+            "source": [
+                {
+                    "url": "https://github.com/Mic92/iana-etc/releases/download/20250807/iana-etc-20250807.tar.gz",
+                    "sha256": "de0a909103d4ff59d1424c5ec7ac9e4a"
+                }
+            ],
+            "extras": [],
+            "is_group": true,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "zlib-1.3.1-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "iana-etc"
+            ],
+            "license": "zlib",
+            "name": "zlib",
+            "platform": "linux",
+            "version": "1.3.1",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/z/zlib/zlib-1.3.1.tar.bz2",
+            "source": [
+                {
+                    "url": "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
+                    "sha256": "9855b6d802d7fe5b7bd5b196a2271655"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "sha256": "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
+            "md5": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "gcc-15.2.0-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc",
+                "binutils",
+                "gmp",
+                "mpfr",
+                "mpc"
+            ],
+            "license": "GPLv3+",
+            "name": "gcc",
+            "platform": "linux",
+            "version": "15.2.0",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/g/gcc/gcc-15.2.0.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/gcc/gcc-15.2.0/gcc-15.2.0.tar.xz",
+                    "sha256": "3e6cb5ef3899f9f490a8a1fbb26e6fda"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [
+                "gmp",
+                "mpfr",
+                "mpc"
+            ],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "gmp-6.3.0-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc"
+            ],
+            "license": "LGPLv3+",
+            "name": "gmp",
+            "platform": "linux",
+            "version": "6.3.0",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/g/gmp/gmp-6.3.0.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+                    "sha256": "956dc04e864001a9c22429f761f2c283"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "gzip-1.14-0.tar.bz2": {
+            "arch": "noarch",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc"
+            ],
+            "license": "GPLv3+",
+            "name": "gzip",
+            "platform": "linux",
+            "version": "1.14",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/g/gzip/gzip-1.14.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz",
+                    "sha256": "4bf5a10f287501ee8e8ebe00ef62b2c2"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "glibc-2.42-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [],
+            "license": "LGPL",
+            "name": "glibc",
+            "platform": "linux",
+            "version": "2.42",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/g/glibc/glibc-2.42.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/glibc/glibc-2.42.tar.xz",
+                    "sha256": "23c6f5a27932b435cae94e087cb8b1f5"
+                }
+            ],
+            "extras": [
+                "https://www.linuxfromscratch.org/patches/lfs/12.4/glibc-2.42-fhs-1.patch",
+                "https://www.iana.org/time-zones/repository/releases/tzdata2025b.tar.gz"
+            ],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "coreutils-9.7-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc"
+            ],
+            "license": "GPLv3+",
+            "name": "coreutils",
+            "platform": "linux",
+            "version": "9.7",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/c/coreutils/coreutils-9.7.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/coreutils/coreutils-9.7.tar.xz",
+                    "sha256": "6b7285faf7d5eb91592bdd689270d3f1"
+                }
+            ],
+            "extras": [
+                "https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-i18n-1.patch",
+                "https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-upstream_fix-1.patch"
+            ],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "bash-5.3-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc",
+                "readline"
+            ],
+            "license": "GPLv3+",
+            "name": "bash",
+            "platform": "linux",
+            "version": "5.3",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/b/bash/bash-5.3.tar.bz2",
+            "source": [
+                {
+                    "url": "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz",
+                    "sha256": "977c8c0c5ae6309191e7768e28ebc951"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        },
+        "binutils-2.45-0.tar.bz2": {
+            "arch": "x86_64",
+            "build": "0",
+            "build_number": 0,
+            "depends": [
+                "glibc",
+                "zlib"
+            ],
+            "license": "GPLv3+",
+            "name": "binutils",
+            "platform": "linux",
+            "version": "2.45",
+            "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/b/binutils/binutils-2.45.tar.bz2",
+            "source": [
+                {
+                    "url": "https://sourceware.org/pub/binutils/releases/binutils-2.45.tar.xz",
+                    "sha256": "dee5b4267e0305a99a3c9d6131f45759"
+                }
+            ],
+            "extras": [],
+            "is_group": false,
+            "no_package": false,
+            "mkdeps": [],
+            "md5": "",
+            "sha256": "",
+            "size": 0,
+            "subdir": "noarch",
+            "timestamp": 1763385523000
+        }
+    },
+    "packages.conda": {}
+}

@@ -1,0 +1,22 @@
+{
+  "arch": "x86_64",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+    "glibc",
+    "readline"
+  ],
+  "license": "GPLv3+",
+  "name": "bash",
+  "platform": "linux",
+  "version": "5.3",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/b/bash/bash-5.3.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz",
+    "sha256": "977c8c0c5ae6309191e7768e28ebc951"
+  }],
+  "extras": [],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": []
+}

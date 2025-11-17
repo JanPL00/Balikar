@@ -1,0 +1,24 @@
+{
+  "arch": "x86_64",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+    "glibc"
+  ],
+  "license": "GPLv3+",
+  "name": "coreutils",
+  "platform": "linux",
+  "version": "9.7",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/c/coreutils/coreutils-9.7.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/coreutils/coreutils-9.7.tar.xz",
+    "sha256": "6b7285faf7d5eb91592bdd689270d3f1"
+  }],
+  "extras": [
+    "https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-i18n-1.patch",
+    "https://www.linuxfromscratch.org/patches/lfs/12.4/coreutils-9.7-upstream_fix-1.patch"
+  ],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": []
+}

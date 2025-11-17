@@ -1,0 +1,24 @@
+#!/bin/bash
+set -e
+
+# Coreutils 9.7 build script based on LFS 12.4
+
+# Apply patches
+patch -Np1 -i ../coreutils-9.7-i18n-1.patch
+patch -Np1 -i ../coreutils-9.7-upstream_fix-1.patch
+
+# Configure
+autoreconf -fiv
+./configure --prefix=/usr            \
+            --enable-no-install-program=kill,uptime
+
+# Build
+make
+
+# Install
+make install
+
+# Move programs to proper locations
+mv -v /usr/bin/chroot /usr/sbin
+mv -v /usr/share/man/man1/chroot.1 /usr/share/man/man8/chroot.8
+sed -i 's/"1"/"8"/' /usr/share/man/man8/chroot.8

@@ -1,0 +1,25 @@
+{
+  "arch": "noarch",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+    "glibc"
+  ],
+  "license": "GPLv3+",
+  "name": "gzip",
+  "platform": "linux",
+  "version": "1.14",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/g/gzip/gzip-1.14.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz",
+    "sha256": "4bf5a10f287501ee8e8ebe00ef62b2c2"
+  }],
+  "extras": [
+
+  ],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": [
+
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "arch": "x86_64",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+    "glibc",
+    "zlib"
+  ],
+  "license": "GPLv3+",
+  "name": "binutils",
+  "platform": "linux",
+  "version": "2.45",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/b/binutils/binutils-2.45.tar.bz2",
+  "source": [{
+    "url": "https://sourceware.org/pub/binutils/releases/binutils-2.45.tar.xz",
+    "sha256": "dee5b4267e0305a99a3c9d6131f45759"
+  }],
+  "extras": [],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": []
+}

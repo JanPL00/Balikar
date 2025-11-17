@@ -1,0 +1,24 @@
+{
+  "arch": "noarch",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+
+  ],
+  "license": "MIT",
+  "name": "iana-etc",
+  "platform": "linux",
+  "version": "20250807",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/i/iana-etc/iana-etc-20250807.tar.bz2",
+  "source": [{
+    "url": "https://github.com/Mic92/iana-etc/releases/download/20250807/iana-etc-20250807.tar.gz",
+    "sha256": "de0a909103d4ff59d1424c5ec7ac9e4a"
+  }],
+  "extras": [
+  ],
+  "is_group": true,
+  "no_package": false,
+  "mkdeps": [
+
+  ]
+}

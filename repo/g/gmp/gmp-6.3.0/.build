@@ -1,0 +1,18 @@
+#!/bin/bash
+set -e
+
+# GMP 6.3.0 build script based on LFS 12.4
+
+# Configure
+./configure --prefix=/usr    \
+            --enable-cxx     \
+            --disable-static \
+            --docdir=/usr/share/doc/gmp-6.3.0
+
+# Build
+make
+make html
+
+# Install
+make install
+make install-html

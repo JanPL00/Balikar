@@ -1,0 +1,21 @@
+{
+  "arch": "x86_64",
+  "build": "0",
+  "build_number": 0,
+  "depends": [
+    "glibc"
+  ],
+  "license": "GPLv3+",
+  "name": "tar",
+  "platform": "linux",
+  "version": "1.35",
+  "download_url": "https://github.com/USER/balikar-repo/raw/main/repo/t/tar/tar-1.35.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/tar/tar-1.35.tar.xz",
+    "sha256": "a2d8042658cfd8ea939e6d911eaf4152"
+  }],
+  "extras": [],
+  "is_group": false,
+  "no_package": false,
+  "mkdeps": []
+}

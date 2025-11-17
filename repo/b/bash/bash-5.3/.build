@@ -1,0 +1,16 @@
+#!/bin/bash
+set -e
+
+# Bash 5.3 build script based on LFS 12.4
+
+# Configure
+./configure --prefix=/usr             \
+            --without-bash-malloc     \
+            --with-installed-readline \
+            --docdir=/usr/share/doc/bash-5.3
+
+# Build
+make
+
+# Install
+make install
