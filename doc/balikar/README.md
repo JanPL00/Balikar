@@ -299,6 +299,7 @@ Pro přidání nové funkcionality:
 
 ## Související Dokumentace
 
-- [Repository Management](../repo/README.md) - Správa repozitářů
-- [Remote Repository Guide](../REMOTE_REPOSITORY.md) - Remote repozitáře
-- [Manual](../manual.txt) - Obecná dokumentace
+- **[Repository Management](../repo/README.md)** - Kompletní průvodce: lokální/remote repozitáře, konfigurace, CLI
+- **[Configuration Example](../repo/repos.conf.example)** - Anotovaný příklad konfigurace
+- **[Manual](../manual.txt)** - Obecná dokumentace
+- **[Main README](../../README.md)** - Přehled projektu

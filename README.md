@@ -115,8 +115,7 @@ Includes 11 packages from Linux From Scratch 12.4:
 
 ### User Guides
 
-- **[Repository Management](doc/repo/README.md)** - Complete guide to repository configuration and management
-- **[Remote Repository Setup](doc/REMOTE_REPOSITORY.md)** - Setting up and using remote repositories
+- **[Repository Management](doc/repo/README.md)** - Complete guide: configuration, remote repositories, CLI commands
 - **[Configuration Example](doc/repo/repos.conf.example)** - Annotated repository configuration
 
 ### Developer Documentation

@@ -1,6 +1,17 @@
-# Repository Management
+# Repository Management & Remote Repositories
 
-Balikar podporuje více repozitářů s prioritami, což umožňuje flexibilní správu zdrojů balíčků.
+Komplexní průvodce správou repozitářů v Balikaru včetně lokálních i vzdálených (remote) repozitářů.
+
+## Přehled
+
+Balikar podporuje:
+- **Více repozitářů** s prioritním systémem
+- **Vzdálené repozitáře** (GitHub, HTTP/HTTPS servery)
+- **Lokální repozitáře** pro development
+- **Automatické stahování** balíčků z internetu
+- **SHA256 verifikaci** pro bezpečnost
+
+Podobně jako apt, pacman nebo conda, ale pro build-from-source balíčky z Linux From Scratch.
 
 ## Konfigurace Repozitářů
 
@@ -31,6 +42,60 @@ enabled = <true|false>
 ### Příklad Konfigurace
 
 Viz [repos.conf.example](repos.conf.example)
+
+---
+
+## Remote Repositories
+
+### Struktura Metadat Balíčku
+
+Balikar používá `source[]` array pro definici zdrojových souborů balíčků:
+
+```json
+{
+  "name": "gzip",
+  "version": "1.14",
+  "download_url": "https://raw.githubusercontent.com/USER/balikar-repository/main/g/gzip/gzip-1.14.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz",
+    "sha256": "4bf5a10f287501ee8e8ebe00ef62b2c2"
+  }]
+}
+```
+
+**Pole metadat:**
+- **`download_url`**: URL předkompilovaného balíčku (budoucí použití pro binární balíčky)
+- **`source`**: Array objektů se zdrojovými soubory
+  - **`url`**: Přímý odkaz na zdrojový tarball (tar.gz, tar.xz, tar.bz2)
+  - **`sha256`**: SHA-256 hash pro verifikaci integrity
+
+**Zpětná kompatibilita:** Starý formát s `source` jako string je stále podporován.
+
+### Workflow Stahování
+
+```
+Parser → Načte source[] → Downloader → Preferuje source[0].url
+                                    ↓
+                              Stáhne soubor
+                                    ↓
+                          Ověří SHA256 checksum
+                                    ↓
+                        Cache do /var/cache/balikar/
+```
+
+### Bezpečnost
+
+**SHA256 verifikace:**
+- Každý stažený soubor je automaticky ověřen
+- **Shoda**: Soubor uložen do cache a použit
+- **Neshoda**: Soubor smazán, instalace selže
+
+**Doporučení:**
+1. ✅ Vždy uvádějte SHA256 hash
+2. ✅ Používejte HTTPS pro remote URL
+3. ✅ Stahujte pouze z důvěryhodných zdrojů (GNU FTP, GitHub releases)
+
+---
 
 ## CLI Příkazy
 
@@ -154,14 +219,56 @@ balikar repo enable production
 
 ### Publikování Vlastního Repozitáře
 
+#### 1. Struktura Adresářů
+
+```
+myrepo/
+├── repodata.json
+├── b/
+│   └── bash/
+│       └── bash-5.3/
+│           ├── index.json
+│           ├── bash-5.3.tar.bz2  (volitelný, pro distribuci)
+│           ├── .build
+│           └── .install/
+│               └── install.sh
+├── g/
+│   └── gzip/
+│       └── gzip-1.14/
+│           ├── index.json
+│           ├── .build
+│           └── .install/
+```
+
+#### 2. Příklad index.json
+
+```json
+{
+  "name": "bash",
+  "version": "5.3",
+  "arch": "x86_64",
+  "depends": ["glibc", "readline"],
+  "license": "GPLv3+",
+  "download_url": "https://raw.githubusercontent.com/USER/myrepo/main/b/bash/bash-5.3.tar.bz2",
+  "source": [{
+    "url": "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz",
+    "sha256": "977c8c0c5ae6309191e7768e28ebc951..."
+  }],
+  "extras": [],
+  "mkdeps": [],
+  "is_group": false,
+  "no_package": false
+}
+```
+
+#### 3. Vytvoření a Publikace
+
 ```bash
 # 1. Vytvořit strukturu balíčků
 mkdir -p myrepo/{b,c,g,h}/
 
 # 2. Přidat balíčky do struktury <písmeno>/<název>/<název-verze>/
-# Každý balíček obsahuje:
-#   - index.json (metadata)
-#   - <název-verze>.tar.bz2 (archiv)
+# Každý balíček obsahuje index.json a build skripty
 
 # 3. Vygenerovat repodata.json
 balikar repo-update --repo=./myrepo
@@ -176,6 +283,28 @@ git push -u origin main
 
 # 5. Uživatelé mohou přidat váš repozitář
 balikar repo add myrepo https://raw.githubusercontent.com/user/myrepo/main 90
+```
+
+#### 4. Použití Remote Repozitáře
+
+```bash
+# Výchozí (podle repos.conf s nejvyšší prioritou)
+balikar install gzip
+
+# Override repozitáře
+balikar --repo=https://example.com/packages install bash
+balikar --repo=./local-dev install mypackage
+
+# Dry-run (zobrazí co by se stáhlo)
+balikar install gcc --dry-run
+```
+
+**Ukázka logů:**
+```
+[INFO] Using source[0].url: https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
+[INFO] Using source[0].sha256: 977c8c0c5ae6309191e7768e28ebc951
+[====>                ] 45% (5.2MB/11.5MB)
+[INFO] Downloaded to /var/cache/balikar/downloads/bash-5.3.tar.gz
 ```
 
 ## Cache Management
@@ -239,8 +368,86 @@ balikar repo enable local-dev
 balikar repos
 ```
 
+---
+
+## Implementační Detaily
+
+### Moduly
+
+- **`parser.c`**: Načítá `source[]` array z JSON a ukládá do libsolv repodata
+- **`downloader.c`**: Preferuje `source[0].url` před `download_url`, ověřuje SHA256
+- **`builder.c`**: Zpracovává stažené soubory bez změn (používá cache)
+- **`config.c`**: Správa konfigurace repozitářů (načítání, ukládání, prioritizace)
+
+### API Funkce
+
+```c
+// Repository Configuration (config.c)
+int init_repo_config(void);
+const char* get_primary_repo_url(void);
+int add_repository(const char *name, const char *url, int priority);
+int remove_repository(const char *name);
+void list_repositories(void);
+
+// Parser (parser.c)
+json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);
+int update_repository_metadata(const char *repo_path);
+Repo* load_repository(Pool *pool, const char *repo_path);
+
+// Downloader (downloader.c)
+FILE* download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
+```
+
+### Datové Struktury
+
+```c
+// Repository configuration
+typedef struct repo_config {
+    char *name;              // Repository name
+    char *url;               // URL or path
+    int priority;            // Priority (higher = preferred)
+    int enabled;             // 1 = enabled, 0 = disabled
+    struct repo_config *next; // Linked list
+} repo_config_t;
+```
+
+---
+
+## Budoucí Vylepšení
+
+- [ ] Podpora více zdrojů v `source[]` array (fallback URLs)
+- [ ] GPG signature verification
+- [ ] Podpora mirrors (automatické přepínání při selhání)
+- [ ] Delta updates (stahování pouze změn)
+- [ ] Proxy/cache server podpora
+- [ ] Repository snapshots pro reproducibility
+
+---
+
 ## Související Dokumentace
 
-- [REMOTE_REPOSITORY.md](../REMOTE_REPOSITORY.md) - Detaily o remote repozitářích a `source[]` array
-- [repos.conf.example](repos.conf.example) - Příklad konfiguračního souboru s komentáři
-- [balikar/parser.txt](../balikar/parser.txt) - Implementace parsování repodata
+- **[repos.conf.example](repos.conf.example)** - Anotovaný příklad konfigurace
+- **[Architecture & Workflow](../balikar/README.md)** - Detailní workflow diagramy
+- **[Parser Documentation](../balikar/parser.txt)** - Implementace parsování
+- **[Downloader Documentation](../balikar/downloader.txt)** - Stahování a cache
+- **[Main README](../../README.md)** - Přehled projektu
+
+---
+
+## Příklady z LFS 12.4
+
+Oficiální Balikar repozitář obsahuje balíčky z Linux From Scratch 12.4:
+
+```bash
+# Zobrazit dostupné balíčky
+balikar repos
+
+# Stáhnout a sestavit GCC 15.2.0
+balikar build gcc
+
+# Zobrazit metadata včetně source URL
+balikar show gcc
+```
+
+**Oficiální repozitář:** https://github.com/JanPL00/balikar-repository  
+**LFS dokumentace:** https://www.linuxfromscratch.org/lfs/view/stable/
