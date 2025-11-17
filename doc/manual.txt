@@ -13,7 +13,7 @@ ARCHITEKTURA
 Workflow se skládá z následujících fází:
   1. PARSE    - Načtení repository (repodata.json) a solvables
   2. SOLVE    - Dependency resolution včetně makedeps rekurze
-  3. DOWNLOAD - Stažení tar.bz2 archivů a extras (patches)
+  3. DOWNLOAD - Stažení tar.bz2 archivů a extras (patches) s progress barem
   4. BUILD    - Extrakce, aplikace patches, spuštění .build skriptu
   5. INSTALL  - Merge staging $P do chroot (TODO)
 
@@ -286,11 +286,18 @@ POUŽITÍ CASES
    $ balikar build glibc
    
    Workflow:
-   - Download glibc-2.39.tar.xz
+   - Download glibc-2.39.tar.xz s progress barem:
+     [=====>     ] 45% (5.2MB/11.5MB)
    - Download extras do cache/extras/glibc/
    - Extract glibc tar
    - Apply patches: cd source && patch -p1 < fhs-1.patch
    - Build s patches aplikovanými
+   
+   Progress bar:
+   - Zobrazuje se během remote downloadu (HTTP/HTTPS)
+   - Format: [progress bar] procenta (staženo/celkem)
+   - Automaticky přechází na nový řádek po dokončení
+   - Nepřerušuje log output (používá stderr)
 
 10. BUILD NESTED TAR STRUKTURY
     
@@ -488,6 +495,13 @@ Solution: - Zkontroluj síťové připojení
           - Stáhni manuálně do cache:
             curl -o /var/cache/balikar/downloads/pkg.tar.xz <URL>
           - Nebo nastav glibc jako virtual: "no_package": true
+
+Problem: "tar: This does not look like a tar archive" při buildu
+Solution: Soubor v cache je prázdný nebo poškozený (přerušený download).
+          Balikar nyní automaticky detekuje a smaže poškozené soubory.
+          Pokud problém přetrvává:
+          $ balikar clean-cache --pkg=<package>
+          $ balikar build <package>  # Stáhne znovu
 
 Problem: "Cache zabírá mnoho místa"
 Solution: Zkontroluj a vymaž starou cache:

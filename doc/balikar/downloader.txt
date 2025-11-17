@@ -26,6 +26,14 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream);
 - Callback funkce pro libcurl; zapisuje stažená data do FILE stream pomocí fwrite;
   vrací počet zapsaných bytů; používá se v curl_easy_setopt(CURLOPT_WRITEFUNCTION).
 
+static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
+- Progress callback pro libcurl; zobrazuje progress bar během stahování;
+  formát: [=====>     ] 45% (5.2MB/11.5MB);
+  používá stderr pro output aby neinterferoval s logováním;
+  automaticky přejde na nový řádek po dokončení (dlnow >= dltotal);
+  vrací 0 pro pokračování, nenulovou hodnotu pro abort;
+  používá se v curl_easy_setopt(CURLOPT_XFERINFOFUNCTION).
+
 static char* compute_file_sha256(const char *file_path);
 - Vypočítá SHA256 hash souboru a vrací hex string (64 znaků + null terminator);
   používá OpenSSL SHA256_Init/Update/Final (deprecated API, ale funkční);
@@ -45,12 +53,15 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
   vytvoří cache path ("<cache_dir>/<name>-<version><ext>"), načte SHA256 z Repodata (repodata_lookup_str, key="sha256"),
   pokud SHA chybí, zkusí načíst z sidecar (read_sha256_sidecar),
   zkontroluje cache existence (access) a verify hash (verify_hash_from_file) -> pokud OK, vrátí fopen(cache_path, "r");
+  NOVĚ: pokud verifikace selže (soubor je poškozený/prázdný/špatný hash), automaticky odstraní soubor a sidecar pro re-download;
   detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://"; remote = začíná těmito protokoly),
   LOKÁLNÍ: cp příkazem kopíruje do cache, ověří hash pokud existuje (verify_hash_from_file), při mismatch: remove + error;
   REMOTE: fopen(cache_path, "wb"), inicializuje CURL (curl_easy_init), nastaví URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
   stáhne (curl_easy_perform), při chybě: remove + error, po úspěchu: ověří hash pokud existuje (verify_hash_from_file),
   vypočítá SHA256 remote souboru (compute_file_sha256), zaloguje, uloží do sidecar "<cache_path>.sha256" (pro budoucí verify bez metadata);
   cleanup: free(cache_dir); vrací fopen(cache_path, "rb") pro builder nebo NULL při chybě.
+  
+OPRAVA: Automatické odstranění poškozeného souboru z cache řeší problém s prázdnými/přerušenými downloady.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Stáhne extra soubory (patche) z JSON array extras (pole URL stringů);
@@ -107,6 +118,14 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream);
 - Callback function for libcurl; writes downloaded data to FILE stream using fwrite;
   returns number of bytes written; used in curl_easy_setopt(CURLOPT_WRITEFUNCTION).
 
+static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
+- Progress callback for libcurl; displays progress bar during download;
+  format: [=====>     ] 45% (5.2MB/11.5MB);
+  uses stderr for output to not interfere with logging;
+  automatically adds newline after completion (dlnow >= dltotal);
+  returns 0 to continue, non-zero to abort;
+  used in curl_easy_setopt(CURLOPT_XFERINFOFUNCTION).
+
 static char* compute_file_sha256(const char *file_path);
 - Computes SHA256 hash of file and returns hex string (64 chars + null terminator);
   uses OpenSSL SHA256_Init/Update/Final (deprecated API, but functional);
@@ -126,12 +145,15 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
   creates cache path ("<cache_dir>/<name>-<version><ext>"), loads SHA256 from Repodata (repodata_lookup_str, key="sha256"),
   if SHA is missing, tries to load from sidecar (read_sha256_sidecar),
   checks cache existence (access) and verifies hash (verify_hash_from_file) -> if OK, returns fopen(cache_path, "r");
+  NEW: if verification fails (corrupted/empty/bad hash file), automatically removes file and sidecar for re-download;
   detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://"; remote = starts with these protocols),
   LOCAL: copies to cache using cp command, verifies hash if exists (verify_hash_from_file), on mismatch: remove + error;
   REMOTE: fopen(cache_path, "wb"), initializes CURL (curl_easy_init), sets URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
   downloads (curl_easy_perform), on error: remove + error, on success: verifies hash if exists (verify_hash_from_file),
   computes SHA256 of remote file (compute_file_sha256), logs it, stores in sidecar "<cache_path>.sha256" (for future verify without metadata);
   cleanup: free(cache_dir); returns fopen(cache_path, "rb") for builder or NULL on error.
+  
+FIX: Automatic removal of corrupted cached files resolves issue with empty/interrupted downloads.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Downloads extra files (patches) from JSON array extras (array of URL strings);

@@ -8,6 +8,39 @@ static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
     return fwrite(ptr, size, nmemb, (FILE *)stream);
 }
 
+// Helper: Progress callback for curl download
+static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
+    (void)clientp;
+    (void)ultotal;
+    (void)ulnow;
+    
+    if (dltotal <= 0) return 0;  // Neznámá velikost
+    
+    int percent = (int)((100.0 * dlnow) / dltotal);
+    int bar_width = 50;
+    int filled = (bar_width * dlnow) / dltotal;
+    
+    // Formátování velikostí
+    double dl_mb = dlnow / 1024.0 / 1024.0;
+    double total_mb = dltotal / 1024.0 / 1024.0;
+    
+    // Progress bar: [=====>     ] 45% (5.2MB/11.5MB)
+    fprintf(stderr, "\r[");
+    for (int i = 0; i < bar_width; i++) {
+        if (i < filled) fprintf(stderr, "=");
+        else if (i == filled) fprintf(stderr, ">");
+        else fprintf(stderr, " ");
+    }
+    fprintf(stderr, "] %3d%% (%.1fMB/%.1fMB)", percent, dl_mb, total_mb);
+    fflush(stderr);
+    
+    if (dlnow >= dltotal) {
+        fprintf(stderr, "\n");  // Nový řádek po dokončení
+    }
+    
+    return 0;
+}
+
 // Helper: Compute SHA256 of file and return hex string (caller must free)
 static char* compute_file_sha256(const char *file_path) {
     if (!file_path) return NULL;
@@ -120,11 +153,21 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     if (!sha) sidecar_sha = read_sha256_sidecar(cache_path);
 
     // Check cache + verify (prefer metadata sha, fallback to sidecar sha)
-    if (access(cache_path, F_OK) == 0 && verify_hash_from_file(cache_path, sha ? sha : sidecar_sha)) {
-        log_info("Using cached file: %s", cache_path);
-        free(cache_dir);
-        if (sidecar_sha) free(sidecar_sha);
-        return fopen(cache_path, "r");
+    if (access(cache_path, F_OK) == 0) {
+        if (verify_hash_from_file(cache_path, sha ? sha : sidecar_sha)) {
+            log_info("Using cached file: %s", cache_path);
+            free(cache_dir);
+            if (sidecar_sha) free(sidecar_sha);
+            return fopen(cache_path, "r");
+        } else {
+            // Verifikace selhala - smaž poškozený/prázdný soubor
+            log_warn("Cached file verification failed, removing: %s", cache_path);
+            remove(cache_path);
+            // Smaž i sidecar pokud existuje
+            char sha_sidecar[2048];
+            snprintf(sha_sidecar, sizeof(sha_sidecar), "%s.sha256", cache_path);
+            remove(sha_sidecar);
+        }
     }
     if (sidecar_sha) { free(sidecar_sha); sidecar_sha = NULL; }
 
@@ -169,6 +212,11 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        
+        // Progress bar callback
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        
         // Retry: curl_easy_setopt(curl, CURLOPT_RETRY, 3L);  // Pokud existuje v libcurl
 
         CURLcode res = curl_easy_perform(curl);
@@ -250,6 +298,11 @@ void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir) 
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            
+            // Progress bar pro extras
+            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+            
             CURLcode res = curl_easy_perform(curl);
             curl_easy_cleanup(curl);
             if (res == CURLE_OK) {
