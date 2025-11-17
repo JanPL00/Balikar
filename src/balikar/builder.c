@@ -28,6 +28,8 @@ static int detect_compression(FILE *fp) {
 	size_t r = fread(buf, 1, sizeof(buf), fp);
 	rewind(fp);
 	if (r < 2) return 0;
+	// gzip magic 1F 8B
+	if (buf[0] == 0x1F && buf[1] == 0x8B) return 3; // gz
 	// xz magic FD 37 7A 58 5A 00
 	if (r >= 6 && buf[0] == 0xFD && buf[1] == 0x37 && buf[2] == 0x7A && buf[3] == 0x58 && buf[4] == 0x5A && buf[5] == 0x00) return 1; // xz
 	// bzip2 magic 'BZ'
@@ -174,6 +176,7 @@ static int extract_archive(FILE *fp, const char *tmp_dir) {
 	const char *tarflag = "xf"; // plain
 	if (comp == 1) tarflag = "xJf"; // xz
 	else if (comp == 2) tarflag = "xjf"; // bz2
+	else if (comp == 3) tarflag = "xzf"; // gz
 	char cmd[4096];
 	snprintf(cmd, sizeof(cmd), "tar %s - -C '%s'", tarflag, tmp_dir);
 	FILE *tar = popen(cmd, "w");

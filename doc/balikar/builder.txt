@@ -16,6 +16,7 @@ HLAVNÍ KOMPONENTY
    Funkce: extract_archive(FILE *fp, const char *tmp_dir)
    
    - Detekce komprese z magic bytes:
+     * gzip:  1F 8B              → tar xzf
      * xz:    FD 37 7A 58 5A 00 → tar xJf
      * bzip2: 'BZ'              → tar xjf
      * plain:                    → tar xf
@@ -24,8 +25,9 @@ HLAVNÍ KOMPONENTY
      tar xJf - -C tmp_dir < fp
    
    - Podporované formáty:
-     * .tar.bz2  (gzip, glibc, bash, ...)
-     * .tar.xz   (moderní LFS balíčky)
+     * .tar.gz   (iana-etc, mnoho upstream balíčků)
+     * .tar.bz2  (hello, legacy LFS balíčky)
+     * .tar.xz   (moderní LFS balíčky - gzip, glibc, bash)
      * .tar      (fallback)
 
 2. REKURZIVNÍ VYHLEDÁVÁNÍ .BUILD
@@ -184,6 +186,19 @@ void set_staging_dir(const char *dir)
   
 void set_build_tmp_dir(const char *dir)
   Nastaví vlastní tmp pro build extrakci.
+
+static int detect_compression(FILE *fp)
+  Detekuje typ komprese z magic bytes:
+  - 0x1F 0x8B → gzip (vrací 3)
+  - 0xFD 0x37 0x7A 0x58 0x5A 0x00 → xz (vrací 1)
+  - 'B' 'Z' → bzip2 (vrací 2)
+  - jinak → plain tar (vrací 0)
+  Používá rewind(fp) pro návrat na začátek souboru.
+
+static int extract_archive(FILE *fp, const char *tmp_dir)
+  Extrahuje archiv do tmp_dir pomocí tar příkazu.
+  Automaticky detekuje kompresi a použije správný flag (xzf/xJf/xjf/xf).
+  Extrakce přes stdin pipe: tar xzf - -C tmp_dir < fp
 
 int commit_element(Transaction *trans, Repodata *data, Id p, 
                    FILE *fp, Pool *pool)

@@ -527,12 +527,14 @@ Založeno na: libsolv, jansson, libcurl
 
 POZNÁMKY
 --------
-- Builder podporuje .tar.bz2, .tar.xz a .tar formáty
+- Builder podporuje .tar.gz, .tar.bz2, .tar.xz a .tar formáty
+- Automatická detekce komprese podle magic bytes (gzip, xz, bzip2)
 - Rekurzivní vyhledávání .build až do depth=3
 - SHA256 verifikace stažených souborů
 - Automatický cleanup build dirs
 - Interaktivní potvrzení transakcí (y/n/q)
 - Parallel make s -j$(nproc)
+- Progress bar pro remote downloady
 
 SEE ALSO
 --------
