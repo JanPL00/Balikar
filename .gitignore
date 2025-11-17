@@ -6,8 +6,8 @@ cmake-build-*/
 .idea/
 .vscode/
 
-# Binary
-balikar
+# Binary (in root only)
+/balikar
 
 # Temporary files
 *.tmp

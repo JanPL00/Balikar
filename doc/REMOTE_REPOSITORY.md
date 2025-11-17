@@ -226,3 +226,9 @@ Balíčky v repozitáři jsou založeny na Linux From Scratch 12.4:
 ```
 
 Více informací: https://www.linuxfromscratch.org/lfs/view/stable/
+
+## Související Dokumentace
+
+- **[Repository Management](repo/README.md)** - Správa repozitářů, konfigurace, CLI příkazy
+- **[Architecture & Workflow](balikar/README.md)** - Detailní workflow diagramy a architektura
+- **[Configuration Example](repo/repos.conf.example)** - Příklady konfigurace repozitářů

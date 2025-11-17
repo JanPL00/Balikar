@@ -113,8 +113,18 @@ Includes 11 packages from Linux From Scratch 12.4:
 
 ## Documentation
 
-- [Remote Repository Setup](doc/REMOTE_REPOSITORY.md) - Full guide for remote repositories
-- [Builder Implementation](doc/balikar/builder.txt) - Build system details
-- [Parser Details](doc/balikar/parser.txt) - Metadata parsing
-- [Example Config](doc/repos.conf.example) - Repository configuration template
+### User Guides
+
+- **[Repository Management](doc/repo/README.md)** - Complete guide to repository configuration and management
+- **[Remote Repository Setup](doc/REMOTE_REPOSITORY.md)** - Setting up and using remote repositories
+- **[Configuration Example](doc/repo/repos.conf.example)** - Annotated repository configuration
+
+### Developer Documentation
+
+- **[Architecture & Workflow](doc/balikar/README.md)** - System architecture, workflow diagrams, module overview
+- **[Builder Implementation](doc/balikar/builder.txt)** - Build system details
+- **[Parser Details](doc/balikar/parser.txt)** - Metadata parsing and repository loading
+- **[Solver Implementation](doc/balikar/solver.txt)** - Dependency resolution
+- **[Downloader](doc/balikar/downloader.txt)** - Package downloading and verification
+- **[Manual](doc/manual.txt)** - General documentation
 
