@@ -92,7 +92,21 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     char *pkg_name = pool_id2str(pool, s->name);
     char *version = pool_id2str(pool, s->evr);
     char cache_path[2048];
-    const char *ext = strrchr(loc, '.') ? strrchr(loc, '.') : ".tar.xz";
+    
+    // Detekce extension včetně .tar.* formátů
+    const char *ext = ".tar.xz";  // default
+    const char *last_dot = strrchr(loc, '.');
+    if (last_dot) {
+        const char *last_slash = strrchr(loc, '/');
+        const char *filename = last_slash ? last_slash + 1 : loc;
+        
+        // Zkontroluj .tar.{xz,gz,bz2} formáty
+        if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
+        else if (strstr(filename, ".tar.gz")) ext = ".tar.gz";
+        else if (strstr(filename, ".tar.bz2")) ext = ".tar.bz2";
+        else if (strstr(filename, ".tgz")) ext = ".tgz";
+        else ext = last_dot;  // jiná extension
+    }
     snprintf(cache_path, sizeof(cache_path), "%s/%s-%s%s", cache_dir, pkg_name, version, ext);
 
     // Získej sha z metadata (custom nebo standard)
@@ -114,15 +128,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     }
     if (sidecar_sha) { free(sidecar_sha); sidecar_sha = NULL; }
 
-    // Vytvoř tmp session dir v cache
-    char tmp_dir[2048];
-    snprintf(tmp_dir, sizeof(tmp_dir), "%s/%sXXXXXX", cache_dir, TMP_SESSION_PREFIX);
-    if (!mkdtemp(tmp_dir)) {
-        log_error("Failed to create tmp session dir.");
-        free(cache_dir);
-        return NULL;
-    }
-
     // Download nebo copy
     // Check if it's a local path (absolute, relative, or not a URL)
     // URLs typically start with http://, https://, ftp://, etc.
@@ -133,7 +138,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", loc, cache_path);
         if (system(cmd) != 0) {
             log_error("Failed to copy local file to cache: %s", loc);
-            rmdir(tmp_dir);  // Cleanup
             free(cache_dir);
             return NULL;
         }
@@ -141,7 +145,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         if (sha && !verify_hash_from_file(cache_path, sha)) {
             log_error("Local file SHA mismatch: %s", cache_path);
             remove(cache_path);
-            rmdir(tmp_dir);
             free(cache_dir);
             return NULL;
         }
@@ -149,7 +152,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         FILE *fp = fopen(cache_path, "wb");
         if (!fp) {
             log_error("Failed to open %s for writing.", cache_path);
-            rmdir(tmp_dir);
             free(cache_dir);
             return NULL;
         }
@@ -158,7 +160,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         if (!curl) {
             fclose(fp);
             remove(cache_path);
-            rmdir(tmp_dir);
             free(cache_dir);
             return NULL;
         }
@@ -176,7 +177,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
 
         if (res != CURLE_OK) {
             remove(cache_path);
-            rmdir(tmp_dir);
             log_error("Download failed: %s (%s)", curl_easy_strerror(res), loc);
             free(cache_dir);
             return NULL;
@@ -185,7 +185,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
         // Verify po downloadu if SHA provided
         if (sha && !verify_hash_from_file(cache_path, sha)) {
             remove(cache_path);
-            rmdir(tmp_dir);
             free(cache_dir);
             return NULL;
         }

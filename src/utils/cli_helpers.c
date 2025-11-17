@@ -16,6 +16,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  erase <pkg>      Erase installed package\n");
     fprintf(stderr, "  repos            List enabled repositories\n");
     fprintf(stderr, "  repo-update      Regenerate repodata.json from repository\n");
+    fprintf(stderr, "  clean-cache      Clear download cache\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -d               Increase debug level\n");
@@ -24,11 +25,14 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  --no-staging     Disable staging, install directly (stable mode)\n");
     fprintf(stderr, "  --dry-run       Simulate without changes\n");
     fprintf(stderr, "  --local-package=PATH  Install from local tar.bz2 (out of repo)\n");
+    fprintf(stderr, "  --pkg=NAME      Package name for clean-cache command\n");
     fprintf(stderr, "  -h, --help      Show this help\n");
     fprintf(stderr, "\n");
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  balikar install glibc\n");
     fprintf(stderr, "  balikar build gcc --staging-dir=/tmp/stage\n");
+    fprintf(stderr, "  balikar clean-cache\n");
+    fprintf(stderr, "  balikar clean-cache --pkg=glibc\n");
     fprintf(stderr, "  balikar install --local-package=/path/to/gzip.tar.bz2\n");
     exit(exit_code);
 }
@@ -50,11 +54,18 @@ int user_confirm(const char *prompt, int default_yes) {
             return default_yes;  // Enter = default
         }
         if (*ip == 'q' || *ip == 'Q') {
+            printf("\n");
             log_error("User aborted.");
             exit(1);
         }
-        if (*ip == 'y' || *ip == 'Y') return 1;
-        if (*ip == 'n' || *ip == 'N') return 0;
+        if (*ip == 'y' || *ip == 'Y') {
+            printf("\n");
+            return 1;
+        }
+        if (*ip == 'n' || *ip == 'N') {
+            printf("\n");
+            return 0;
+        }
         // Invalid – loop again
         printf("Please enter 'y', 'n', or '%c' (default).\n", default_char);
     }

@@ -13,18 +13,8 @@
 
 // Safe cache dir allocator macro (caller frees result of CACHE_DIR)
 #define CACHE_DIR (get_cache_dir())
-#define TMP_SESSION_PREFIX "tmp_session_"
 
 static inline char *get_cache_dir(void) {
-	const char *home = getenv("HOME");
-	if (home && *home) {
-		const char *suffix = "/.balikar/cache/downloads/";
-		size_t len = strlen(home) + strlen(suffix) + 1;
-		char *buf = (char *)malloc(len);
-		if (!buf) return NULL;
-		snprintf(buf, len, "%s%s", home, suffix);
-		return buf;
-	}
 	return strdup("/var/cache/balikar/downloads/");
 }
 

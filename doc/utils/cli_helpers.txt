@@ -18,11 +18,13 @@ Modul zahrnuje error handling pro vstup a podporu default odpovědí pro non-int
 Klíčové funkce
 ----
 void print_usage(int exit_code);
-    - Vypíše nápovědu k použití CLI, včetně příkazů (install, build, resolve, erase, repos), options (--staging-dir, --chroot-path atd.) a příkladů.
+        - Vypíše nápovědu k použití CLI, včetně příkazů (install, build, resolve, erase, repos, clean-cache),
+            options (--staging-dir, --chroot-path, --pkg=NAME pro cílené čištění cache) a příkladů.
 
 int user_confirm(const char *prompt, int default_yes);
     - Zobrazí prompt pro potvrzení (y/n/q) s default odpovědí (pokud stisknuto enter).
     - Podporuje velká/malá písmena, skip whitespace, abort na q nebo EOF.
+    - Po odpovědi vytiskne zalomení řádku pro čistý následný výstup (newline po vstupu).
 
 
 Integrace v projektu
@@ -51,11 +53,13 @@ The module includes error handling for input and support for default responses f
 Key functions
 ----
 void print_usage(int exit_code);
-    - Prints the CLI usage help, including commands (install, build, resolve, erase, repos), options (--staging-dir, --chroot-path etc.) and examples.
+        - Prints the CLI usage help, including commands (install, build, resolve, erase, repos, clean-cache),
+            options (--staging-dir, --chroot-path, --pkg=NAME for targeted cache cleaning) and examples.
 
 int user_confirm(const char *prompt, int default_yes);
     - Displays a prompt for confirmation (y/n/q) with default response (if enter is pressed).
     - Supports upper/lowercase letters, skips whitespace, aborts on q or EOF.
+    - Prints a newline after the user's response to keep subsequent logs on a new line.
 
 
 Project integration

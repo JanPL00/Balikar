@@ -8,10 +8,10 @@
   "license": "LGPL",
   "name": "glibc",
   "platform": "linux",
-  "version": "2.42",
-  "source": "https://ftp.gnu.org/gnu/glibc/glibc-2.42.tar.xz",
+  "version": "2.40",
+  "source": "https://ftp.gnu.org/gnu/glibc/glibc-2.40.tar.xz",
   "extras": [
-    "https://www.linuxfromscratch.org/patches/lfs/12.4/glibc-2.42-fhs-1.patch",
+    "https://www.linuxfromscratch.org/patches/lfs/12.2/glibc-2.40-fhs-1.patch",
     "https://www.iana.org/time-zones/repository/releases/tzdata2025b.tar.gz"
   ],
   "is_group": false,

@@ -20,6 +20,7 @@ typedef struct {
     char *build_tmp_dir;
     char *repo_path;
     char *local_package;
+    char *clean_cache_pkg;
     const char *command;
     const char *package_name;
 } cli_config_t;
@@ -35,6 +36,7 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         {"build-tmp-dir", required_argument, 0, 't'},
         {"repo", required_argument, 0, 'r'},
         {"local-package", required_argument, 0, 'l'},
+        {"pkg", required_argument, 0, 'p'},
         {0, 0, 0, 0}
     };
     
@@ -67,6 +69,9 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
                 break;
             case 'l':
                 cfg->local_package = strdup(optarg);
+                break;
+            case 'p':
+                cfg->clean_cache_pkg = strdup(optarg);
                 break;
             default:
                 print_usage(1);
@@ -300,6 +305,55 @@ int main(int argc, char **argv) {
         
         log_info("Repository reloaded: %d packages found.", repo->nsolvables);
         
+    } else if (strcmp(cfg.command, "clean-cache") == 0) {
+        char *cache_dir = get_cache_dir();
+        if (!cache_dir) {
+            log_error("Failed to get cache directory.");
+            exit_code = 1;
+            goto cleanup;
+        }
+        
+        if (cfg.clean_cache_pkg) {
+            // Vymaž cache konkrétního balíčku
+            log_info("Cleaning cache for package: %s", cfg.clean_cache_pkg);
+            
+            // Smaž tar archivy a sha256 soubory
+            char pattern_cmd[2048];
+            snprintf(pattern_cmd, sizeof(pattern_cmd), 
+                     "rm -f \"%s/%s-\"* 2>/dev/null", 
+                     cache_dir, cfg.clean_cache_pkg);
+            system(pattern_cmd);
+            
+            // Smaž extras adresář
+            char extras_dir[2048];
+            snprintf(extras_dir, sizeof(extras_dir), "%s/extras/%s", cache_dir, cfg.clean_cache_pkg);
+            char rm_cmd[4096];
+            snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\" 2>/dev/null", extras_dir);
+            system(rm_cmd);
+            
+            log_info("Cache cleaned for package: %s", cfg.clean_cache_pkg);
+            log_info("Cache cleaned");
+        } else {
+            // Vymaž celou cache
+            log_info("Cleaning entire cache: %s", cache_dir);
+            
+            if (user_confirm("This will delete all cached downloads. Continue?", 0)) {
+                char rm_cmd[2048];
+                snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"/* 2>/dev/null", cache_dir);
+                int rc = system(rm_cmd);
+                if (rc == 0) {
+                    log_info("Cache cleared successfully: %s", cache_dir);
+                } else {
+                    log_error("Failed to clear cache.");
+                    exit_code = 1;
+                }
+            } else {
+                log_info("Cache cleaning cancelled.");
+            }
+        }
+        
+        free(cache_dir);
+        
     } else {
         log_error("Unknown command: %s", cfg.command);
         print_usage(1);
@@ -316,6 +370,7 @@ cleanup_no_repo:
     if (cfg.build_tmp_dir) free(cfg.build_tmp_dir);
     if (cfg.repo_path) free(cfg.repo_path);
     if (cfg.local_package) free(cfg.local_package);
+    if (cfg.clean_cache_pkg) free(cfg.clean_cache_pkg);
     
     return exit_code;
 }

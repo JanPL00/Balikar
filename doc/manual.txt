@@ -62,6 +62,24 @@ repo-update
       # Output: Repository metadata updated successfully.
       #         Repository reloaded: 5 packages found.
 
+clean-cache
+    Vymaže download cache (/var/cache/balikar/downloads/).
+    Odstraní všechny stažené tar archivy, SHA256 sidecar soubory
+    a extras (patches). Při příštím buildu se balíčky stáhnou znovu.
+    
+    Použití:
+      balikar clean-cache              # Vymaže celou cache (s potvrzením)
+      balikar clean-cache --pkg=glibc  # Vymaže pouze cache pro glibc
+    
+    Příklad:
+      balikar clean-cache
+      # This will delete all cached downloads. Continue? [n]: y
+      # [INFO] Cache cleared successfully: /var/cache/balikar/downloads/
+      
+      balikar clean-cache --pkg=glibc
+      # [INFO] Cleaning cache for package: glibc
+      # [INFO] Cache cleaned for package: glibc
+
 erase <pkg>
     Odinstalování balíčku (TODO - vyžaduje installer.c).
 
@@ -115,6 +133,12 @@ GLOBÁLNÍ OPTIONS
     Instalace z lokálního tar.bz2 mimo repository (TODO).
     Příklad:
       balikar --local-package=/path/to/gzip-1.2.tar.bz2
+
+--pkg=NAME
+    Název balíčku pro příkaz clean-cache.
+    Použije se k vymazání cache pouze pro konkrétní balíček.
+    Příklad:
+      balikar clean-cache --pkg=glibc
 
 FORMÁT BALÍČKU
 --------------
@@ -292,17 +316,29 @@ SOUBORY
 ./repo/repodata.json
     Aggregovaná metadata všech balíčků (generuje se automaticky).
 
-~/.balikar/cache/downloads/
-    Cache stažených tar archivů a jejich SHA256 sidecar souborů.
+/var/cache/balikar/downloads/
+    Cache stažených tar archivů.
+    Obsahuje:
+    - <pkg>-<version>.tar.{xz,bz2,gz} - stažené archivy
+    - <pkg>-<version>.tar.*.sha256 - SHA256 sidecar soubory
+    Vymazání: balikar clean-cache
 
-~/.balikar/cache/extras/<pkg>/
+/var/cache/balikar/downloads/extras/<pkg>/
     Cache extras (patches) pro jednotlivé balíčky.
+    Stažené patches a doplňkové soubory z "extras" pole v metadata.
+    Vymazání: balikar clean-cache --pkg=<pkg>
 
 /tmp/balikar_build_<pkg>_XXXXXX
     Dočasný build dir (vyčistí se automaticky po buildu).
+    Obsahuje:
+    - Extrahované zdrojové soubory
+    - Aplikované patches
+    - Build artefakty (*.o, build.log)
 
 $P/  (nebo --staging-dir)
     Staging directory pro DESTDIR během buildu.
+    Výchozí: $P (expanduje shell)
+    Obsahuje výsledky make install před merge do systému.
 
 RETURN CODES
 ------------
@@ -342,6 +378,12 @@ balikar repos
 # Build z vlastního repo
 balikar --repo=/srv/custom-repo build mypackage
 
+# Vymaž cache
+balikar clean-cache
+
+# Vymaž cache konkrétního balíčku
+balikar clean-cache --pkg=glibc
+
 POKROČILÉ POUŽITÍ
 -----------------
 
@@ -379,6 +421,31 @@ POKROČILÉ POUŽITÍ
    TODO: run_with_chroot() integrace
    $ balikar --chroot=/mnt/lfs build glibc
 
+6. SPRÁVA CACHE
+   
+   Cache zabírá místo, kontrola a vymazání:
+   $ du -sh /var/cache/balikar/downloads/
+   512M    /var/cache/balikar/downloads/
+   
+   # Zobrazit obsah cache
+   $ ls -lh /var/cache/balikar/downloads/
+   -rw-r--r-- 1 user user  18M Nov 17 12:00 glibc-2.40.tar.xz
+   -rw-r--r-- 1 user user   65 Nov 17 12:00 glibc-2.40.tar.xz.sha256
+   -rw-r--r-- 1 user user 1.2M Nov 17 12:10 zlib-1.3.1.tar.gz
+   
+   # Vymazat celou cache (s potvrzením)
+   $ balikar clean-cache
+   This will delete all cached downloads. Continue? [n]: y
+   [INFO] Cache cleared successfully
+   
+   # Vymazat cache konkrétního balíčku
+   $ balikar clean-cache --pkg=glibc
+   [INFO] Cache cleaned for package: glibc
+   
+   # Force re-download při příštím buildu
+   $ balikar clean-cache --pkg=zlib
+   $ balikar build mypackage  # Stáhne zlib znovu
+
 TROUBLESHOOTING
 ---------------
 
@@ -407,6 +474,21 @@ Solution: Dependency conflict. Použij:
 Problem: "No source URL for <pkg>"
 Solution: index.json neobsahuje download_url.
           Přidej: "download_url": "repo/p/pkg/pkg.tar.bz2"
+
+Problem: "Download se zasekne na velkých souborech"
+Solution: - Zkontroluj síťové připojení
+          - Použij mirrors: změň URL v index.json
+          - Stáhni manuálně do cache:
+            curl -o /var/cache/balikar/downloads/pkg.tar.xz <URL>
+          - Nebo nastav glibc jako virtual: "no_package": true
+
+Problem: "Cache zabírá mnoho místa"
+Solution: Zkontroluj a vymaž starou cache:
+          $ du -sh /var/cache/balikar/downloads/
+          $ balikar clean-cache
+          Nebo selektivně:
+          $ balikar clean-cache --pkg=glibc
+          $ balikar clean-cache --pkg=gcc
 
 AUTOR
 -----

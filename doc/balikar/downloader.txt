@@ -45,12 +45,12 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
   vytvoří cache path ("<cache_dir>/<name>-<version><ext>"), načte SHA256 z Repodata (repodata_lookup_str, key="sha256"),
   pokud SHA chybí, zkusí načíst z sidecar (read_sha256_sidecar),
   zkontroluje cache existence (access) a verify hash (verify_hash_from_file) -> pokud OK, vrátí fopen(cache_path, "r");
-  vytvoří tmp session dir (mkdtemp v cache_dir), detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://"; remote = začíná těmito protokoly),
+  detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://"; remote = začíná těmito protokoly),
   LOKÁLNÍ: cp příkazem kopíruje do cache, ověří hash pokud existuje (verify_hash_from_file), při mismatch: remove + error;
   REMOTE: fopen(cache_path, "wb"), inicializuje CURL (curl_easy_init), nastaví URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
   stáhne (curl_easy_perform), při chybě: remove + error, po úspěchu: ověří hash pokud existuje (verify_hash_from_file),
   vypočítá SHA256 remote souboru (compute_file_sha256), zaloguje, uloží do sidecar "<cache_path>.sha256" (pro budoucí verify bez metadata);
-  cleanup: free(cache_dir), rmdir(tmp_dir) při chybě; vrací fopen(cache_path, "rb") pro builder nebo NULL při chybě.
+  cleanup: free(cache_dir); vrací fopen(cache_path, "rb") pro builder nebo NULL při chybě.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Stáhne extra soubory (patche) z JSON array extras (pole URL stringů);
@@ -65,15 +65,16 @@ Integrace v projektu
 Používá se v builderu (build.c): po solve_dependencies, pro každý Solvable v transaction:
 načte download_url (get_custom_source z parser.c), volá download_package(s, url, pool, data),
 získá FILE* s tar.bz2 obsahem (v cache), extrahuje do build dir, aplikuje extras (download_extras),
-spustí build skript. Cache (`~/.balikar/cache/downloads/`) přetrvává mezi buildy, SHA sidecar soubory
+spustí build skript. Cache ("/var/cache/balikar/downloads/") přetrvává mezi buildy, SHA sidecar soubory
 umožňují verify i bez metadata v repo. Testováno v test_downloader.c (Check framework) s mock soubory;
 ~80% coverage včetně local/remote, SHA match/mismatch, cache reuse.
 
 Poznámky
 ----
 - CACHE_DIR macro: Expanze pomocí inline get_cache_dir() funkce (alokuje buffer, caller free);
-  fallback na /var/cache/balikar/downloads/ pokud HOME není nastaveno.
-- TMP_SESSION_PREFIX: "tmp_session_" pro mkdtemp pattern v cache_dir.
+  výchozí cesta je pevně "/var/cache/balikar/downloads/".
+- Dočasné session adresáře (tmp_session_*) se již nevytvářejí; stahování probíhá přímo do finální cache cesty.
+- Detekce přípony archivu pro název v cache zachovává vícenásobné přípony: podporováno .tar.xz, .tar.gz, .tar.bz2 i .tgz.
 - OpenSSL SHA256 API je deprecated v OpenSSL 3.0 (generuje warnings), ale stále funkční;
   v budoucnu refactor na EVP_Digest* API.
 - Remote SHA výpočet a sidecar: Umožňuje post-facto verify i když metadata v repo neobsahuje SHA;
@@ -125,12 +126,12 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
   creates cache path ("<cache_dir>/<name>-<version><ext>"), loads SHA256 from Repodata (repodata_lookup_str, key="sha256"),
   if SHA is missing, tries to load from sidecar (read_sha256_sidecar),
   checks cache existence (access) and verifies hash (verify_hash_from_file) -> if OK, returns fopen(cache_path, "r");
-  creates tmp session dir (mkdtemp in cache_dir), detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://"; remote = starts with these protocols),
+  detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://"; remote = starts with these protocols),
   LOCAL: copies to cache using cp command, verifies hash if exists (verify_hash_from_file), on mismatch: remove + error;
   REMOTE: fopen(cache_path, "wb"), initializes CURL (curl_easy_init), sets URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
   downloads (curl_easy_perform), on error: remove + error, on success: verifies hash if exists (verify_hash_from_file),
   computes SHA256 of remote file (compute_file_sha256), logs it, stores in sidecar "<cache_path>.sha256" (for future verify without metadata);
-  cleanup: free(cache_dir), rmdir(tmp_dir) on error; returns fopen(cache_path, "rb") for builder or NULL on error.
+  cleanup: free(cache_dir); returns fopen(cache_path, "rb") for builder or NULL on error.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Downloads extra files (patches) from JSON array extras (array of URL strings);
@@ -145,15 +146,16 @@ Project integration
 Used in builder (build.c): after solve_dependencies, for each Solvable in transaction:
 loads download_url (get_custom_source from parser.c), calls download_package(s, url, pool, data),
 gets FILE* with tar.bz2 content (in cache), extracts to build dir, applies extras (download_extras),
-runs build script. Cache (`~/.balikar/cache/downloads/`) persists between builds, SHA sidecar files
+runs build script. Cache ("/var/cache/balikar/downloads/") persists between builds, SHA sidecar files
 allow verify even without metadata in repo. Tested in test_downloader.c (Check framework) with mock files;
 ~80% coverage including local/remote, SHA match/mismatch, cache reuse.
 
 Notes
 ----
 - CACHE_DIR macro: Expands via inline get_cache_dir() function (allocates buffer, caller free);
-  fallback to /var/cache/balikar/downloads/ if HOME is not set.
-- TMP_SESSION_PREFIX: "tmp_session_" for mkdtemp pattern in cache_dir.
+  default path is fixed to "/var/cache/balikar/downloads/".
+- Temporary session directories (tmp_session_*) are no longer created; downloads are written directly to the final cache path.
+- Archive extension detection for cache naming preserves multi-dot extensions: recognized .tar.xz, .tar.gz, .tar.bz2 and .tgz.
 - OpenSSL SHA256 API is deprecated in OpenSSL 3.0 (generates warnings), but still functional;
   future refactor to EVP_Digest* API recommended.
 - Remote SHA computation and sidecar: Allows post-facto verify even when metadata in repo doesn't contain SHA;
