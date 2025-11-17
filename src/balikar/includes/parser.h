@@ -37,4 +37,7 @@ void internalize_repo(Repo *repo);  // Volá repo_internalize(repo) pro indexaci
 
 Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);  // Nové: Přidání tar.bz2 balíčku
 
+// Repository metadata update
+int update_repository_metadata(const char *repo_path);  // Update repodata.json (download for remote, generate for local)
+
 #endif //IMPL_REPO_PARSER_H

@@ -65,8 +65,15 @@ cp repos.conf ~/.config/balikar/repos.conf
 ## Repository Management
 
 ```bash
-# List configured repositories
+# List all configured repositories
+./build/balikar repos
+
+# List configured repositories (alternative)
 ./build/balikar repo list
+
+# Update repository metadata
+./build/balikar repo-update              # Updates primary repository
+./build/balikar repo-update --repo=./repo  # Updates specific repository
 
 # Add remote repository
 ./build/balikar repo add my-repo https://example.com/packages 80

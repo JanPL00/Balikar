@@ -1122,3 +1122,43 @@ cleanup:
 
     return p;
 }
+
+// Update repository metadata: download for remote, generate for local
+int update_repository_metadata(const char *repo_path) {
+    if (!repo_path) {
+        log_error("Repository path is NULL");
+        return -1;
+    }
+    
+    int is_remote = is_remote_url(repo_path);
+    
+    if (is_remote) {
+        // Remote repository: download fresh repodata.json
+        char repodata_path[2048];
+        snprintf(repodata_path, sizeof(repodata_path), "/var/cache/balikar/downloads/repodata.json");
+        
+        log_info("Updating remote repository metadata from: %s", repo_path);
+        
+        if (download_repodata(repo_path, repodata_path) != 0) {
+            log_error("Failed to download repodata.json from remote repository");
+            return -1;
+        }
+        
+        log_info("Remote repository metadata updated successfully");
+        log_info("Cached at: %s", repodata_path);
+        return 0;
+        
+    } else {
+        // Local repository: regenerate from index.json files
+        log_info("Regenerating local repository metadata from: %s", repo_path);
+        
+        int rc = generate_repodata(repo_path);
+        if (rc != 0) {
+            log_error("Failed to generate repodata.json from local repository");
+            return -1;
+        }
+        
+        log_info("Local repository metadata updated successfully");
+        return 0;
+    }
+}

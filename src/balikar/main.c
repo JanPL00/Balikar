@@ -335,8 +335,14 @@ int main(int argc, char **argv) {
         solver_free(solv);
         
     } else if (strcmp(cfg.command, "repos") == 0) {
-        log_info("Enabled repositories:");
-        log_info("  - %s (%d packages)", cfg.repo_path, repo->nsolvables);
+        // List all configured repositories
+        list_repositories();
+        
+        // Show currently active repository
+        log_info("\nCurrently using: %s", cfg.repo_path);
+        if (repo) {
+            log_info("Packages available: %d", repo->nsolvables);
+        }
         
     } else if (strcmp(cfg.command, "repo-update") == 0) {
         log_info("Updating repository metadata: %s", cfg.repo_path);
@@ -352,8 +358,8 @@ int main(int argc, char **argv) {
             return 1;
         }
         
-        // Vygeneruj nové repodata.json
-        int rc = generate_repodata(cfg.repo_path);
+        // Update metadata (download for remote, generate for local)
+        int rc = update_repository_metadata(cfg.repo_path);
         if (rc != 0) {
             log_error("Failed to update repository metadata.");
             exit_code = ERR_SOLVE_FAIL;
@@ -361,7 +367,6 @@ int main(int argc, char **argv) {
             goto cleanup_no_repo;
         }
         
-        log_info("Repository metadata updated successfully.");
         log_info("Reloading repository...");
         
         // Načti znovu repository s novými metadaty
