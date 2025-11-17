@@ -2,6 +2,7 @@
 //
 
 #include "includes/downloader.h"
+#include <ctype.h>
 
 // Helper: Curl write callback
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
@@ -14,7 +15,16 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     (void)ultotal;
     (void)ulnow;
     
-    if (dltotal <= 0) return 0;  // Neznámá velikost
+    // Spinner pro neznámou velikost
+    if (dltotal <= 0) {
+        static int spin_idx = 0;
+        char spinner[] = "|/-\\";
+        double dl_mb = dlnow / 1024.0 / 1024.0;
+        fprintf(stderr, "\rDownloading... %c (%.1fMB)", spinner[spin_idx], dl_mb);
+        spin_idx = (spin_idx + 1) % 4;
+        fflush(stderr);
+        return 0;
+    }
     
     int percent = (int)((100.0 * dlnow) / dltotal);
     int bar_width = 50;
@@ -39,6 +49,36 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     }
     
     return 0;
+}
+
+// Helper: Compute MD5 of file and return hex string (caller must free)
+static char* compute_file_md5(const char *file_path) {
+    if (!file_path) return NULL;
+    
+    FILE *fp = fopen(file_path, "rb");
+    if (!fp) return NULL;
+    
+    MD5_CTX md5;
+    MD5_Init(&md5);
+    unsigned char buffer[4096];
+    size_t bytes_read;
+    while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
+        MD5_Update(&md5, buffer, bytes_read);
+    }
+    fclose(fp);
+    
+    unsigned char hash[MD5_DIGEST_LENGTH];
+    MD5_Final(hash, &md5);
+    
+    char *computed_md5 = malloc(MD5_DIGEST_LENGTH * 2 + 1);
+    if (!computed_md5) return NULL;
+    
+    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
+        snprintf(computed_md5 + i * 2, 3, "%02x", hash[i]);
+    }
+    computed_md5[MD5_DIGEST_LENGTH * 2] = '\0';
+    
+    return computed_md5;
 }
 
 // Helper: Compute SHA256 of file and return hex string (caller must free)
@@ -71,19 +111,43 @@ static char* compute_file_sha256(const char *file_path) {
     return computed_sha;
 }
 
-// Helper: Compute SHA256 hash of file (return 1 if matches expected)
-static int verify_hash_from_file(const char *file_path, const char *expected_sha) {
-    if (!expected_sha) return 1;  // Skip if no sha in metadata
+// Helper: Compute hash of file (MD5 or SHA256) and verify (return 1 if matches expected)
+static int verify_hash_from_file(const char *file_path, const char *expected_hash) {
+    if (!expected_hash) return 1;  // Skip if no hash in metadata
     
-    char *computed_sha = compute_file_sha256(file_path);
-    if (!computed_sha) return 0;
+    size_t hash_len = strlen(expected_hash);
     
-    int match = (strcmp(computed_sha, expected_sha) == 0);
-    if (!match) {
-        log_warn("SHA256 mismatch for %s: expected %s, got %s", file_path, expected_sha, computed_sha);
+    if (hash_len == 32) {
+        // MD5 hash (128 bits = 32 hex chars)
+        char *computed_md5 = compute_file_md5(file_path);
+        if (!computed_md5) return 0;
+        
+        int match = (strcmp(computed_md5, expected_hash) == 0);
+        if (!match) {
+            log_warn("MD5 mismatch for %s: expected %s, got %s", file_path, expected_hash, computed_md5);
+        } else {
+            log_debug(1, "MD5 verified: %s", computed_md5);
+        }
+        free(computed_md5);
+        return match;
+    } else if (hash_len == 64) {
+        // SHA256 hash (256 bits = 64 hex chars)
+        char *computed_sha = compute_file_sha256(file_path);
+        if (!computed_sha) return 0;
+        
+        int match = (strcmp(computed_sha, expected_hash) == 0);
+        if (!match) {
+            log_warn("SHA256 mismatch for %s: expected %s, got %s", file_path, expected_hash, computed_sha);
+        } else {
+            log_debug(1, "SHA256 verified: %s", computed_sha);
+        }
+        free(computed_sha);
+        return match;
+    } else {
+        log_warn("Invalid hash length (%zu chars) - expected 32 (MD5) or 64 (SHA256): %s", 
+                 hash_len, expected_hash);
+        return 1;  // Skip validation but warn about bad metadata
     }
-    free(computed_sha);
-    return match;
 }
 
 // Helper: read expected SHA256 from sidecar file if present
@@ -238,29 +302,55 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
             return NULL;
         }
 
+        log_info("Downloading from: %s", actual_url);
+        
         curl_easy_setopt(curl, CURLOPT_URL, actual_url);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minut timeout
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L); // 10s connect timeout (rychlejší detekce nedostupného serveru)
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4 kvůli problémům s IPv6
         
         // Progress bar callback
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-        
-        // Retry: curl_easy_setopt(curl, CURLOPT_RETRY, 3L);  // Pokud existuje v libcurl
 
         CURLcode res = curl_easy_perform(curl);
-        curl_easy_cleanup(curl);
-        fclose(fp);
-
+        printf("\n");  // Ukončit progress řádek před výpisem chyby
+        fflush(stdout);
+        
+        // Enhanced diagnostics for connection failures
         if (res != CURLE_OK) {
+            if (res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT) {
+                log_error("Connection failed to: %s", actual_url);
+                log_error("  Error: %s (code %d)", curl_easy_strerror(res), res);
+                
+                // Get effective URL in case of redirects
+                char *effective_url = NULL;
+                curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
+                if (effective_url) {
+                    log_error("  Effective URL: %s", effective_url);
+                }
+                
+                // Get curl version info
+                curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
+                log_error("  libcurl version: %s", ver->version);
+            } else {
+                log_error("Download failed: %s (%s)", curl_easy_strerror(res), actual_url);
+            }
+            
+            curl_easy_cleanup(curl);
+            fclose(fp);
             remove(cache_path);
-            log_error("Download failed: %s (%s)", curl_easy_strerror(res), actual_url);
             if (source_array) json_decref(source_array);
             free(cache_dir);
             return NULL;
         }
+        
+        curl_easy_cleanup(curl);
+        fclose(fp);
 
         // Verify po downloadu if SHA provided
         if (sha && !verify_hash_from_file(cache_path, sha)) {
@@ -300,14 +390,111 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
 }
 
 // Funkce pro extras (patches array)
-void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir) {
-    if (!extras || !json_is_array(extras)) return;
+// Helper: Stáhne repository archiv a extrahuje .build skript
+static void try_download_build_script(const char *pkg_name, const char *version, const char *extras_subdir, const char *repo_base_url) {
+    if (!pkg_name || !version || !extras_subdir || !repo_base_url) return;
+    
+    char build_path[2048];
+    snprintf(build_path, sizeof(build_path), "%s/.build", extras_subdir);
+    
+    // Pokud už existuje, skip
+    if (access(build_path, F_OK) == 0) {
+        log_debug(2, "Build script already cached: %s", build_path);
+        return;
+    }
+    
+    // Sestavit URL repository archivu: https://repo.../g/glibc/glibc-2.42.tar.bz2
+    char first_letter = tolower(pkg_name[0]);
+    char repo_archive_url[2048];
+    snprintf(repo_archive_url, sizeof(repo_archive_url), "%s/%c/%s/%s-%s.tar.bz2", 
+             repo_base_url, first_letter, pkg_name, pkg_name, version);
+    
+    // Stáhnout repository archiv do dočasného souboru
+    char temp_archive[2048];
+    snprintf(temp_archive, sizeof(temp_archive), "%s/repo_archive.tar.bz2", extras_subdir);
+    
+    // Check if it's a local path
+    int is_local = (repo_archive_url[0] == '/' || strncmp(repo_archive_url, "./", 2) == 0 || 
+                    strncmp(repo_archive_url, "../", 3) == 0 ||
+                    (strncmp(repo_archive_url, "http://", 7) != 0 && 
+                     strncmp(repo_archive_url, "https://", 8) != 0 &&
+                     strncmp(repo_archive_url, "file://", 7) != 0));
+    
+    if (is_local) {
+        // Lokální soubor - zkopíruj
+        char cmd[4096];
+        snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", repo_archive_url, temp_archive);
+        if (system(cmd) != 0) {
+            log_debug(2, "Failed to copy local repository archive: %s", repo_archive_url);
+            return;
+        }
+    } else {
+        // Stáhnout přes HTTP
+        FILE *fp = fopen(temp_archive, "wb");
+        if (!fp) return;
+        
+        CURL *curl = curl_easy_init();
+        if (!curl) {
+            fclose(fp);
+            return;
+        }
+        
+        curl_easy_setopt(curl, CURLOPT_URL, repo_archive_url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4
+        
+        CURLcode res = curl_easy_perform(curl);
+        long http_code = 0;
+        curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+        curl_easy_cleanup(curl);
+        fclose(fp);
+        
+        if (res != CURLE_OK || http_code != 200) {
+            remove(temp_archive);
+            log_debug(2, "No repository archive found at %s (HTTP %ld)", repo_archive_url, http_code);
+            return;
+        }
+    }
+    
+    // Extrahovat .build z archivu
+    char extract_cmd[4096];
+    snprintf(extract_cmd, sizeof(extract_cmd), 
+             "tar -xjf \"%s\" -C \"%s\" --strip-components=1 \"*/.build\" 2>/dev/null || "
+             "tar -xjf \"%s\" -C \"%s\" --wildcards \"*/.build\" --strip-components=1 2>/dev/null",
+             temp_archive, extras_subdir, temp_archive, extras_subdir);
+    
+    if (system(extract_cmd) == 0) {
+        chmod(build_path, 0755);
+        log_info("Extracted .build script from repository archive");
+    } else {
+        log_debug(2, "No .build found in repository archive");
+    }
+    
+    // Odstranit dočasný archiv
+    remove(temp_archive);
+}
+
+void download_extras(json_t *extras, const char *pkg_name, const char *version, const char *repo_base_url, const char *tmp_dir) {
+    if (!pkg_name) return;
 
     char extras_subdir[2048];
     snprintf(extras_subdir, sizeof(extras_subdir), "%s/extras/%s", CACHE_DIR, pkg_name);
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", extras_subdir);
     system(cmd);
+    
+    // Automaticky zkusit stáhnout .build skript z repository
+    if (version && repo_base_url) {
+        try_download_build_script(pkg_name, version, extras_subdir, repo_base_url);
+    }
+
+    // Stáhnout ostatní extras z JSON
+    if (!extras || !json_is_array(extras)) return;
 
     size_t i;
     json_t *item;
@@ -334,6 +521,9 @@ void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir) 
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minut timeout
+            curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L); // 30s connect timeout
+            curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4
             
             // Progress bar pro extras
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);

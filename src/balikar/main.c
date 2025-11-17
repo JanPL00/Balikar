@@ -171,6 +171,57 @@ int main(int argc, char **argv) {
         }
     }
 
+    // Zpracuj clean-cache příkaz přednostně (nepotřebuje pool/repo)
+    if (strcmp(cfg.command, "clean-cache") == 0) {
+        char *cache_dir = get_cache_dir();
+        if (!cache_dir) {
+            log_error("Failed to get cache directory.");
+            return 1;
+        }
+        
+        if (cfg.clean_cache_pkg) {
+            // Vymaž cache konkrétního balíčku
+            log_info("Cleaning cache for package: %s", cfg.clean_cache_pkg);
+            
+            // Smaž tar archivy a sha256 soubory
+            char pattern_cmd[2048];
+            snprintf(pattern_cmd, sizeof(pattern_cmd), 
+                     "rm -f \"%s/%s\"* 2>/dev/null", 
+                     cache_dir, cfg.clean_cache_pkg);
+            system(pattern_cmd);
+            
+            // Smaž extras adresář
+            char extras_dir[2048];
+            snprintf(extras_dir, sizeof(extras_dir), "%s/extras/%s", cache_dir, cfg.clean_cache_pkg);
+            char rm_cmd[4096];
+            snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\" 2>/dev/null", extras_dir);
+            system(rm_cmd);
+            
+            log_info("Cache cleaned for package: %s", cfg.clean_cache_pkg);
+        } else {
+            // Vymaž celou cache
+            log_info("Cleaning entire cache: %s", cache_dir);
+            
+            if (user_confirm("This will delete all cached downloads. Continue?", 0)) {
+                char rm_cmd[2048];
+                snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"/* 2>/dev/null", cache_dir);
+                int rc = system(rm_cmd);
+                if (rc == 0) {
+                    log_info("Cache cleared successfully: %s", cache_dir);
+                } else {
+                    log_error("Failed to clear cache.");
+                    free(cache_dir);
+                    return 1;
+                }
+            } else {
+                log_info("Cache cleaning cancelled.");
+            }
+        }
+        
+        free(cache_dir);
+        return 0;
+    }
+
     // Aplikuj konfiguraci
     if (cfg.staging_dir) set_staging_dir(cfg.staging_dir);
     if (cfg.no_staging) set_staging_enabled(0);
@@ -278,12 +329,11 @@ int main(int argc, char **argv) {
                         break;
                     }
                     
-                    // Download extras (patches)
+                    // Download extras (patches) a .build skript
                     json_t *extras = get_custom_extras(data, p, pool);
-                    if (extras) {
-                        download_extras(extras, pkg_name, NULL);
-                        json_decref(extras);
-                    }
+                    const char *version = pool_id2str(pool, s->evr);
+                    download_extras(extras, pkg_name, version, cfg.repo_path, NULL);
+                    if (extras) json_decref(extras);
                     
                     // Build
                     log_info("Building %s...", pkg_name);
@@ -379,55 +429,6 @@ int main(int argc, char **argv) {
         }
         
         log_info("Repository reloaded: %d packages found.", repo->nsolvables);
-        
-    } else if (strcmp(cfg.command, "clean-cache") == 0) {
-        char *cache_dir = get_cache_dir();
-        if (!cache_dir) {
-            log_error("Failed to get cache directory.");
-            exit_code = 1;
-            goto cleanup;
-        }
-        
-        if (cfg.clean_cache_pkg) {
-            // Vymaž cache konkrétního balíčku
-            log_info("Cleaning cache for package: %s", cfg.clean_cache_pkg);
-            
-            // Smaž tar archivy a sha256 soubory
-            char pattern_cmd[2048];
-            snprintf(pattern_cmd, sizeof(pattern_cmd), 
-                     "rm -f \"%s/%s-\"* 2>/dev/null", 
-                     cache_dir, cfg.clean_cache_pkg);
-            system(pattern_cmd);
-            
-            // Smaž extras adresář
-            char extras_dir[2048];
-            snprintf(extras_dir, sizeof(extras_dir), "%s/extras/%s", cache_dir, cfg.clean_cache_pkg);
-            char rm_cmd[4096];
-            snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\" 2>/dev/null", extras_dir);
-            system(rm_cmd);
-            
-            log_info("Cache cleaned for package: %s", cfg.clean_cache_pkg);
-            log_info("Cache cleaned");
-        } else {
-            // Vymaž celou cache
-            log_info("Cleaning entire cache: %s", cache_dir);
-            
-            if (user_confirm("This will delete all cached downloads. Continue?", 0)) {
-                char rm_cmd[2048];
-                snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"/* 2>/dev/null", cache_dir);
-                int rc = system(rm_cmd);
-                if (rc == 0) {
-                    log_info("Cache cleared successfully: %s", cache_dir);
-                } else {
-                    log_error("Failed to clear cache.");
-                    exit_code = 1;
-                }
-            } else {
-                log_info("Cache cleaning cancelled.");
-            }
-        }
-        
-        free(cache_dir);
         
     } else {
         log_error("Unknown command: %s", cfg.command);

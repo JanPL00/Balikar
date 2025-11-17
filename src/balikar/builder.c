@@ -109,24 +109,49 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 	snprintf(patch_root, sizeof(patch_root), "%s/extras/%s", cache_dir, pkg_name);
 	DIR *d = opendir(patch_root);
 	if (!d) { free(cache_dir); return; }
+	
+	// Získat parent directory source_dir pro kopírování souborů
+	char parent_dir[4096];
+	snprintf(parent_dir, sizeof(parent_dir), "%s/..", source_dir);
+	
 	struct dirent *ent;
 	while ((ent = readdir(d)) != NULL) {
-		if (ent->d_name[0] == '.') continue;
-		// Ověř zda je v JSON seznamu
-		size_t i; json_t *item; int found = 0;
-		json_array_foreach(extras, i, item) {
-			if (json_is_string(item) && strstr(json_string_value(item), ent->d_name)) { found = 1; break; }
+		if (ent->d_name[0] == '.') {
+			// Speciální handling pro .build skript
+			if (strcmp(ent->d_name, ".build") != 0) continue;
+		}
+		
+		// Ověř zda je v JSON seznamu NEBO je to .build skript
+		int found = 0;
+		if (strcmp(ent->d_name, ".build") == 0) {
+			found = 1;  // .build vždy zkopírovat
+		} else {
+			size_t i; json_t *item;
+			json_array_foreach(extras, i, item) {
+				if (json_is_string(item) && strstr(json_string_value(item), ent->d_name)) { found = 1; break; }
+			}
 		}
 		if (!found) continue;
-		char patch_file[4096];
-		snprintf(patch_file, sizeof(patch_file), "%s/%s", patch_root, ent->d_name);
-		char cmd[8192];
-		snprintf(cmd, sizeof(cmd), "cd '%s' && patch -p1 < '%s' >/dev/null 2>&1", source_dir, patch_file);
-		int rc = system(cmd);
-		if (rc != 0) {
-			log_warn("Patch selhal: %s", patch_file);
+		
+		char extra_file[4096];
+		snprintf(extra_file, sizeof(extra_file), "%s/%s", patch_root, ent->d_name);
+		
+		// .build skript zkopírovat do source_dir, ostatní do parent
+		char dest_path[4096];
+		if (strcmp(ent->d_name, ".build") == 0) {
+			snprintf(dest_path, sizeof(dest_path), "%s/%s", source_dir, ent->d_name);
 		} else {
-			log_info("Aplikován patch: %s", patch_file);
+			snprintf(dest_path, sizeof(dest_path), "%s/%s", parent_dir, ent->d_name);
+		}
+		
+		char cmd[8192];
+		snprintf(cmd, sizeof(cmd), "cp -a '%s' '%s'", extra_file, dest_path);
+		int rc = system(cmd);
+		if (rc == 0) {
+			log_info("Zkopírován extra soubor: %s -> %s", ent->d_name, 
+			         strcmp(ent->d_name, ".build") == 0 ? source_dir : parent_dir);
+		} else {
+			log_warn("Kopírování selhalo: %s", ent->d_name);
 		}
 	}
 	closedir(d);
@@ -243,9 +268,11 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	if (g_staging_enabled) {
 		const char *destdir = g_staging_dir ? g_staging_dir : STAGING_DIR;
 		setenv("DESTDIR", destdir, 1);
+		setenv("P", destdir, 1);  // P je alias pro DESTDIR používaný v .build skriptech
 		log_debug(1, "DESTDIR nastaveno na: %s", destdir);
 	} else {
 		unsetenv("DESTDIR");
+		unsetenv("P");
 	}
 	long nproc = sysconf(_SC_NPROCESSORS_ONLN);
 	if (nproc < 1) nproc = 1;
