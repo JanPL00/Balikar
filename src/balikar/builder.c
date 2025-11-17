@@ -309,6 +309,8 @@ done:
 	// Cleanup
 	free(source_dir);
 	fclose(fp);
+	// Změnit cwd pryč z build_dir před smazáním
+	chdir("/tmp");
 	// Odstranění build dir (jednoduché rm -rf)
 	char rmcmd[512];
 	snprintf(rmcmd, sizeof(rmcmd), "rm -rf '%s'", build_dir);
@@ -321,6 +323,8 @@ fail_chdir:
 	free(source_dir);
 fail:
 	fclose(fp);
+	// Změnit cwd pryč z build_dir před smazáním
+	chdir("/tmp");
 	char rmcmd2[512];
 	snprintf(rmcmd2, sizeof(rmcmd2), "rm -rf '%s'", build_dir);
 	system(rmcmd2);

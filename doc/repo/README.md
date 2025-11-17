@@ -55,7 +55,7 @@ Balikar používá `source[]` array pro definici zdrojových souborů balíčků
 {
   "name": "gzip",
   "version": "1.14",
-  "download_url": "https://raw.githubusercontent.com/USER/balikar-repository/main/g/gzip/gzip-1.14.tar.bz2",
+  "download_url": "https://raw.githubusercontent.com/JanPL00/balikar-repository/main/g/gzip/gzip-1.14.tar.bz2",
   "source": [{
     "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz",
     "sha256": "4bf5a10f287501ee8e8ebe00ef62b2c2"
@@ -249,7 +249,7 @@ myrepo/
   "arch": "x86_64",
   "depends": ["glibc", "readline"],
   "license": "GPLv3+",
-  "download_url": "https://raw.githubusercontent.com/USER/myrepo/main/b/bash/bash-5.3.tar.bz2",
+  "download_url": "https://raw.githubusercontent.com/YOUR-USERNAME/YOUR-REPO/main/b/bash/bash-5.3.tar.bz2",
   "source": [{
     "url": "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz",
     "sha256": "977c8c0c5ae6309191e7768e28ebc951..."

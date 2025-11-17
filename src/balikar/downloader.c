@@ -171,7 +171,7 @@ static char* read_sha256_sidecar(const char *cache_path) {
     return sha;
 }
 
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data) {
+FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path) {
     if (!s || !loc) {
         log_error("Invalid arguments in download_package.");
         return NULL;
@@ -268,6 +268,26 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
     int is_local = (actual_url[0] == '/' || strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0 ||
                     (strncmp(actual_url, "http://", 7) != 0 && strncmp(actual_url, "https://", 8) != 0 &&
                      strncmp(actual_url, "ftp://", 6) != 0 && strncmp(actual_url, "file://", 7) != 0));
+    
+    // FALLBACK: Try to find local equivalent if URL is remote
+    // Before attempting HTTP download, try to find the file locally in repo_path or cache
+    if (!is_local && repo_path) {
+        // Try to construct local path from repo structure
+        // Example: for glibc-2.42, try ../balikar-repository/g/glibc/glibc-2.42.tar.bz2
+        char local_attempt[2048];
+        const char *pkg_first_char = pkg_name ? pkg_name : "unknown";
+        snprintf(local_attempt, sizeof(local_attempt), "%s/%c/%s/%s-%s.tar.bz2", 
+                 repo_path, tolower(pkg_first_char[0]), pkg_name, pkg_name, version);
+        
+        if (access(local_attempt, F_OK) == 0) {
+            log_debug(1, "Found local fallback for %s: %s", pkg_name, local_attempt);
+            actual_url = local_attempt;
+            is_local = 1;
+        } else {
+            log_debug(2, "Local fallback not found: %s", local_attempt);
+        }
+    }
+    
     if (is_local) {
         snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", actual_url, cache_path);
         if (system(cmd) != 0) {
@@ -392,14 +412,21 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data)
 // Funkce pro extras (patches array)
 // Helper: Stáhne repository archiv a extrahuje .build skript
 static void try_download_build_script(const char *pkg_name, const char *version, const char *extras_subdir, const char *repo_base_url) {
-    if (!pkg_name || !version || !extras_subdir || !repo_base_url) return;
+    if (!pkg_name || !version || !extras_subdir || !repo_base_url) {
+        log_debug(2, "try_download_build_script: missing params - pkg=%s, ver=%s, extras=%s, repo=%s",
+                  pkg_name ? pkg_name : "NULL", version ? version : "NULL", 
+                  extras_subdir ? extras_subdir : "NULL", repo_base_url ? repo_base_url : "NULL");
+        return;
+    }
+    
+    log_info("Trying to download .build script for %s-%s from repository", pkg_name, version);
     
     char build_path[2048];
     snprintf(build_path, sizeof(build_path), "%s/.build", extras_subdir);
     
     // Pokud už existuje, skip
     if (access(build_path, F_OK) == 0) {
-        log_debug(2, "Build script already cached: %s", build_path);
+        log_info("Build script already cached: %s", build_path);
         return;
     }
     
@@ -408,6 +435,8 @@ static void try_download_build_script(const char *pkg_name, const char *version,
     char repo_archive_url[2048];
     snprintf(repo_archive_url, sizeof(repo_archive_url), "%s/%c/%s/%s-%s.tar.bz2", 
              repo_base_url, first_letter, pkg_name, pkg_name, version);
+    
+    log_info("Repository archive URL: %s", repo_archive_url);
     
     // Stáhnout repository archiv do dočasného souboru
     char temp_archive[2048];
@@ -468,11 +497,13 @@ static void try_download_build_script(const char *pkg_name, const char *version,
              "tar -xjf \"%s\" -C \"%s\" --wildcards \"*/.build\" --strip-components=1 2>/dev/null",
              temp_archive, extras_subdir, temp_archive, extras_subdir);
     
-    if (system(extract_cmd) == 0) {
+    log_info("Extracting .build from archive to %s", extras_subdir);
+    int extract_result = system(extract_cmd);
+    if (extract_result == 0) {
         chmod(build_path, 0755);
         log_info("Extracted .build script from repository archive");
     } else {
-        log_debug(2, "No .build found in repository archive");
+        log_warn("Failed to extract .build from repository archive (exit code: %d)", extract_result);
     }
     
     // Odstranit dočasný archiv
@@ -489,8 +520,14 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
     system(cmd);
     
     // Automaticky zkusit stáhnout .build skript z repository
+    log_info("download_extras called: pkg=%s, version=%s, repo_base_url=%s", 
+             pkg_name, version ? version : "NULL", repo_base_url ? repo_base_url : "NULL");
     if (version && repo_base_url) {
+        log_info("Attempting to download .build script from repository...");
         try_download_build_script(pkg_name, version, extras_subdir, repo_base_url);
+    } else {
+        log_warn("Skipping .build download: version=%s, repo_base_url=%s", 
+                 version ? "OK" : "NULL", repo_base_url ? "OK" : "NULL");
     }
 
     // Stáhnout ostatní extras z JSON

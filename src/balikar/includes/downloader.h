@@ -19,7 +19,7 @@ static inline char *get_cache_dir(void) {
 }
 
 // Hlavní funkce
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
+FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
 void download_extras(json_t *extras, const char *pkg_name, const char *version, const char *repo_base_url, const char *tmp_dir);
 
 #endif //PROJ6_BALIKAR_DOWNLOADER_H

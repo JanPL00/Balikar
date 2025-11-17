@@ -322,7 +322,7 @@ int main(int argc, char **argv) {
                     }
                     
                     log_info("Downloading %s from %s", pkg_name, source_url);
-                    FILE *fp = download_package(s, source_url, pool, data);
+                    FILE *fp = download_package(s, source_url, pool, data, cfg.repo_path);
                     if (!fp) {
                         log_error("Download failed for %s.", pkg_name);
                         exit_code = ERR_DOWNLOAD_FAIL;
