@@ -79,6 +79,13 @@ repo-update
   znovu načte repository a zobrazí statistiky
 - Použití: balikar repo-update
 
+download <pkg>
+- Stahuje zdrojové soubory balíčku bez buildu; podporuje --output-dir pro vlastní cílovou cestu
+  nebo použije lokální repository z repos.conf; s --no-deps stáhne pouze balíček bez závislostí
+- Použití: balikar download bash
+          balikar download --output-dir=/tmp/sources glibc
+          balikar download --no-deps --output-dir=/custom/path gcc
+
 Globální options
 ----
 -h, --help
@@ -107,6 +114,14 @@ Globální options
 
 --local-package=PATH
 - Cesta k lokálnímu tar.bz2 balíčku mimo repo (TODO: implementace add_package_tar_bz2 workflow)
+
+--output-dir=PATH
+- Cílový adresář pro download command; stáhne balíčky do specifikovaného adresáře
+  ve struktuře <letter>/<name>/<name>-<version>/; pokud není uvedeno, použije se první
+  lokální repository z repos.conf
+
+--no-deps
+- Pro download command: stáhne pouze požadovaný balíček bez závislostí
 
 Workflow install/build
 ----
@@ -265,6 +280,13 @@ repo-update
   reloads repository and shows statistics
 - Usage: balikar repo-update
 
+download <pkg>
+- Downloads package source files without building; supports --output-dir for custom target path
+  or uses local repository from repos.conf; with --no-deps downloads only the package without dependencies
+- Usage: balikar download bash
+         balikar download --output-dir=/tmp/sources glibc
+         balikar download --no-deps --output-dir=/custom/path gcc
+
 Global options
 ----
 -h, --help
@@ -293,6 +315,14 @@ Global options
 
 --local-package=PATH
 - Path to local tar.bz2 package outside repo (TODO: implement add_package_tar_bz2 workflow)
+
+--output-dir=PATH
+- Target directory for download command; downloads packages to specified directory
+  in structure <letter>/<name>/<name>-<version>/; if not specified, uses first
+  local repository from repos.conf
+
+--no-deps
+- For download command: downloads only the requested package without dependencies
 
 Workflow install/build
 ----

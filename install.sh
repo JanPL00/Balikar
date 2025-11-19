@@ -3,7 +3,7 @@
 
 set -e
 
-echo "=== Balikar Package Manager - Installation ==="
+echo "========= Balikar Package Manager - Installation ========="
 echo ""
 
 # Check if running as root for system installation

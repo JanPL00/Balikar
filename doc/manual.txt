@@ -69,6 +69,28 @@ repo-update
       # Output: Repository metadata updated successfully.
       #         Repository reloaded: 5 packages found.
 
+download <pkg>
+    Stáhne zdrojové soubory balíčku bez buildu a instalace.
+    Podporuje stahování s nebo bez závislostí.
+    Balíčky se stahují do struktury <letter>/<name>/<name>-<version>/.
+    
+    Bez --output-dir: Použije první lokální repository z repos.conf
+    S --output-dir: Stáhne do specifikované cesty
+    S --no-deps: Stáhne pouze požadovaný balíček bez závislostí
+    
+    Příklady:
+      balikar download bash
+      # Stáhne bash včetně závislostí do lokálního repository
+      
+      balikar download --output-dir=/tmp/sources glibc
+      # Stáhne glibc včetně závislostí do /tmp/sources/
+      
+      balikar download --no-deps bash
+      # Stáhne pouze bash bez závislostí
+      
+      balikar download --no-deps --output-dir=/custom/path gcc
+      # Stáhne pouze gcc do /custom/path/g/gcc/gcc-<version>/
+
 clean-cache
     Vymaže download cache (/var/cache/balikar/downloads/).
     Odstraní všechny stažené tar archivy z cache
@@ -146,6 +168,33 @@ GLOBÁLNÍ OPTIONS
     Použije se k vymazání cache pouze pro konkrétní balíček.
     Příklad:
       balikar clean-cache --pkg=glibc
+
+--output-dir=PATH
+    Cílový adresář pro download command.
+    Stáhne balíčky do specifikovaného adresáře ve struktuře:
+    <output_dir>/<letter>/<name>/<name>-<version>/<file>
+    
+    Pokud není uvedeno, použije se první lokální (non-remote) repository
+    z repos.conf nebo ./repo jako fallback.
+    
+    Příklady:
+      balikar download --output-dir=/tmp/sources bash
+      # Stáhne do: /tmp/sources/b/bash/bash-5.3/bash-5.3.tar.gz
+      
+      balikar download --output-dir=/mnt/lfs/sources glibc
+      # Stáhne do: /mnt/lfs/sources/g/glibc/glibc-2.40/glibc-2.40.tar.xz
+
+--no-deps
+    Pro download command: stáhne pouze požadovaný balíček bez závislostí.
+    Normálně download stahuje všechny závislosti (depends a makedeps).
+    S --no-deps se stáhne pouze jeden specifikovaný balíček.
+    
+    Příklady:
+      balikar download --no-deps bash
+      # Stáhne pouze bash, přeskočí readline, ncurses, ...
+      
+      balikar download bash
+      # Stáhne bash + readline + ncurses + další závislosti
 
 FORMÁT BALÍČKU
 --------------
@@ -436,7 +485,24 @@ POKROČILÉ POUŽITÍ
    TODO: run_with_chroot() integrace
    $ balikar --chroot=/mnt/lfs build glibc
 
-6. SPRÁVA CACHE
+6. STAŽENÍ ZDROJOVÝCH BALÍČKŮ BEZ BUILDU
+   
+   Stažení do lokálního repository:
+   $ balikar download bash
+   
+   Stažení do vlastní cesty:
+   $ balikar download --output-dir=/tmp/sources glibc
+   
+   Stažení bez závislostí:
+   $ balikar download --no-deps --output-dir=/mnt/lfs/sources gcc
+   
+   Výhody:
+   - Stažení offline pro pozdější build
+   - Backup zdrojových souborů
+   - Příprava build prostředí bez internetu
+   - Organizace zdrojů podle projektu
+
+7. SPRÁVA CACHE
    
    Cache zabírá místo, kontrola a vymazání:
    $ du -sh /var/cache/balikar/downloads/

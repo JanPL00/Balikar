@@ -20,12 +20,14 @@ typedef struct {
     int debug_level;         // Verbosity level for debugging output
     int dry_run;             // If 1, simulate actions without executing them
     int no_staging;          // If 1, disable staging directory usage
+    int no_deps;             // If 1, download without dependencies
     char *staging_dir;       // Custom staging directory path
     char *chroot_path;       // Chroot environment path (for isolated builds)
     char *build_tmp_dir;     // Custom temporary directory for builds
     char *repo_path;         // Repository URL or local path
     char *local_package;     // Local package file path
     char *clean_cache_pkg;   // Package name for cache cleaning
+    char *output_dir;        // Output directory for download command
     const char *command;     // Main command (install, build, resolve, etc.)
     const char *package_name;// Package or subcommand name
 } cli_config_t;
@@ -44,12 +46,14 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         {"debug", no_argument, 0, 'd'},
         {"dry-run", no_argument, 0, 'D'},
         {"no-staging", no_argument, 0, 'S'},
+        {"no-deps", no_argument, 0, 'N'},
         {"staging-dir", required_argument, 0, 's'},
         {"chroot-path", required_argument, 0, 'c'},
         {"build-tmp-dir", required_argument, 0, 't'},
         {"repo", required_argument, 0, 'r'},
         {"local-package", required_argument, 0, 'l'},
         {"pkg", required_argument, 0, 'p'},
+        {"output-dir", required_argument, 0, 'o'},
         {0, 0, 0, 0}
     };
     
@@ -69,6 +73,9 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
             case 'S':  // No-staging - disable staging directory
                 cfg->no_staging = 1;
                 break;
+            case 'N':  // No-deps - download without dependencies
+                cfg->no_deps = 1;
+                break;
             case 's':  // Staging-dir - custom staging directory
                 cfg->staging_dir = strdup(optarg);
                 break;
@@ -86,6 +93,9 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
                 break;
             case 'p':  // Pkg - package name for cache cleaning
                 cfg->clean_cache_pkg = strdup(optarg);
+                break;
+            case 'o':  // Output-dir - output directory for download command
+                cfg->output_dir = strdup(optarg);
                 break;
             default:
                 print_usage(1);
@@ -448,6 +458,204 @@ int main(int argc, char **argv) {
         solver_free(solv);
         
     } 
+    // Command: download - resolve dependencies and download packages without building
+    // Downloads to local repository structure or custom output directory
+    else if (strcmp(cfg.command, "download") == 0) {
+        if (!cfg.package_name) {
+            log_error("Package name required for download command.");
+            print_usage(1);
+        }
+        
+        log_info("Starting download workflow for package: %s", cfg.package_name);
+        if (cfg.no_deps) {
+            log_info("Downloading without dependencies (--no-deps)");
+        }
+        
+        // Determine output directory: --output-dir or first enabled local repo
+        char *output_directory = NULL;
+        if (cfg.output_dir) {
+            output_directory = strdup(cfg.output_dir);
+            log_info("Using custom output directory: %s", output_directory);
+        } else {
+            // Find first enabled local repository from config
+            init_repo_config();
+            repo_config_t *repos = get_enabled_repos();
+            for (repo_config_t *r = repos; r; r = r->next) {
+                if (r->enabled) {
+                    // Check if URL is local path (not starting with http/https)
+                    if (strncmp(r->url, "http://", 7) != 0 && 
+                        strncmp(r->url, "https://", 8) != 0 &&
+                        strncmp(r->url, "ftp://", 6) != 0) {
+                        output_directory = strdup(r->url);
+                        log_info("Using local repository from config: %s", output_directory);
+                        break;
+                    }
+                }
+            }
+            
+            // Fallback to ./repo if no local repository found
+            if (!output_directory) {
+                output_directory = strdup("./repo");
+                log_info("No local repository found in config, using default: ./repo");
+            }
+        }
+        
+        // Handle --no-deps: download only the specified package
+        if (cfg.no_deps) {
+            // Find package in pool by name
+            Id name_id = pool_str2id(pool, cfg.package_name, 0);
+            if (!name_id) {
+                log_error("Package '%s' not found in repository.", cfg.package_name);
+                free(output_directory);
+                exit_code = 1;
+                goto cleanup;
+            }
+            
+            // Find the solvable with this name
+            Solvable *s = NULL;
+            Id p = 0;
+            for (Id i = 2; i < pool->nsolvables; i++) {
+                Solvable *candidate = pool_id2solvable(pool, i);
+                if (candidate->name == name_id) {
+                    s = candidate;
+                    p = i;
+                    break;
+                }
+            }
+            
+            if (!s) {
+                log_error("Package '%s' not found in pool.", cfg.package_name);
+                free(output_directory);
+                exit_code = 1;
+                goto cleanup;
+            }
+            
+            const char *pkg_name = pool_id2str(pool, s->name);
+            const char *version = pool_id2str(pool, s->evr);
+            log_info("Found package: %s-%s", pkg_name, version);
+            
+            // Get source URL
+            Repodata *data = repo_id2repodata(repo, 1);
+            const char *source_url = get_custom_source(data, p, pool);
+            
+            if (!source_url) {
+                log_error("No source URL for %s.", pkg_name);
+                free(output_directory);
+                exit_code = 1;
+                goto cleanup;
+            }
+            
+            log_info("Downloading %s to: %s", pkg_name, output_directory);
+            int rc = download_package_to_directory(s, source_url, pool, data, cfg.repo_path, output_directory);
+            if (rc != 0) {
+                log_error("Download failed for %s.", pkg_name);
+                free(output_directory);
+                exit_code = ERR_DOWNLOAD_FAIL;
+                goto cleanup;
+            }
+            
+            log_info("Successfully downloaded %s to %s", pkg_name, output_directory);
+            free(output_directory);
+            goto cleanup;
+        }
+        
+        // Step 1: Create solver for dependency resolution (with dependencies)
+        Solver *solv = create_solver(pool);
+        if (!solv) {
+            log_error("Failed to create solver.");
+            free(output_directory);
+            exit_code = ERR_SOLVE_FAIL;
+            goto cleanup;
+        }
+        
+        // Step 2: Solve dependencies
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo);
+        if (!solution) {
+            log_error("Dependency resolution failed for %s.", cfg.package_name);
+            solver_free(solv);
+            free(output_directory);
+            exit_code = ERR_SOLVE_FAIL;
+            goto cleanup;
+        }
+        
+        // Step 3: Create transaction from solution
+        Transaction *trans = solver_create_transaction(solv);
+        if (!trans) {
+            log_error("Failed to create transaction.");
+            queue_free(solution);
+            solver_free(solv);
+            free(output_directory);
+            exit_code = ERR_SOLVE_FAIL;
+            goto cleanup;
+        }
+        
+        // Display transaction to user
+        if (trans->steps.count == 0) {
+            log_info("No packages to download - package may already be resolved.");
+        } else {
+            display_transaction(trans);
+        }
+        
+        // Step 4: Confirm transaction
+        if (!user_confirm("Proceed with download?", 1)) {
+            log_info("Download cancelled by user.");
+            transaction_free(trans);
+            queue_free(solution);
+            solver_free(solv);
+            free(output_directory);
+            goto cleanup;
+        }
+        
+        // Step 5: Download packages
+        log_info("Downloading packages to: %s", output_directory);
+        
+        // Order transaction by dependencies
+        transaction_order(trans, 0);
+        
+        // Process each package in transaction
+        int download_count = 0;
+        for (int i = 0; i < trans->steps.count; i++) {
+            Id p = trans->steps.elements[i];
+            Id type = transaction_type(trans, p, SOLVER_TRANSACTION_RPM_ONLY);
+            
+            // Only process install transactions
+            if (type == SOLVER_TRANSACTION_INSTALL || type == SOLVER_TRANSACTION_MULTIINSTALL) {
+                Solvable *s = pool_id2solvable(pool, p);
+                const char *pkg_name = pool_id2str(pool, s->name);
+                
+                // Get source download URL from repository metadata
+                Repodata *data = repo_id2repodata(repo, 1);  // First repodata
+                const char *source_url = get_custom_source(data, p, pool);
+                
+                if (!source_url) {
+                    log_warn("No source URL for %s, skipping.", pkg_name);
+                    continue;
+                }
+                
+                // Download package to output directory
+                log_info("Downloading %s from %s", pkg_name, source_url);
+                int rc = download_package_to_directory(s, source_url, pool, data, cfg.repo_path, output_directory);
+                if (rc != 0) {
+                    log_error("Download failed for %s.", pkg_name);
+                    exit_code = ERR_DOWNLOAD_FAIL;
+                    break;
+                }
+                
+                download_count++;
+                log_info("Successfully downloaded %s.", pkg_name);
+            }
+        }
+        
+        if (exit_code == 0) {
+            log_info("Download complete: %d packages downloaded to %s", download_count, output_directory);
+        }
+        
+        transaction_free(trans);
+        queue_free(solution);
+        solver_free(solv);
+        free(output_directory);
+        
+    } 
     // Command: repos - display repository information
     // Shows all configured repositories and currently active one
     else if (strcmp(cfg.command, "repos") == 0) {
@@ -519,6 +727,7 @@ cleanup_no_repo:
     if (cfg.repo_path) free(cfg.repo_path);
     if (cfg.local_package) free(cfg.local_package);
     if (cfg.clean_cache_pkg) free(cfg.clean_cache_pkg);
+    if (cfg.output_dir) free(cfg.output_dir);
     
     return exit_code;
 }

@@ -24,4 +24,10 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
 // Download extra files (patches, etc.) for a package.
 void download_extras(json_t *extras, const char *pkg_name, const char *version, const char *repo_base_url, const char *tmp_dir);
 
+// Download a package to a specific directory (for download command).
+// Creates repository structure: output_dir/<letter>/<pkg_name>/<pkg_name>-<version>/
+// Returns 0 on success, -1 on error.
+int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repodata *data, 
+                                  const char *repo_path, const char *output_dir);
+
 #endif

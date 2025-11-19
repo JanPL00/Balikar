@@ -533,3 +533,211 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
         fclose(fp);
     }
 }
+
+/**
+ * Download package to specified output directory with repository structure.
+ * 
+ * Downloads package and creates repository-style directory structure:
+ * output_dir/<first_letter>/<pkg_name>/<pkg_name>-<version>/
+ * 
+ * Uses the same multi-source fallback mechanism as download_package.
+ * 
+ * @param s Solvable for package to download
+ * @param loc Location string (may be overridden by metadata)
+ * @param pool Package pool
+ * @param data Repodata containing custom metadata
+ * @param repo_path Repository base path for local fallback
+ * @param output_dir Base output directory for downloads
+ * @return 0 on success, -1 on error
+ */
+int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repodata *data, 
+                                  const char *repo_path, const char *output_dir) {
+    if (!s || !loc || !output_dir) {
+        log_error("Invalid arguments in download_package_to_directory.");
+        return -1;
+    }
+
+    const char *pkg_name = pool_id2str(pool, s->name);
+    const char *version = pool_id2str(pool, s->evr);
+    
+    // Get solvable ID from Solvable pointer
+    Id p = s - pool->solvables;
+    
+    // Try to load source array from metadata
+    json_t *source_array = get_custom_source_array(data, p, pool);
+    size_t source_count = 0;
+    if (source_array && json_is_array(source_array)) {
+        source_count = json_array_size(source_array);
+    }
+    
+    // Create repository structure: output_dir/<letter>/<pkg_name>/<pkg_name>-<version>/
+    char pkg_dir[2048];
+    char first_letter = pkg_name[0];
+    snprintf(pkg_dir, sizeof(pkg_dir), "%s/%c/%s/%s-%s", 
+             output_dir, first_letter, pkg_name, pkg_name, version);
+    
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", pkg_dir);
+    if (system(cmd) != 0) {
+        log_error("Failed to create package directory: %s", pkg_dir);
+        if (source_array) json_decref(source_array);
+        return -1;
+    }
+    
+    // Determine filename and extension
+    const char *first_url = loc;  // fallback
+    if (source_count > 0) {
+        json_t *first_source = json_array_get(source_array, 0);
+        if (first_source && json_is_object(first_source)) {
+            json_t *url_json = json_object_get(first_source, "url");
+            if (url_json && json_is_string(url_json)) {
+                first_url = json_string_value(url_json);
+            }
+        }
+    }
+    
+    // Detect file extension
+    const char *ext = ".tar.xz";  // default
+    const char *last_dot = strrchr(first_url, '.');
+    if (last_dot) {
+        const char *last_slash = strrchr(first_url, '/');
+        const char *filename = last_slash ? last_slash + 1 : first_url;
+        
+        if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
+        else if (strstr(filename, ".tar.gz")) ext = ".tar.gz";
+        else if (strstr(filename, ".tar.bz2")) ext = ".tar.bz2";
+        else if (strstr(filename, ".tgz")) ext = ".tgz";
+        else ext = last_dot;
+    }
+    
+    char output_path[2048];
+    snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", pkg_dir, pkg_name, version, ext);
+    
+    // Check if file already exists
+    if (access(output_path, F_OK) == 0) {
+        log_info("Package already exists: %s", output_path);
+        if (source_array) json_decref(source_array);
+        return 0;
+    }
+    
+    // Try each source URL
+    int download_success = 0;
+    
+    if (source_count > 0) {
+        for (size_t i = 0; i < source_count; i++) {
+            json_t *source_obj = json_array_get(source_array, i);
+            if (!source_obj || !json_is_object(source_obj)) continue;
+            
+            json_t *url_json = json_object_get(source_obj, "url");
+            if (!url_json || !json_is_string(url_json)) continue;
+            
+            const char *source_url = json_string_value(url_json);
+            log_info("Trying source[%zu].url: %s", i, source_url);
+            
+            // Detect if URL is remote or local
+            int has_url_scheme = (strncmp(source_url, "http://", 7) == 0 ||
+                                 strncmp(source_url, "https://", 8) == 0 ||
+                                 strncmp(source_url, "ftp://", 6) == 0 ||
+                                 strncmp(source_url, "file://", 7) == 0);
+            int is_remote = has_url_scheme;
+            int is_local = !is_remote;
+            
+            if (is_local) {
+                // Try local source with multiple search paths
+                char local_path[2048] = {0};
+                int found_local = 0;
+                
+                // Try multiple possible locations
+                const char *search_paths[] = {
+                    source_url,  // Absolute or relative path as-is
+                    NULL,        // Repository structure path (filled below)
+                    "/home/placeja5/Balikar/balikar-repository",
+                    "./repo",
+                    "../balikar-repository"
+                };
+                
+                char repo_structure_path[2048];
+                snprintf(repo_structure_path, sizeof(repo_structure_path), 
+                        "/home/placeja5/Balikar/balikar-repository/%c/%s/%s-%s/%s",
+                        first_letter, pkg_name, pkg_name, version, source_url);
+                search_paths[1] = repo_structure_path;
+                
+                for (size_t j = 0; j < sizeof(search_paths) / sizeof(search_paths[0]); j++) {
+                    if (!search_paths[j]) continue;
+                    
+                    if (access(search_paths[j], F_OK) == 0) {
+                        strncpy(local_path, search_paths[j], sizeof(local_path) - 1);
+                        found_local = 1;
+                        log_info("Found local source in %s: %s", 
+                                j == 0 ? "current path" : 
+                                j == 1 ? "/home/placeja5/Balikar/balikar-repository" :
+                                j == 2 ? "/home/placeja5/Balikar/balikar-repository" :
+                                j == 3 ? "./repo" : "../balikar-repository",
+                                source_url);
+                        break;
+                    }
+                }
+                
+                if (found_local) {
+                    char cp_cmd[4096];
+                    snprintf(cp_cmd, sizeof(cp_cmd), "cp \"%s\" \"%s\"", local_path, output_path);
+                    if (system(cp_cmd) == 0) {
+                        log_info("Copied local file to: %s", output_path);
+                        download_success = 1;
+                        break;
+                    } else {
+                        log_warn("Failed to copy local file from %s", local_path);
+                    }
+                } else {
+                    log_debug(2, "Local source file not found: %s", source_url);
+                }
+            } else {
+                // Remote download
+                FILE *fp = fopen(output_path, "wb");
+                if (!fp) {
+                    log_error("Cannot write to %s", output_path);
+                    continue;
+                }
+                
+                CURL *curl = curl_easy_init();
+                if (!curl) {
+                    fclose(fp);
+                    continue;
+                }
+                
+                log_info("Downloading from: %s", source_url);
+                curl_easy_setopt(curl, CURLOPT_URL, source_url);
+                curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+                curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+                curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+                curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+                curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+                curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+                
+                CURLcode res = curl_easy_perform(curl);
+                curl_easy_cleanup(curl);
+                fclose(fp);
+                
+                if (res == CURLE_OK) {
+                    log_info("Successfully downloaded from source[%zu]: %s", i, source_url);
+                    download_success = 1;
+                    break;
+                } else {
+                    log_warn("Failed to download from source[%zu]: %s (error: %s)", 
+                            i, source_url, curl_easy_strerror(res));
+                    remove(output_path);
+                }
+            }
+        }
+    }
+    
+    if (source_array) json_decref(source_array);
+    
+    if (!download_success) {
+        log_error("Failed to download package %s from any source.", pkg_name);
+        return -1;
+    }
+    
+    log_info("Package saved to: %s", output_path);
+    return 0;
+}
