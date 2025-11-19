@@ -114,19 +114,21 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     // Get solvable ID from Solvable pointer
     Id p = s - pool->solvables;
     
-    // Prefer source[] array (new format) over download_url
-    const char *actual_url = loc;  // fallback
-    
     // Try to load source array from metadata
     json_t *source_array = get_custom_source_array(data, p, pool);
-    if (source_array && json_array_size(source_array) > 0) {
+    size_t source_count = 0;
+    if (source_array && json_is_array(source_array)) {
+        source_count = json_array_size(source_array);
+    }
+    
+    // Detect file extension from first URL for cache path
+    const char *first_url = loc;  // fallback
+    if (source_count > 0) {
         json_t *first_source = json_array_get(source_array, 0);
         if (first_source && json_is_object(first_source)) {
             json_t *url_json = json_object_get(first_source, "url");
-            
             if (url_json && json_is_string(url_json)) {
-                actual_url = json_string_value(url_json);
-                log_info("Using source[0].url: %s", actual_url);
+                first_url = json_string_value(url_json);
             }
         }
     }
@@ -135,10 +137,10 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     
     // Detect file extension including .tar.* formats
     const char *ext = ".tar.xz";  // default
-    const char *last_dot = strrchr(actual_url, '.');
+    const char *last_dot = strrchr(first_url, '.');
     if (last_dot) {
-        const char *last_slash = strrchr(actual_url, '/');
-        const char *filename = last_slash ? last_slash + 1 : actual_url;
+        const char *last_slash = strrchr(first_url, '/');
+        const char *filename = last_slash ? last_slash + 1 : first_url;
         
         // Check for .tar.{xz,gz,bz2} formats
         if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
@@ -157,118 +159,113 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         return fopen(cache_path, "r");
     }
 
-    // Determine if source is local file or remote URL
-    // Local paths: absolute (/...), relative (./...), or non-URL strings
-    // Remote URLs: http://, https://, ftp://, file://
-    int is_local = (actual_url[0] == '/' || strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0 ||
-                    (strncmp(actual_url, "http://", 7) != 0 && strncmp(actual_url, "https://", 8) != 0 &&
-                     strncmp(actual_url, "ftp://", 6) != 0 && strncmp(actual_url, "file://", 7) != 0));
+    // Try each URL in source array until one succeeds
+    int download_success = 0;
+    for (size_t url_idx = 0; url_idx < source_count && !download_success; url_idx++) {
+        json_t *source_obj = json_array_get(source_array, url_idx);
+        if (!source_obj || !json_is_object(source_obj)) continue;
+        
+        json_t *url_json = json_object_get(source_obj, "url");
+        if (!url_json || !json_is_string(url_json)) continue;
+        
+        const char *actual_url = json_string_value(url_json);
+        log_info("Trying source[%zu].url: %s", url_idx, actual_url);
+        
+        // Determine if source is local file or remote URL
+        int is_local = (actual_url[0] == '/' || strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0 ||
+                        (strncmp(actual_url, "http://", 7) != 0 && strncmp(actual_url, "https://", 8) != 0 &&
+                         strncmp(actual_url, "ftp://", 6) != 0 && strncmp(actual_url, "file://", 7) != 0));
+        
+        if (is_local) {
+            // Try local file copy
+            char cmd_local[2048];
+            snprintf(cmd_local, sizeof(cmd_local), "cp \"%s\" \"%s\"", actual_url, cache_path);
+            if (system(cmd_local) == 0) {
+                log_info("Copied local file to cache: %s", cache_path);
+                download_success = 1;
+            } else {
+                log_warn("Failed to copy from source[%zu]: %s", url_idx, actual_url);
+            }
+        } else {
+            // Try remote download
+            FILE *fp = fopen(cache_path, "wb");
+            if (!fp) {
+                log_warn("Failed to open %s for writing, trying next source", cache_path);
+                continue;
+            }
+
+            CURL *curl = curl_easy_init();
+            if (!curl) {
+                fclose(fp);
+                log_warn("Failed to initialize curl for source[%zu], trying next", url_idx);
+                continue;
+            }
+
+            log_info("Downloading from: %s", actual_url);
+            
+            // Configure CURL options for download
+            curl_easy_setopt(curl, CURLOPT_URL, actual_url);
+            curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+            curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+            curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+            curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+            curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+            curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+            
+            // Progress bar callback
+            curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+            curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+
+            CURLcode res = curl_easy_perform(curl);
+            printf("\n");
+            fflush(stdout);
+            
+            curl_easy_cleanup(curl);
+            fclose(fp);
+            
+            if (res == CURLE_OK) {
+                log_info("Successfully downloaded from source[%zu]: %s", url_idx, actual_url);
+                download_success = 1;
+            } else {
+                log_warn("Download failed from source[%zu]: %s (%s)", url_idx, actual_url, curl_easy_strerror(res));
+                remove(cache_path);  // Remove partial download
+            }
+        }
+    }
     
-    // FALLBACK: Before HTTP download, try to find file locally
-    // Construct local path from repository structure (e.g., g/glibc/glibc-2.42.tar.bz2)
-    if (!is_local && repo_path) {
-        // Try to construct local path from repo structure
-        // Example: for glibc-2.42, try ../balikar-repository/g/glibc/glibc-2.42.tar.bz2
+    // If no source URL worked, try local fallback from repository structure
+    if (!download_success && repo_path) {
         char local_attempt[2048];
         const char *pkg_first_char = pkg_name ? pkg_name : "unknown";
         snprintf(local_attempt, sizeof(local_attempt), "%s/%c/%s/%s-%s.tar.bz2", 
                  repo_path, tolower(pkg_first_char[0]), pkg_name, pkg_name, version);
         
         if (access(local_attempt, F_OK) == 0) {
-            log_debug(1, "Found local fallback for %s: %s", pkg_name, local_attempt);
-            actual_url = local_attempt;
-            is_local = 1;
+            log_info("Found local repository fallback: %s", local_attempt);
+            char cmd_fallback[2048];
+            snprintf(cmd_fallback, sizeof(cmd_fallback), "cp \"%s\" \"%s\"", local_attempt, cache_path);
+            if (system(cmd_fallback) == 0) {
+                log_info("Copied local fallback to cache: %s", cache_path);
+                download_success = 1;
+            }
         } else {
             log_debug(2, "Local fallback not found: %s", local_attempt);
         }
     }
     
-    if (is_local) {
-        snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", actual_url, cache_path);
-        if (system(cmd) != 0) {
-            log_error("Failed to copy local file to cache: %s", actual_url);
-            if (source_array) json_decref(source_array);
-            free(cache_dir);
-            return NULL;
-        }
-        log_info("Copied local file to cache: %s", cache_path);
-    } else {
-        FILE *fp = fopen(cache_path, "wb");
-        if (!fp) {
-            log_error("Failed to open %s for writing.", cache_path);
-            if (source_array) json_decref(source_array);
-            free(cache_dir);
-            return NULL;
-        }
-
-        CURL *curl = curl_easy_init();
-        if (!curl) {
-            fclose(fp);
-            remove(cache_path);
-            if (source_array) json_decref(source_array);
-            free(cache_dir);
-            return NULL;
-        }
-
-        log_info("Downloading from: %s", actual_url);
-        
-        // Configure CURL options for download
-        curl_easy_setopt(curl, CURLOPT_URL, actual_url);
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
-        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minute timeout
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L); // 10s connect timeout for faster failure detection
-        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Prefer IPv4 to avoid IPv6 issues
-        
-        // Progress bar callback
-        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
-        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
-
-        CURLcode res = curl_easy_perform(curl);
-        printf("\n");  // Terminate progress line before error output
-        fflush(stdout);
-        
-        // Enhanced diagnostics for connection failures
-        if (res != CURLE_OK) {
-            if (res == CURLE_OPERATION_TIMEDOUT || res == CURLE_COULDNT_CONNECT) {
-                log_error("Connection failed to: %s", actual_url);
-                log_error("  Error: %s (code %d)", curl_easy_strerror(res), res);
-                
-                // Get effective URL in case of redirects
-                char *effective_url = NULL;
-                curl_easy_getinfo(curl, CURLINFO_EFFECTIVE_URL, &effective_url);
-                if (effective_url) {
-                    log_error("  Effective URL: %s", effective_url);
-                }
-                
-                // Get curl version info
-                curl_version_info_data *ver = curl_version_info(CURLVERSION_NOW);
-                log_error("  libcurl version: %s", ver->version);
-            } else {
-                log_error("Download failed: %s (%s)", curl_easy_strerror(res), actual_url);
-            }
-            
-            curl_easy_cleanup(curl);
-            fclose(fp);
-            remove(cache_path);
-            if (source_array) json_decref(source_array);
-            free(cache_dir);
-            return NULL;
-        }
-        
-        curl_easy_cleanup(curl);
-        fclose(fp);
-        log_info("Downloaded file to cache: %s", cache_path);
+    // Cleanup and return result
+    if (source_array) json_decref(source_array);
+    
+    if (!download_success) {
+        log_error("All download sources failed for %s", pkg_name);
+        free(cache_dir);
+        return NULL;
     }
 
-    log_info("Downloaded/cached %s to %s", actual_url, cache_path);
+    log_info("Package cached at: %s", cache_path);
 
-    // Cleanup JSON if allocated
-    if (source_array) json_decref(source_array);
-
-    // Vrať fopen pro builder (z cache)
+    // Return fopen for builder (from cache)
     FILE *fp = fopen(cache_path, "rb");
     free(cache_dir);
     return fp;
@@ -350,7 +347,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Prefer IPv4
         
         CURLcode res = curl_easy_perform(curl);
         long http_code = 0;
@@ -365,7 +362,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         }
     }
     
-    // Extrahovat .build z archivu
+    // Extract .build from archive
     char extract_cmd[4096];
     snprintf(extract_cmd, sizeof(extract_cmd), 
              "tar -xjf \"%s\" -C \"%s\" --strip-components=1 \"*/.build\" 2>/dev/null || "
@@ -446,11 +443,11 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minut timeout
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minute timeout
             curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L); // 30s connect timeout
-            curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4
+            curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Prefer IPv4
             
-            // Progress bar pro extras
+            // Progress bar for extras
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
             

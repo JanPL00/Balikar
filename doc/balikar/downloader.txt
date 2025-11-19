@@ -11,14 +11,9 @@ Popis
 Zdrojový soubor: downloader.c
 
 Tento modul poskytuje funkce pro stahování balíčků (lokální copy nebo remote HTTP/HTTPS pomocí libcurl),
-SHA256 verifikaci souborů, cachování stažených balíčků, a stahování extras (patche/skripty).
-Integruje se s parser.c (get_custom_source, get_custom_extras) a používá Repodata pro SHA256 lookup.
-Podporuje automatický výpočet SHA256 pro remote soubory s uložením do sidecar souboru pro budoucí verifikaci.
-
-SHA256 chování v součinnosti s parserem
-----
-- Pokud metadata (repodata.json) obsahují SHA256 (archivy nebo plain adresáře s lokálním tarball-em), downloader verifikuje cache a stažený soubor proti této hodnotě.
-- Pokud metadata SHA256 neobsahují (plain adresáře s pouze remote URL), downloader po stažení SHA256 spočítá a uloží do „<cache_path>.sha256" sidecar souboru pro budoucí validaci.
+cachování stažených balíčků, a stahování extras (patche/skripty).
+Integruje se s parser.c (get_custom_source, get_custom_extras) a používá Repodata pro získání source[] pole.
+Podporuje multi-source fallback pro vysokou dostupnost balíčků.
 
 Klíčové funkce
 ----
@@ -34,34 +29,25 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
   vrací 0 pro pokračování, nenulovou hodnotu pro abort;
   používá se v curl_easy_setopt(CURLOPT_XFERINFOFUNCTION).
 
-static char* compute_file_sha256(const char *file_path);
-- Vypočítá SHA256 hash souboru a vrací hex string (64 znaků + null terminator);
-  používá OpenSSL SHA256_Init/Update/Final (deprecated API, ale funkční);
-  čte soubor po 4KB blocích; caller musí free; vrací NULL při chybě (soubor neexistuje, malloc fail).
 
-static int verify_hash_from_file(const char *file_path, const char *expected_sha);
-- Ověří SHA256 hash souboru proti očekávanému stringu; volá compute_file_sha256,
-  porovná výsledek (strcmp), loguje warning při neshodě (log_warn); vrací 1 při shodě, 0 při neshodě;
-  skipuje verifikaci pokud expected_sha je NULL (return 1); používá se pro cache validation a post-download verify.
 
-static char* read_sha256_sidecar(const char *cache_path);
-- Načte SHA256 hash z sidecar souboru "<cache_path>.sha256"; vrací mallocovaný 64-char hex string nebo NULL;
-  používá se pro cache validaci když metadata neobsahují SHA256; caller musí free.
-
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
+FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
 - Hlavní funkce pro stažení balíčku: Alokuje cache_dir (CACHE_DIR macro -> get_cache_dir inline funkce),
-  vytvoří cache path ("<cache_dir>/<name>-<version><ext>"), načte SHA256 z Repodata (repodata_lookup_str, key="sha256"),
-  pokud SHA chybí, zkusí načíst z sidecar (read_sha256_sidecar),
-  zkontroluje cache existence (access) a verify hash (verify_hash_from_file) -> pokud OK, vrátí fopen(cache_path, "r");
-  NOVĚ: pokud verifikace selže (soubor je poškozený/prázdný/špatný hash), automaticky odstraní soubor a sidecar pro re-download;
-  detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://"; remote = začíná těmito protokoly),
-  LOKÁLNÍ: cp příkazem kopíruje do cache, ověří hash pokud existuje (verify_hash_from_file), při mismatch: remove + error;
-  REMOTE: fopen(cache_path, "wb"), inicializuje CURL (curl_easy_init), nastaví URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
-  stáhne (curl_easy_perform), při chybě: remove + error, po úspěchu: ověří hash pokud existuje (verify_hash_from_file),
-  vypočítá SHA256 remote souboru (compute_file_sha256), zaloguje, uloží do sidecar "<cache_path>.sha256" (pro budoucí verify bez metadata);
-  cleanup: free(cache_dir); vrací fopen(cache_path, "rb") pro builder nebo NULL při chybě.
+  načte source[] pole z metadat (get_custom_source_array), vytvoří cache path ("<cache_dir>/<name>-<version><ext>"),
+  zkontroluje cache existence (access) -> pokud OK, vrátí fopen(cache_path, "r");
+  MULTI-SOURCE FALLBACK: iteruje přes všechny URL v source[] poli:
+    - Pro každou URL (source[i].url) zkusí stáhnout/zkopírovat
+    - Detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://")
+    - LOKÁLNÍ: cp příkazem kopíruje do cache, při úspěchu nastaví download_success=1
+    - REMOTE: fopen(cache_path, "wb"), inicializuje CURL (curl_easy_init), nastaví URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
+      stáhne (curl_easy_perform), při úspěchu nastaví download_success=1, při chybě odstraní částečný download (remove)
+    - Pokud stažení z aktuální URL selže, automaticky zkusí další URL v poli (log_warn)
+    - Ukončí se při prvním úspěšném stažení
+  LOKÁLNÍ FALLBACK: pokud všechny source[] URL selžou, zkusí lokální strukturu repozitáře:
+    "<repo_path>/<first_char>/<name>/<name>-<version>.tar.bz2"
+  cleanup: free(cache_dir); vrací fopen(cache_path, "rb") pro builder nebo NULL pokud všechny zdroje selhaly (log_error).
   
-OPRAVA: Automatické odstranění poškozeného souboru z cache řeší problém s prázdnými/přerušenými downloady.
+NOVÉ: Automatický fallback na další URL při selhání stahování zajišťuje vysokou dostupnost balíčků.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Stáhne extra soubory (patche) z JSON array extras (pole URL stringů);
@@ -86,10 +72,7 @@ Poznámky
   výchozí cesta je pevně "/var/cache/balikar/downloads/".
 - Dočasné session adresáře (tmp_session_*) se již nevytvářejí; stahování probíhá přímo do finální cache cesty.
 - Detekce přípony archivu pro název v cache zachovává vícenásobné přípony: podporováno .tar.xz, .tar.gz, .tar.bz2 i .tgz.
-- OpenSSL SHA256 API je deprecated v OpenSSL 3.0 (generuje warnings), ale stále funkční;
-  v budoucnu refactor na EVP_Digest* API.
-- Remote SHA výpočet a sidecar: Umožňuje post-facto verify i když metadata v repo neobsahuje SHA;
-  sidecar soubor je plaintext hex string + newline.
+- Multi-source fallback zvyšuje robustnost systému při výpadcích mirror serverů.
 
 ========================================
                 ENGLISH
@@ -103,14 +86,9 @@ Description
 Source file: downloader.c
 
 This module provides functions for downloading packages (local copy or remote HTTP/HTTPS using libcurl),
-SHA256 file verification, caching of downloaded packages, and downloading extras (patches/scripts).
-Integrates with parser.c (get_custom_source, get_custom_extras) and uses Repodata for SHA256 lookup.
-Supports automatic SHA256 computation for remote files with storage in sidecar file for future verification.
-
-SHA256 behavior with parser
-----
-- If metadata (repodata.json) includes SHA256 (archives or plain directories with a local tarball), the downloader verifies cache and downloaded file against it.
-- If metadata lacks SHA256 (plain directories with only a remote URL), the downloader computes SHA256 after download and stores it in a "<cache_path>.sha256" sidecar file for future validation.
+caching of downloaded packages, and downloading extras (patches/scripts).
+Integrates with parser.c (get_custom_source, get_custom_extras) and uses Repodata to retrieve source[] array.
+Supports multi-source fallback for high package availability.
 
 Key functions
 ----
@@ -126,34 +104,25 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
   returns 0 to continue, non-zero to abort;
   used in curl_easy_setopt(CURLOPT_XFERINFOFUNCTION).
 
-static char* compute_file_sha256(const char *file_path);
-- Computes SHA256 hash of file and returns hex string (64 chars + null terminator);
-  uses OpenSSL SHA256_Init/Update/Final (deprecated API, but functional);
-  reads file in 4KB blocks; caller must free; returns NULL on error (file doesn't exist, malloc fail).
 
-static int verify_hash_from_file(const char *file_path, const char *expected_sha);
-- Verifies SHA256 hash of file against expected string; calls compute_file_sha256,
-  compares result (strcmp), logs warning on mismatch (log_warn); returns 1 on match, 0 on mismatch;
-  skips verification if expected_sha is NULL (return 1); used for cache validation and post-download verify.
 
-static char* read_sha256_sidecar(const char *cache_path);
-- Reads SHA256 hash from sidecar file "<cache_path>.sha256"; returns malloc'd 64-char hex string or NULL;
-  used for cache validation when metadata lacks SHA256; caller must free.
-
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
+FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
 - Main function for package download: Allocates cache_dir (CACHE_DIR macro -> get_cache_dir inline function),
-  creates cache path ("<cache_dir>/<name>-<version><ext>"), loads SHA256 from Repodata (repodata_lookup_str, key="sha256"),
-  if SHA is missing, tries to load from sidecar (read_sha256_sidecar),
-  checks cache existence (access) and verifies hash (verify_hash_from_file) -> if OK, returns fopen(cache_path, "r");
-  NEW: if verification fails (corrupted/empty/bad hash file), automatically removes file and sidecar for re-download;
-  detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://"; remote = starts with these protocols),
-  LOCAL: copies to cache using cp command, verifies hash if exists (verify_hash_from_file), on mismatch: remove + error;
-  REMOTE: fopen(cache_path, "wb"), initializes CURL (curl_easy_init), sets URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
-  downloads (curl_easy_perform), on error: remove + error, on success: verifies hash if exists (verify_hash_from_file),
-  computes SHA256 of remote file (compute_file_sha256), logs it, stores in sidecar "<cache_path>.sha256" (for future verify without metadata);
-  cleanup: free(cache_dir); returns fopen(cache_path, "rb") for builder or NULL on error.
+  loads source[] array from metadata (get_custom_source_array), creates cache path ("<cache_dir>/<name>-<version><ext>"),
+  checks cache existence (access) -> if OK, returns fopen(cache_path, "r");
+  MULTI-SOURCE FALLBACK: iterates through all URLs in source[] array:
+    - For each URL (source[i].url) attempts to download/copy
+    - Detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://")
+    - LOCAL: copies to cache using cp command, on success sets download_success=1
+    - REMOTE: fopen(cache_path, "wb"), initializes CURL (curl_easy_init), sets URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
+      downloads (curl_easy_perform), on success sets download_success=1, on failure removes partial download (remove)
+    - If download from current URL fails, automatically tries next URL in array (log_warn)
+    - Stops at first successful download
+  LOCAL FALLBACK: if all source[] URLs fail, tries local repository structure:
+    "<repo_path>/<first_char>/<name>/<name>-<version>.tar.bz2"
+  cleanup: free(cache_dir); returns fopen(cache_path, "rb") for builder or NULL if all sources failed (log_error).
   
-FIX: Automatic removal of corrupted cached files resolves issue with empty/interrupted downloads.
+NEW: Automatic fallback to next URL on download failure ensures high package availability.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Downloads extra files (patches) from JSON array extras (array of URL strings);
@@ -178,7 +147,4 @@ Notes
   default path is fixed to "/var/cache/balikar/downloads/".
 - Temporary session directories (tmp_session_*) are no longer created; downloads are written directly to the final cache path.
 - Archive extension detection for cache naming preserves multi-dot extensions: recognized .tar.xz, .tar.gz, .tar.bz2 and .tgz.
-- OpenSSL SHA256 API is deprecated in OpenSSL 3.0 (generates warnings), but still functional;
-  future refactor to EVP_Digest* API recommended.
-- Remote SHA computation and sidecar: Allows post-facto verify even when metadata in repo doesn't contain SHA;
-  sidecar file is plaintext hex string + newline.
+- Multi-source fallback increases system robustness during mirror server outages.

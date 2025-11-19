@@ -18,17 +18,11 @@ Zahrnuje parsování závislostí (depends array do SOLVABLE_REQUIRES) a error h
 Rozšířeno o podporu tar.bz2 balíčků (extrakce, rekurzní hledání index.json, generování default metadat pokud chybí),
 což umožňuje parsování mixu adresářů a archivů v repo i lokálně mimo repo.
 
-SHA256 chování
-----
-- Archivní balíčky (.tar.bz2): SHA256 se počítá přímo z daného archivu a injektuje do metadat při parsování.
-- Plain adresář s lokálním tarball-em (např. name-version.tar.gz/.bz2/.xz ve stejném adresáři): SHA256 se počítá z tohoto tarballu a uloží do metadat.
-- Plain adresář pouze s remote URL (bez lokálního taru): SHA256 se během parsování nepočítá (pole zůstává prázdné) a dopočítá se až po stažení v downloaderu (uloží se do .sha256 sidecar v cache).
+
 
 
 Klíčové funkce
 ----
-static char* compute_file_sha256(const char* file_path);
-- Vypočítá SHA256 hash souboru a vrací hex string (64 znaků + null terminator); caller musí free; používá OpenSSL SHA256_Init/Update/Final; vrací NULL při chybě (soubor neexistuje).
 
 static char* trim_str(const char* str);
 - Ořízne leading/trailing whitespace z stringu; vrací nový mallocovaný string nebo NULL.
@@ -40,7 +34,7 @@ static json_t* find_and_load_index(const char* dir_path);
 - Rekurzivně hledá a načte první index.json v adresáři (podporuje root/info/ a podadresáře); vrací JSON nebo NULL; použito pro tar.bz2 extrakty.
 
 static void add_default_fields(json_t* index);
-- Doplňuje defaultní pole do index JSON (build_number=0, license="unknown", md5="", sha256="", size=0, subdir="noarch", timestamp=aktuální).
+- Doplněuje defaultní pole do index JSON (build_number=0, license="unknown", md5="", size=0, subdir="noarch", timestamp=aktuální).
 
 static Id init_solvable_from_json(json_t *index, Pool *pool, Repo *repo);
 - Inicializuje Solvable z JSON (nastaví name, evr z version+build, arch s fallbackem na get_pool_arch, parsuje depends); vrací Id Solvable nebo 0.
@@ -101,9 +95,9 @@ void internalize_repo(Repo *repo);
 - Volá repo_internalize pro indexaci repo (whatprovides/obsoletes); loguje info.
 
 Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
-- Přidává tar.bz2 balíček do Repo: Extrahuje do tmp (tar xjf), počítá SHA256 hash tar souboru (compute_file_sha256), rekurzivně hledá index.json (find_and_load_index),
-  generuje default pokud chybí (generate_default_metadata), injektuje vypočítané SHA do JSON pole "sha256" pokud chybí (pro budoucí verify v downloaderu),
-  zpracovává JSON (process_index_json s fallback_source=tar_path), finalizuje (repo_internalize, pool_createwhatprovides); vrací Id Solvable nebo 0 při chybě; cleanup tmp a free(computed_sha).
+- Přidává tar.bz2 balíček do Repo: Extrahuje do tmp (tar xjf), rekurzivně hledá index.json (find_and_load_index),
+  generuje default pokud chybí (generate_default_metadata),
+  zpracovává JSON (process_index_json s fallback_source=tar_path), finalizuje (repo_internalize, pool_createwhatprovides); vrací Id Solvable nebo 0 při chybě; cleanup tmp.
 
 Integrace v projektu
 ----
@@ -132,16 +126,10 @@ Includes dependency parsing (depends array to SOLVABLE_REQUIRES) and error handl
 Extended to support tar.bz2 packages (extraction, recursive index.json search, default metadata generation if missing),
 allowing parsing of mixed directories and archives in repo or locally outside repo.
 
-SHA256 behavior
-----
-- Archive packages (.tar.bz2): SHA256 is computed from the archive itself and injected into metadata during parsing.
-- Plain directory with a local tarball (e.g., name-version.tar.gz/.bz2/.xz in same dir): SHA256 is computed from that tarball and saved into metadata.
-- Plain directory with only a remote URL (no local tar): SHA256 is not computed at parse time (field remains empty) and will be computed on first download in the downloader (stored as a .sha256 sidecar in cache).
+
 
 Key functions
 ----
-static char* compute_file_sha256(const char* file_path);
-- Computes SHA256 hash of file and returns hex string (64 chars + null terminator); caller must free; uses OpenSSL SHA256_Init/Update/Final; returns NULL on error (file doesn't exist).
 
 static char* trim_str(const char* str);
 - Trims leading/trailing whitespace from string; returns new malloc'd string or NULL.
@@ -153,7 +141,7 @@ static json_t* find_and_load_index(const char* dir_path);
 - Recursively searches and loads the first index.json in directory (supports root/info/ and subdirs); returns JSON or NULL; used for tar.bz2 extracts.
 
 static void add_default_fields(json_t* index);
-- Adds default fields to index JSON (build_number=0, license="unknown", md5="", sha256="", size=0, subdir="noarch", timestamp=current).
+- Adds default fields to index JSON (build_number=0, license="unknown", md5="", size=0, subdir="noarch", timestamp=current).
 
 static Id init_solvable_from_json(json_t *index, Pool *pool, Repo *repo);
 - Initializes Solvable from JSON (sets name, evr from version+build, arch with fallback to get_pool_arch, parses depends); returns Solvable Id or 0.
@@ -214,9 +202,9 @@ void internalize_repo(Repo *repo);
 - Calls repo_internalize to index repo (whatprovides/obsoletes); logs info.
 
 Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
-- Adds tar.bz2 package to Repo: Extracts to tmp (tar xjf), computes SHA256 hash of tar file (compute_file_sha256), recursively searches for index.json (find_and_load_index),
-generates default if missing (generate_default_metadata), injects computed SHA into JSON field "sha256" if missing (for future verify in downloader),
-processes JSON (process_index_json with fallback_source=tar_path), finalizes (repo_internalize, pool_createwhatprovides); returns Solvable Id or 0 on error; cleans up tmp and free(computed_sha).
+- Adds tar.bz2 package to Repo: Extracts to tmp (tar xjf), recursively searches for index.json (find_and_load_index),
+generates default if missing (generate_default_metadata),
+processes JSON (process_index_json with fallback_source=tar_path), finalizes (repo_internalize, pool_createwhatprovides); returns Id Solvable or 0 on error; cleanup tmp.
 
 Project integration
 ----

@@ -217,10 +217,10 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 		snprintf(cmd, sizeof(cmd), "cp -a '%s' '%s'", extra_file, dest_path);
 		int rc = system(cmd);
 		if (rc == 0) {
-			log_info("Zkopírován extra soubor: %s -> %s", ent->d_name, 
+			log_info("Copied extra file: %s -> %s", ent->d_name, 
 			         strcmp(ent->d_name, ".build") == 0 ? source_dir : parent_dir);
 		} else {
-			log_warn("Kopírování selhalo: %s", ent->d_name);
+			log_warn("Copy failed: %s", ent->d_name);
 		}
 	}
 	closedir(d);
@@ -242,20 +242,20 @@ int run_with_chroot(const char *root, build_callback func, void *data) {
 	// Fork to create isolated process for chroot
 	pid_t pid = fork();
 	if (pid < 0) {
-		log_error("Fork selhal pro chroot izolaci");
+		log_error("Fork failed for chroot isolation");
 		return -1;
 	}
 	
 	if (pid == 0) {
 		// Child process: perform chroot and execute callback
 		if (chroot(root) != 0) {
-			log_error("Chroot selhal: %s", strerror(errno));
+			log_error("Chroot failed: %s", strerror(errno));
 			exit(1);
 		}
 		
 		// Change to root directory within chroot
 		if (chdir("/") != 0) {
-			log_error("Chdir po chroot selhal");
+			log_error("Chdir after chroot failed");
 			exit(1);
 		}
 		
@@ -267,7 +267,7 @@ int run_with_chroot(const char *root, build_callback func, void *data) {
 	// Parent process: wait for child to complete
 	int status;
 	if (waitpid(pid, &status, 0) < 0) {
-		log_error("Waitpid selhal");
+		log_error("Waitpid failed");
 		return -1;
 	}
 	
@@ -366,7 +366,7 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	
 	// Create unique directory with mkdtemp (replaces XXXXXX with random chars)
 	if (!mkdtemp(build_dir)) {
-		log_error("mkdtemp selhalo pro %s", pkg_name);
+		log_error("mkdtemp failed for %s", pkg_name);
 		free(build_dir);
 		return -1;
 	}
@@ -374,14 +374,14 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 
 	// Extract source archive to build directory
 	if (extract_archive(fp, build_dir) != 0) {
-		log_error("Extrahování archivu selhalo pro %s", pkg_name);
+		log_error("Archive extraction failed for %s", pkg_name);
 		goto fail;
 	}
 
 	// Locate the actual source directory within extracted archive
 	char *source_dir = find_source_path(build_dir);
 	if (!source_dir) {
-		log_error("Nenalezen source dir pro %s", pkg_name);
+		log_error("Source dir not found for %s", pkg_name);
 		goto fail;
 	}
 	log_info("Source dir: %s", source_dir);
@@ -395,7 +395,7 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 		const char *destdir = g_staging_dir ? g_staging_dir : STAGING_DIR;
 		setenv("DESTDIR", destdir, 1);
 		setenv("P", destdir, 1);  // P is alias for DESTDIR used in .build scripts
-		log_debug(1, "DESTDIR nastaveno na: %s", destdir);
+		log_debug(1, "DESTDIR set to: %s", destdir);
 	} else {
 		unsetenv("DESTDIR");
 		unsetenv("P");
@@ -409,14 +409,14 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 
 	// Handle group packages (data-only, no compilation needed)
 	if (is_group) {
-		log_info("is_group: pouze extrakce pro %s", pkg_name);
+		log_info("is_group: extraction only for %s", pkg_name);
 		goto done;
 	}
 
 	// Execute build process
 	// Change to source directory for build
 	if (chdir(source_dir) != 0) {
-		log_error("Nelze chdir do %s", source_dir);
+		log_error("Cannot chdir to %s", source_dir);
 		goto fail_chdir;
 	}
 	
@@ -425,12 +425,12 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	// 2. Otherwise use standard configure+make (fallback)
 	int have_build = access(".build", X_OK) == 0;
 	const char *build_cmd = have_build ? "bash -e .build > build.log 2>&1" : "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make install >/dev/null 2>&1";
-	log_info("Spouštím build: %s", have_build ? ".build" : "fallback configure+make");
+	log_info("Running build: %s", have_build ? ".build" : "fallback configure+make");
 	
 	// Execute build command
 	int rc = system(build_cmd);
 	if (rc != 0) {
-		log_warn("Build selhal (%d) pro %s", rc, pkg_name);
+		log_warn("Build failed (%d) for %s", rc, pkg_name);
 		
 		// Offer retry on failure
 		if (user_confirm("Retry build? [y/N]", 0)) {
@@ -438,7 +438,7 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 		}
 		
 		if (rc != 0) {
-			log_error("Build definitivně selhal pro %s", pkg_name);
+			log_error("Build permanently failed for %s", pkg_name);
 			goto fail_chdir;
 		}
 	}

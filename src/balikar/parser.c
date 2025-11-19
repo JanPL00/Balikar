@@ -606,7 +606,7 @@ static void collect_packages_recursive(const char* current_path, json_t* package
                 collect_packages_recursive(full_path, packages, pool, repo);
             }
         } else if (entry->d_type == DT_REG && strstr(entry->d_name, ".tar.bz2")) {
-            // Zpracuj .tar.bz2 soubor
+            // Process .tar.bz2 file
             char tmp_dir[2048];
             snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/balikar_extract_%d", (int)time(NULL));
 
@@ -679,7 +679,7 @@ int generate_repodata(const char* repo_path) {
     json_object_set_nocheck(repodata, "info", info);
 
     json_t* packages = json_object();
-    collect_packages(repo_path, packages, NULL, NULL);  // Jen pro packages, no pool/repo
+    collect_packages(repo_path, packages, NULL, NULL);  // Only for packages, no pool/repo
     json_object_set_nocheck(repodata, "packages", packages);
 
     json_t* packages_conda = json_object();
@@ -1250,7 +1250,7 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
         }
     }
 
-    // Zpracuj (repo_add_conda + custom)
+    // Process (repo_add_conda + custom)
     p = process_index_json(index, NULL, pool, repo, tar_path);
     json_decref(index);
 

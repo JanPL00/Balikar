@@ -27,8 +27,8 @@ Přehled architektury a workflow balíčkového manageru Balikar.
              │    • Creates transaction queue
              │
              ├─── Downloader (src/balikar/downloader.c)
-             │    • Downloads packages from source[0].url
-             │    • Verifies SHA256 checksums
+             │    • Downloads packages with multi-source fallback
+             │    • Tries all URLs in source[] array until success
              │    • Manages cache (/var/cache/balikar/)
              │
              └─── Builder (src/balikar/builder.c)
@@ -100,11 +100,12 @@ Přehled architektury a workflow balíčkového manageru Balikar.
             │         └─► For each package in transaction:
             │             │
             │             ├─► download_package(solvable)
-            │             │   ├─► Get source[0].url or download_url
             │             │   ├─► Check cache first
-            │             │   ├─[MISS]─► Download from URL
-            │             │   │          └─► curl to /var/cache/balikar/
-            │             │   ├─► verify_hash_from_file(sha256)
+            │             │   ├─[MISS]─► Try each URL in source[] array:
+            │             │   │          ├─► Try source[0].url
+            │             │   │          ├─[FAIL]─► Try source[1].url
+            │             │   │          ├─[FAIL]─► Try source[2].url...
+            │             │   │          └─[SUCCESS]─► curl to /var/cache/balikar/
             │             │   └─► Return FILE* to package
             │             │
             │             ├─► build_package(package_file)
@@ -142,7 +143,7 @@ Přehled architektury a workflow balíčkového manageru Balikar.
            │   │   └─[NO]──► generate_repodata(local_path)
            │   │             ├─► Scans all <letter>/<name>/<name-version>/
            │   │             ├─► Loads each index.json
-           │   │             ├─► Computes SHA256 for tar.bz2
+
            │   │             ├─► Merges all metadata
            │   │             └─► Writes repodata.json
            │   │
@@ -211,12 +212,10 @@ typedef struct repo_config {
       "depends": [],
       "source": [
         {
-          "url": "https://ftp.gnu.org/gnu/hello/hello-1.0.tar.gz",
-          "sha256": "abc123..."
+          "url": "https://ftp.gnu.org/gnu/hello/hello-1.0.tar.gz"
         }
       ],
       "download_url": "https://raw.githubusercontent.com/.../hello-1.0.tar.bz2",
-      "sha256": "def456...",
       "extras": [],
       "is_group": false,
       "no_package": false
@@ -279,12 +278,12 @@ Balikar používá **libsolv** (knihovna z openSUSE) pro dependency resolution:
 - **libsolv / libsolvext** - Dependency resolution
 - **jansson** - JSON parsing
 - **libcurl** - HTTP downloads
-- **OpenSSL (libcrypto)** - SHA256 verification
+
 - **libarchive** - tar.bz2 extraction
 
 ## Bezpečnost
 
-- **SHA256 verification** - Všechny staženékbalíčky jsou ověřeny
+
 - **HTTPS** - Doporučeno pro remote repozitáře
 - **Source integrity** - `source[]` pole obsahuje checksums pro upstream zdroje
 

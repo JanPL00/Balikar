@@ -48,43 +48,64 @@ Viz [repos.conf.example](repos.conf.example)
 
 ### Struktura Metadat Balíčku
 
-Balikar používá `source[]` array pro definici zdrojových souborů balíčků:
+Balikar používá `source[]` array pro definici zdrojových souborů balíčků s podporou více mirror URL:
 
 ```json
 {
   "name": "gzip",
   "version": "1.14",
   "download_url": "https://raw.githubusercontent.com/JanPL00/balikar-repository/main/g/gzip/gzip-1.14.tar.bz2",
-  "source": [{
-    "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz",
-    "sha256": "4bf5a10f287501ee8e8ebe00ef62b2c2"
-  }]
+  "source": [
+    {
+      "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz"
+    },
+    {
+      "url": "https://mirror.example.com/gnu/gzip/gzip-1.14.tar.xz"
+    },
+    {
+      "url": "https://backup.mirror.org/gzip-1.14.tar.xz"
+    }
+  ]
 }
 ```
 
 **Pole metadat:**
 - **`download_url`**: URL předkompilovaného balíčku (budoucí použití pro binární balíčky)
-- **`source`**: Array objektů se zdrojovými soubory
+- **`source`**: Array objektů se zdrojovými soubory (podporuje více mirror URL)
   - **`url`**: Přímý odkaz na zdrojový tarball (tar.gz, tar.xz, tar.bz2)
+  - Downloader zkouší URL postupně v pořadí až do úspěchu
 
 **Zpětná kompatibilita:** Starý formát s `source` jako string je stále podporován.
 
 ### Workflow Stahování
 
 ```
-Parser → Načte source[] → Downloader → Preferuje source[0].url
+Parser → Načte source[] → Downloader → Zkouší source[0].url
                                     ↓
-                              Stáhne soubor
+                            Stahování selhalo?
+                                    ↓
+                        ANO → Zkusí source[1].url
+                                    ↓
+                            Stahování selhalo?
+                                    ↓
+                        ANO → Zkusí source[2].url
+                                    ↓
+                            ...další URL...
                                     ↓
                         Cache do /var/cache/balikar/
 ```
 
+**Multi-source fallback:**
+- Downloader automaticky zkouší všechny URL v pořadí
+- Při selhání jedné URL pokračuje na další
+- Zastaví se po prvním úspěšném stažení
+- Pokud selžou všechny URL, zkusí lokální fallback z repository struktury
+
 ### Bezpečnost
 
-**SHA256 verifikace:**
-- Každý stažený soubor je automaticky ověřen
-- **Shoda**: Soubor uložen do cache a použit
-- **Neshoda**: Soubor smazán, instalace selže
+**Vysoká dostupnost:**
+- Více mirror URL zajišťuje dostupnost i při výpadku serveru
+- Automatický fallback bez zásahu uživatele
 
 **Doporučení:**
 1. ✅ Vždy uvádějte SHA256 hash
@@ -297,10 +318,19 @@ balikar install gcc --dry-run
 
 **Ukázka logů:**
 ```
-[INFO] Using source[0].url: https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
-[INFO] Using source[0].sha256: 977c8c0c5ae6309191e7768e28ebc951
+[INFO] Trying source[0].url: https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
 [====>                ] 45% (5.2MB/11.5MB)
-[INFO] Downloaded to /var/cache/balikar/downloads/bash-5.3.tar.gz
+[INFO] Successfully downloaded from source[0]: https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
+[INFO] Package cached at: /var/cache/balikar/downloads/bash-5.3.tar.gz
+```
+
+**Pří fallback na další URL:**
+```
+[INFO] Trying source[0].url: https://down-mirror.example.com/bash-5.3.tar.gz
+[WARN] Download failed from source[0]: https://down-mirror.example.com/bash-5.3.tar.gz (Connection failed)
+[INFO] Trying source[1].url: https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
+[====>                ] 45% (5.2MB/11.5MB)
+[INFO] Successfully downloaded from source[1]: https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz
 ```
 
 ## Cache Management
@@ -371,7 +401,7 @@ balikar repos
 ### Moduly
 
 - **`parser.c`**: Načítá `source[]` array z JSON a ukládá do libsolv repodata
-- **`downloader.c`**: Preferuje `source[0].url` před `download_url`, ověřuje SHA256
+- **`downloader.c`**: Iteruje přes všechny URL v `source[]` poli s automatickým fallbackem při selhání
 - **`builder.c`**: Zpracovává stažené soubory bez změn (používá cache)
 - **`config.c`**: Správa konfigurace repozitářů (načítání, ukládání, prioritizace)
 

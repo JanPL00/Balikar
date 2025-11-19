@@ -382,7 +382,7 @@ OPTIMALIZACE
 
 2. Cache reuse:
    - Downloader cachuje tar soubory
-   - SHA256 verifikace pro cache hit
+
    - Nestahuji znovu pokud existuje
 
 3. Minimal cleanup:
@@ -462,7 +462,7 @@ BUDOUCÍ VYLEPŠENÍ
 
 1. Caching buildů:
    - Cache build output v /var/cache/balikar/builds/
-   - Skip rebuild pokud sha256(tar) == cached
+
    - Zkrácení repeated builds
 
 2. Parallel builds:

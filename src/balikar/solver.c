@@ -32,14 +32,14 @@ Solver *create_solver(Pool *pool) {
         return NULL;
     }
 
-    // Nastav flags pro náš workflow (z constantids.3 a solv.c)
-    solver_set_flag(solv, SOLVER_FLAG_ALLOW_UNINSTALL, 1);     // Povol uninstall pro konflikty
-    solver_set_flag(solv, SOLVER_FLAG_ALLOW_VENDORCHANGE, 1);  // Povol vendor změny (pro LFS flexibilitu)
-    solver_set_flag(solv, SOLVER_FLAG_ALLOW_DOWNGRADE, 0);     // Zakáž downgrade pro bezpečnost (uprav podle potřeby)
-    solver_set_flag(solv, SOLVER_FLAG_NO_AUTOTARGET, 1);       // Žádný auto-target pro explicitní jobs
+    // Set flags for our workflow (from constantids.3 and solv.c)
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_UNINSTALL, 1);     // Allow uninstall for conflicts
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_VENDORCHANGE, 1);  // Allow vendor changes (for LFS flexibility)
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_DOWNGRADE, 0);     // Disallow downgrade for security (adjust as needed)
+    solver_set_flag(solv, SOLVER_FLAG_NO_AUTOTARGET, 1);       // No auto-target for explicit jobs
 
-    // Para Conda kompatibilitu (z plánu, i když není v constantids – předpokládám existenci)
-    // pool_set_flag(pool, POOL_FLAG_WHATPROVIDESUSESCONDA, 1);  // Pokud existuje, nastav na pool
+    // For Conda compatibility (from plan, even if not in constantids – assuming existence)
+    // pool_set_flag(pool, POOL_FLAG_WHATPROVIDESUSESCONDA, 1);  // If exists, set on pool
 
     // Note: Pool arch should already be set by caller (main.c)
     // Do NOT call set_system_arch here as it reinitializes the pool
@@ -164,7 +164,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     Id main_p = 0;
     Solvable *s;
     FOR_REPO_SOLVABLES(repo, main_p, s) {
-        if (s->name == name_id) break;  // První match
+        if (s->name == name_id) break;  // First match
     }
     if (!main_p) {
         log_error("No solvable found for '%s' in repository.", pkg_name);

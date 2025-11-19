@@ -71,7 +71,7 @@ repo-update
 
 clean-cache
     Vymaže download cache (/var/cache/balikar/downloads/).
-    Odstraní všechny stažené tar archivy, SHA256 sidecar soubory
+    Odstraní všechny stažené tar archivy z cache
     a extras (patches). Při příštím buildu se balíčky stáhnou znovu.
     
     Použití:
@@ -188,7 +188,8 @@ index.json struktura:
   make
   make install  # Instaluje do $DESTDIR/usr/...
 
-POUŽITÍ CASES
+
+USE CASES
 -------------
 
 1. ZÁKLADNÍ BUILD BALÍČKU
@@ -334,7 +335,7 @@ SOUBORY
     Cache stažených tar archivů.
     Obsahuje:
     - <pkg>-<version>.tar.{xz,bz2,gz} - stažené archivy
-    - <pkg>-<version>.tar.*.sha256 - SHA256 sidecar soubory
+
     Vymazání: balikar clean-cache
 
 /var/cache/balikar/downloads/extras/<pkg>/
@@ -444,7 +445,7 @@ POKROČILÉ POUŽITÍ
    # Zobrazit obsah cache
    $ ls -lh /var/cache/balikar/downloads/
    -rw-r--r-- 1 user user  18M Nov 17 12:00 glibc-2.40.tar.xz
-   -rw-r--r-- 1 user user   65 Nov 17 12:00 glibc-2.40.tar.xz.sha256
+
    -rw-r--r-- 1 user user 1.2M Nov 17 12:10 zlib-1.3.1.tar.gz
    
    # Vymazat celou cache (s potvrzením)
