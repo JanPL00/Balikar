@@ -73,169 +73,15 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     return 0;
 }
 
-/**
- * Compute MD5 hash of a file.
- * 
- * Reads file in chunks and computes MD5 hash, returning hexadecimal string.
- * Caller must free the returned string.
- * 
- * @param file_path Path to file to hash
- * @return Hex string of MD5 hash (32 characters), or NULL on error
- */
-static char* compute_file_md5(const char *file_path) {
-    if (!file_path) return NULL;
-    
-    FILE *fp = fopen(file_path, "rb");
-    if (!fp) return NULL;
-    
-    MD5_CTX md5;
-    MD5_Init(&md5);
-    unsigned char buffer[4096];
-    size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
-        MD5_Update(&md5, buffer, bytes_read);
-    }
-    fclose(fp);
-    
-    unsigned char hash[MD5_DIGEST_LENGTH];
-    MD5_Final(hash, &md5);
-    
-    char *computed_md5 = malloc(MD5_DIGEST_LENGTH * 2 + 1);
-    if (!computed_md5) return NULL;
-    
-    for (int i = 0; i < MD5_DIGEST_LENGTH; i++) {
-        snprintf(computed_md5 + i * 2, 3, "%02x", hash[i]);
-    }
-    computed_md5[MD5_DIGEST_LENGTH * 2] = '\0';
-    
-    return computed_md5;
-}
 
-/**
- * Compute SHA256 hash of a file.
- * 
- * Reads file in chunks and computes SHA256 hash, returning hexadecimal string.
- * Caller must free the returned string.
- * 
- * @param file_path Path to file to hash
- * @return Hex string of SHA256 hash (64 characters), or NULL on error
- */
-static char* compute_file_sha256(const char *file_path) {
-    if (!file_path) return NULL;
-    
-    FILE *fp = fopen(file_path, "rb");
-    if (!fp) return NULL;
-    
-    SHA256_CTX sha256;
-    SHA256_Init(&sha256);
-    unsigned char buffer[4096];
-    size_t bytes_read;
-    while ((bytes_read = fread(buffer, 1, sizeof(buffer), fp)) > 0) {
-        SHA256_Update(&sha256, buffer, bytes_read);
-    }
-    fclose(fp);
-    
-    unsigned char hash[SHA256_DIGEST_LENGTH];
-    SHA256_Final(hash, &sha256);
-    
-    char *computed_sha = malloc(SHA256_DIGEST_LENGTH * 2 + 1);
-    if (!computed_sha) return NULL;
-    
-    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
-        snprintf(computed_sha + i * 2, 3, "%02x", hash[i]);
-    }
-    computed_sha[SHA256_DIGEST_LENGTH * 2] = '\0';
-    
-    return computed_sha;
-}
-
-/**
- * Verify file hash against expected value.
- * 
- * Auto-detects hash type (MD5 or SHA256) based on length and compares
- * with computed hash. Logs mismatches for debugging.
- * 
- * @param file_path Path to file to verify
- * @param expected_hash Expected hash string (32 chars for MD5, 64 for SHA256)
- * @return 1 if match or no hash provided, 0 on mismatch
- */
-static int verify_hash_from_file(const char *file_path, const char *expected_hash) {
-    if (!expected_hash) return 1;  // Skip validation if no hash provided
-    
-    size_t hash_len = strlen(expected_hash);
-    
-    if (hash_len == 32) {
-        // MD5 hash detected (128 bits = 32 hex chars)
-        char *computed_md5 = compute_file_md5(file_path);
-        if (!computed_md5) return 0;
-        
-        int match = (strcmp(computed_md5, expected_hash) == 0);
-        if (!match) {
-            log_warn("MD5 mismatch for %s: expected %s, got %s", file_path, expected_hash, computed_md5);
-        } else {
-            log_debug(1, "MD5 verified: %s", computed_md5);
-        }
-        free(computed_md5);
-        return match;
-    } else if (hash_len == 64) {
-        // SHA256 hash (256 bits = 64 hex chars)
-        char *computed_sha = compute_file_sha256(file_path);
-        if (!computed_sha) return 0;
-        
-        int match = (strcmp(computed_sha, expected_hash) == 0);
-        if (!match) {
-            log_warn("SHA256 mismatch for %s: expected %s, got %s", file_path, expected_hash, computed_sha);
-        } else {
-            log_debug(1, "SHA256 verified: %s", computed_sha);
-        }
-        free(computed_sha);
-        return match;
-    } else {
-        log_warn("Invalid hash length (%zu chars) - expected 32 (MD5) or 64 (SHA256): %s", 
-                 hash_len, expected_hash);
-        return 1;  // Skip validation but warn about bad metadata
-    }
-}
-
-/**
- * Read SHA256 hash from sidecar file.
- * 
- * Looks for .sha256 file next to cached package and reads stored hash.
- * Used for verifying cached files when metadata doesn't include hash.
- * Caller must free returned string.
- * 
- * @param cache_path Path to cached file
- * @return SHA256 hash string or NULL if sidecar doesn't exist
- */
-static char* read_sha256_sidecar(const char *cache_path) {
-    if (!cache_path) return NULL;
-    char sidecar[2048];
-    snprintf(sidecar, sizeof(sidecar), "%s.sha256", cache_path);
-    FILE *fp = fopen(sidecar, "r");
-    if (!fp) return NULL;
-    char buf[128] = {0};
-    if (!fgets(buf, sizeof(buf), fp)) {
-        fclose(fp);
-        return NULL;
-    }
-    fclose(fp);
-    size_t n = strlen(buf);
-    while (n && (buf[n-1] == '\n' || buf[n-1] == '\r' || buf[n-1] == ' ' || buf[n-1] == '\t')) buf[--n] = '\0';
-    char *sha = malloc(n + 1);
-    if (!sha) return NULL;
-    memcpy(sha, buf, n + 1);
-    return sha;
-}
 
 /**
  * Download package and return file pointer.
  * 
  * Main download function that:
  * 1. Creates cache directory
- * 2. Checks for cached file with hash verification
+ * 2. Checks for cached file (no hash verification)
  * 3. Downloads from URL or copies from local path
- * 4. Verifies downloaded file hash
- * 5. Stores SHA256 in sidecar for future verification
  * 
  * Supports both local files and HTTP/HTTPS URLs with automatic fallback
  * to local repository structure. Includes progress indication.
@@ -270,7 +116,6 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     
     // Prefer source[] array (new format) over download_url
     const char *actual_url = loc;  // fallback
-    const char *sha = NULL;
     
     // Try to load source array from metadata
     json_t *source_array = get_custom_source_array(data, p, pool);
@@ -278,23 +123,12 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         json_t *first_source = json_array_get(source_array, 0);
         if (first_source && json_is_object(first_source)) {
             json_t *url_json = json_object_get(first_source, "url");
-            json_t *sha_json = json_object_get(first_source, "sha256");
             
             if (url_json && json_is_string(url_json)) {
                 actual_url = json_string_value(url_json);
                 log_info("Using source[0].url: %s", actual_url);
             }
-            if (sha_json && json_is_string(sha_json)) {
-                sha = json_string_value(sha_json);
-                log_info("Using source[0].sha256: %s", sha);
-            }
         }
-    }
-    
-    // Fallback to standard sha256 from metadata
-    if (!sha) {
-        Id sha_key = pool_str2id(pool, "sha256", 0);
-        sha = repodata_lookup_str(data, p, sha_key);
     }
     
     char cache_path[2048];
@@ -315,28 +149,13 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     }
     snprintf(cache_path, sizeof(cache_path), "%s/%s-%s%s", cache_dir, pkg_name, version, ext);
 
-    // If metadata lacks sha, try sidecar for validation
-    char *sidecar_sha = NULL;
-    if (!sha) sidecar_sha = read_sha256_sidecar(cache_path);
-
-    // Check cache and verify integrity (prefer metadata hash, fallback to sidecar)
+    // Check cache (no verification)
     if (access(cache_path, F_OK) == 0) {
-        if (verify_hash_from_file(cache_path, sha ? sha : sidecar_sha)) {
-            log_info("Using cached file: %s", cache_path);
-            free(cache_dir);
-            if (sidecar_sha) free(sidecar_sha);
-            return fopen(cache_path, "r");
-        } else {
-            // Verification failed - delete corrupted/empty file
-            log_warn("Cached file verification failed, removing: %s", cache_path);
-            remove(cache_path);
-            // Delete sidecar file if it exists
-            char sha_sidecar[2048];
-            snprintf(sha_sidecar, sizeof(sha_sidecar), "%s.sha256", cache_path);
-            remove(sha_sidecar);
-        }
+        log_info("Using cached file (no verification): %s", cache_path);
+        free(cache_dir);
+        if (source_array) json_decref(source_array);
+        return fopen(cache_path, "r");
     }
-    if (sidecar_sha) { free(sidecar_sha); sidecar_sha = NULL; }
 
     // Determine if source is local file or remote URL
     // Local paths: absolute (/...), relative (./...), or non-URL strings
@@ -372,14 +191,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
             free(cache_dir);
             return NULL;
         }
-        // Verify local file hash if metadata provides sha
-        if (sha && !verify_hash_from_file(cache_path, sha)) {
-            log_error("Local file SHA mismatch: %s", cache_path);
-            remove(cache_path);
-            if (source_array) json_decref(source_array);
-            free(cache_dir);
-            return NULL;
-        }
+        log_info("Copied local file to cache: %s", cache_path);
     } else {
         FILE *fp = fopen(cache_path, "wb");
         if (!fp) {
@@ -448,31 +260,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         
         curl_easy_cleanup(curl);
         fclose(fp);
-
-        // Verify downloaded file if SHA provided in metadata
-        if (sha && !verify_hash_from_file(cache_path, sha)) {
-            remove(cache_path);
-            if (source_array) json_decref(source_array);
-            free(cache_dir);
-            return NULL;
-        }
-        
-        // Compute and store SHA256 for future cache verification
-        char *computed_sha = compute_file_sha256(cache_path);
-        if (computed_sha) {
-            log_info("Computed SHA256 for remote file %s: %s", actual_url, computed_sha);
-            
-            // Store SHA in sidecar file for future cache validation
-            char sha_sidecar[2048];
-            snprintf(sha_sidecar, sizeof(sha_sidecar), "%s.sha256", cache_path);
-            FILE *sha_fp = fopen(sha_sidecar, "w");
-            if (sha_fp) {
-                fprintf(sha_fp, "%s\n", computed_sha);
-                fclose(sha_fp);
-                log_debug(1, "Stored SHA256 in sidecar: %s", sha_sidecar);
-            }
-            free(computed_sha);
-        }
+        log_info("Downloaded file to cache: %s", cache_path);
     }
 
     log_info("Downloaded/cached %s to %s", actual_url, cache_path);

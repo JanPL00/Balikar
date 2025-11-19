@@ -7,7 +7,6 @@ Source-based package manager inspired by Linux From Scratch (LFS), using libsolv
 - ✅ **Dependency Resolution** using libsolv (same engine as zypper, dnf)
 - ✅ **Build-from-Source** workflow (LFS-style)
 - ✅ **Remote Repositories** support (GitHub, HTTP/HTTPS)
-- ✅ **SHA256 Verification** for downloaded packages
 - ✅ **Multiple Repository** support with priorities
 - ✅ **Staging Environment** for safe builds ($DESTDIR)
 - ✅ **Custom Build Scripts** (.build) and install hooks (.install)

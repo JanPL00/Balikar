@@ -61,7 +61,7 @@ repos
 repo-update
     Vynuceně regeneruje repodata.json z aktuálního obsahu repozitáře.
     Prochází adresářovou strukturu repo/, načítá index.json soubory,
-    zpracovává tar.bz2 archivy, počítá SHA256 hashe a vytváří
+    zpracovává tar.bz2 archivy a vytváří
     nový repodata.json. Po vygenerování znovu načte repository.
     Použij pokud potřebuješ force regeneraci bez ohledu na timestampy.
     Příklad:
@@ -530,7 +530,6 @@ POZNÁMKY
 - Builder podporuje .tar.gz, .tar.bz2, .tar.xz a .tar formáty
 - Automatická detekce komprese podle magic bytes (gzip, xz, bzip2)
 - Rekurzivní vyhledávání .build až do depth=3
-- SHA256 verifikace stažených souborů
 - Automatický cleanup build dirs
 - Interaktivní potvrzení transakcí (y/n/q)
 - Parallel make s -j$(nproc)

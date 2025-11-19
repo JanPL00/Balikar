@@ -4,7 +4,6 @@ project(impl C)
 set(CMAKE_C_STANDARD 11)
 
 find_package(PkgConfig REQUIRED)
-find_package(OpenSSL REQUIRED)
 
 # Použij pkg-config pro všechny knihovny KROMĚ LibSolv
 pkg_check_modules(CURL REQUIRED libcurl)
@@ -63,7 +62,6 @@ target_include_directories(balikar PRIVATE
         ${CURL_INCLUDE_DIRS}
         ${Jansson_INCLUDE_DIRS}
         ${LibArchive_INCLUDE_DIRS}
-        ${OPENSSL_INCLUDE_DIR}
         src/balikar/includes
         src/utils/includes
         src/common/includes
@@ -74,7 +72,6 @@ target_link_libraries(balikar
         ${CURL_LIBRARIES}
         ${Jansson_LIBRARIES}
         ${LibArchive_LIBRARIES}
-        OpenSSL::Crypto
 )
 
 # RPATH pro runtime
@@ -123,7 +120,6 @@ target_link_libraries(tests
         ${LibSolv_LIBRARIES}
         ${Jansson_LIBRARIES}
         ${CURL_LIBRARIES}
-        OpenSSL::Crypto
         m
         pthread
         rt

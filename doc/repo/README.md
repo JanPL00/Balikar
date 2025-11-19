@@ -9,7 +9,6 @@ Balikar podporuje:
 - **Vzdálené repozitáře** (GitHub, HTTP/HTTPS servery)
 - **Lokální repozitáře** pro development
 - **Automatické stahování** balíčků z internetu
-- **SHA256 verifikaci** pro bezpečnost
 
 Podobně jako apt, pacman nebo conda, ale pro build-from-source balíčky z Linux From Scratch.
 
@@ -67,7 +66,6 @@ Balikar používá `source[]` array pro definici zdrojových souborů balíčků
 - **`download_url`**: URL předkompilovaného balíčku (budoucí použití pro binární balíčky)
 - **`source`**: Array objektů se zdrojovými soubory
   - **`url`**: Přímý odkaz na zdrojový tarball (tar.gz, tar.xz, tar.bz2)
-  - **`sha256`**: SHA-256 hash pro verifikaci integrity
 
 **Zpětná kompatibilita:** Starý formát s `source` jako string je stále podporován.
 
@@ -77,8 +75,6 @@ Balikar používá `source[]` array pro definici zdrojových souborů balíčků
 Parser → Načte source[] → Downloader → Preferuje source[0].url
                                     ↓
                               Stáhne soubor
-                                    ↓
-                          Ověří SHA256 checksum
                                     ↓
                         Cache do /var/cache/balikar/
 ```
