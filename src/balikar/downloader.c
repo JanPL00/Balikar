@@ -2,20 +2,41 @@
 //
 
 #include "includes/downloader.h"
-#include <ctype.h>
 
-// Helper: Curl write callback
+/**
+ * CURL write callback for downloading files.
+ * 
+ * Standard libcurl callback that writes downloaded data to a file stream.
+ * 
+ * @param ptr Pointer to downloaded data
+ * @param size Size of each data element
+ * @param nmemb Number of elements
+ * @param stream FILE* to write to
+ * @return Number of bytes written
+ */
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
     return fwrite(ptr, size, nmemb, (FILE *)stream);
 }
 
-// Helper: Progress callback for curl download
+/**
+ * Progress callback for CURL downloads.
+ * 
+ * Displays progress bar or spinner during download. Shows percentage,
+ * downloaded/total size in MB, and visual progress indicator.
+ * 
+ * @param clientp Client data pointer (unused)
+ * @param dltotal Total download size
+ * @param dlnow Current downloaded size
+ * @param ultotal Total upload size (unused)
+ * @param ulnow Current upload size (unused)
+ * @return 0 to continue, non-zero to abort
+ */
 static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
     (void)clientp;
     (void)ultotal;
     (void)ulnow;
     
-    // Spinner pro neznámou velikost
+    // Show spinner when total size is unknown
     if (dltotal <= 0) {
         static int spin_idx = 0;
         char spinner[] = "|/-\\";
@@ -26,11 +47,12 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
         return 0;
     }
     
+    // Calculate progress percentage and bar fill
     int percent = (int)((100.0 * dlnow) / dltotal);
     int bar_width = 50;
     int filled = (bar_width * dlnow) / dltotal;
     
-    // Formátování velikostí
+    // Format sizes in megabytes for display
     double dl_mb = dlnow / 1024.0 / 1024.0;
     double total_mb = dltotal / 1024.0 / 1024.0;
     
@@ -45,13 +67,21 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     fflush(stderr);
     
     if (dlnow >= dltotal) {
-        fprintf(stderr, "\n");  // Nový řádek po dokončení
+        fprintf(stderr, "\n");  // New line after completion
     }
     
     return 0;
 }
 
-// Helper: Compute MD5 of file and return hex string (caller must free)
+/**
+ * Compute MD5 hash of a file.
+ * 
+ * Reads file in chunks and computes MD5 hash, returning hexadecimal string.
+ * Caller must free the returned string.
+ * 
+ * @param file_path Path to file to hash
+ * @return Hex string of MD5 hash (32 characters), or NULL on error
+ */
 static char* compute_file_md5(const char *file_path) {
     if (!file_path) return NULL;
     
@@ -81,7 +111,15 @@ static char* compute_file_md5(const char *file_path) {
     return computed_md5;
 }
 
-// Helper: Compute SHA256 of file and return hex string (caller must free)
+/**
+ * Compute SHA256 hash of a file.
+ * 
+ * Reads file in chunks and computes SHA256 hash, returning hexadecimal string.
+ * Caller must free the returned string.
+ * 
+ * @param file_path Path to file to hash
+ * @return Hex string of SHA256 hash (64 characters), or NULL on error
+ */
 static char* compute_file_sha256(const char *file_path) {
     if (!file_path) return NULL;
     
@@ -111,14 +149,23 @@ static char* compute_file_sha256(const char *file_path) {
     return computed_sha;
 }
 
-// Helper: Compute hash of file (MD5 or SHA256) and verify (return 1 if matches expected)
+/**
+ * Verify file hash against expected value.
+ * 
+ * Auto-detects hash type (MD5 or SHA256) based on length and compares
+ * with computed hash. Logs mismatches for debugging.
+ * 
+ * @param file_path Path to file to verify
+ * @param expected_hash Expected hash string (32 chars for MD5, 64 for SHA256)
+ * @return 1 if match or no hash provided, 0 on mismatch
+ */
 static int verify_hash_from_file(const char *file_path, const char *expected_hash) {
-    if (!expected_hash) return 1;  // Skip if no hash in metadata
+    if (!expected_hash) return 1;  // Skip validation if no hash provided
     
     size_t hash_len = strlen(expected_hash);
     
     if (hash_len == 32) {
-        // MD5 hash (128 bits = 32 hex chars)
+        // MD5 hash detected (128 bits = 32 hex chars)
         char *computed_md5 = compute_file_md5(file_path);
         if (!computed_md5) return 0;
         
@@ -150,7 +197,16 @@ static int verify_hash_from_file(const char *file_path, const char *expected_has
     }
 }
 
-// Helper: read expected SHA256 from sidecar file if present
+/**
+ * Read SHA256 hash from sidecar file.
+ * 
+ * Looks for .sha256 file next to cached package and reads stored hash.
+ * Used for verifying cached files when metadata doesn't include hash.
+ * Caller must free returned string.
+ * 
+ * @param cache_path Path to cached file
+ * @return SHA256 hash string or NULL if sidecar doesn't exist
+ */
 static char* read_sha256_sidecar(const char *cache_path) {
     if (!cache_path) return NULL;
     char sidecar[2048];
@@ -171,13 +227,33 @@ static char* read_sha256_sidecar(const char *cache_path) {
     return sha;
 }
 
+/**
+ * Download package and return file pointer.
+ * 
+ * Main download function that:
+ * 1. Creates cache directory
+ * 2. Checks for cached file with hash verification
+ * 3. Downloads from URL or copies from local path
+ * 4. Verifies downloaded file hash
+ * 5. Stores SHA256 in sidecar for future verification
+ * 
+ * Supports both local files and HTTP/HTTPS URLs with automatic fallback
+ * to local repository structure. Includes progress indication.
+ * 
+ * @param s Solvable for package to download
+ * @param loc Location string (may be overridden by metadata)
+ * @param pool Package pool
+ * @param data Repodata containing custom metadata
+ * @param repo_path Repository base path for local fallback
+ * @return FILE pointer to downloaded/cached package, or NULL on error
+ */
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path) {
     if (!s || !loc) {
         log_error("Invalid arguments in download_package.");
         return NULL;
     }
 
-    char *cache_dir = CACHE_DIR;  // strdup pokud potřeba modifikovat
+    char *cache_dir = CACHE_DIR;  // strdup if modification needed
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", cache_dir);
     if (system(cmd) != 0) {
@@ -189,14 +265,14 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     char *pkg_name = pool_id2str(pool, s->name);
     char *version = pool_id2str(pool, s->evr);
     
-    // Získej Id p ze Solvable pointer
+    // Get solvable ID from Solvable pointer
     Id p = s - pool->solvables;
     
-    // Preferuj source[] array (nový formát) před download_url
+    // Prefer source[] array (new format) over download_url
     const char *actual_url = loc;  // fallback
     const char *sha = NULL;
     
-    // Zkus načíst source array
+    // Try to load source array from metadata
     json_t *source_array = get_custom_source_array(data, p, pool);
     if (source_array && json_array_size(source_array) > 0) {
         json_t *first_source = json_array_get(source_array, 0);
@@ -215,7 +291,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         }
     }
     
-    // Fallback na standardní sha256 z metadata
+    // Fallback to standard sha256 from metadata
     if (!sha) {
         Id sha_key = pool_str2id(pool, "sha256", 0);
         sha = repodata_lookup_str(data, p, sha_key);
@@ -223,19 +299,19 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     
     char cache_path[2048];
     
-    // Detekce extension včetně .tar.* formátů
+    // Detect file extension including .tar.* formats
     const char *ext = ".tar.xz";  // default
     const char *last_dot = strrchr(actual_url, '.');
     if (last_dot) {
         const char *last_slash = strrchr(actual_url, '/');
         const char *filename = last_slash ? last_slash + 1 : actual_url;
         
-        // Zkontroluj .tar.{xz,gz,bz2} formáty
+        // Check for .tar.{xz,gz,bz2} formats
         if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
         else if (strstr(filename, ".tar.gz")) ext = ".tar.gz";
         else if (strstr(filename, ".tar.bz2")) ext = ".tar.bz2";
         else if (strstr(filename, ".tgz")) ext = ".tgz";
-        else ext = last_dot;  // jiná extension
+        else ext = last_dot;  // other extension
     }
     snprintf(cache_path, sizeof(cache_path), "%s/%s-%s%s", cache_dir, pkg_name, version, ext);
 
@@ -243,7 +319,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     char *sidecar_sha = NULL;
     if (!sha) sidecar_sha = read_sha256_sidecar(cache_path);
 
-    // Check cache + verify (prefer metadata sha, fallback to sidecar sha)
+    // Check cache and verify integrity (prefer metadata hash, fallback to sidecar)
     if (access(cache_path, F_OK) == 0) {
         if (verify_hash_from_file(cache_path, sha ? sha : sidecar_sha)) {
             log_info("Using cached file: %s", cache_path);
@@ -251,10 +327,10 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
             if (sidecar_sha) free(sidecar_sha);
             return fopen(cache_path, "r");
         } else {
-            // Verifikace selhala - smaž poškozený/prázdný soubor
+            // Verification failed - delete corrupted/empty file
             log_warn("Cached file verification failed, removing: %s", cache_path);
             remove(cache_path);
-            // Smaž i sidecar pokud existuje
+            // Delete sidecar file if it exists
             char sha_sidecar[2048];
             snprintf(sha_sidecar, sizeof(sha_sidecar), "%s.sha256", cache_path);
             remove(sha_sidecar);
@@ -262,15 +338,15 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     }
     if (sidecar_sha) { free(sidecar_sha); sidecar_sha = NULL; }
 
-    // Download nebo copy
-    // Check if it's a local path (absolute, relative, or not a URL)
-    // URLs typically start with http://, https://, ftp://, etc.
+    // Determine if source is local file or remote URL
+    // Local paths: absolute (/...), relative (./...), or non-URL strings
+    // Remote URLs: http://, https://, ftp://, file://
     int is_local = (actual_url[0] == '/' || strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0 ||
                     (strncmp(actual_url, "http://", 7) != 0 && strncmp(actual_url, "https://", 8) != 0 &&
                      strncmp(actual_url, "ftp://", 6) != 0 && strncmp(actual_url, "file://", 7) != 0));
     
-    // FALLBACK: Try to find local equivalent if URL is remote
-    // Before attempting HTTP download, try to find the file locally in repo_path or cache
+    // FALLBACK: Before HTTP download, try to find file locally
+    // Construct local path from repository structure (e.g., g/glibc/glibc-2.42.tar.bz2)
     if (!is_local && repo_path) {
         // Try to construct local path from repo structure
         // Example: for glibc-2.42, try ../balikar-repository/g/glibc/glibc-2.42.tar.bz2
@@ -324,21 +400,22 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
 
         log_info("Downloading from: %s", actual_url);
         
+        // Configure CURL options for download
         curl_easy_setopt(curl, CURLOPT_URL, actual_url);
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
         curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minut timeout
-        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L); // 10s connect timeout (rychlejší detekce nedostupného serveru)
-        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4 kvůli problémům s IPv6
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minute timeout
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L); // 10s connect timeout for faster failure detection
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Prefer IPv4 to avoid IPv6 issues
         
         // Progress bar callback
         curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
         CURLcode res = curl_easy_perform(curl);
-        printf("\n");  // Ukončit progress řádek před výpisem chyby
+        printf("\n");  // Terminate progress line before error output
         fflush(stdout);
         
         // Enhanced diagnostics for connection failures
@@ -372,7 +449,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         curl_easy_cleanup(curl);
         fclose(fp);
 
-        // Verify po downloadu if SHA provided
+        // Verify downloaded file if SHA provided in metadata
         if (sha && !verify_hash_from_file(cache_path, sha)) {
             remove(cache_path);
             if (source_array) json_decref(source_array);
@@ -380,7 +457,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
             return NULL;
         }
         
-        // Compute and store SHA for remote files (for future verification)
+        // Compute and store SHA256 for future cache verification
         char *computed_sha = compute_file_sha256(cache_path);
         if (computed_sha) {
             log_info("Computed SHA256 for remote file %s: %s", actual_url, computed_sha);
@@ -409,8 +486,18 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     return fp;
 }
 
-// Funkce pro extras (patches array)
-// Helper: Stáhne repository archiv a extrahuje .build skript
+/**
+ * Try to download .build script from repository archive.
+ * 
+ * Attempts to fetch package's repository archive (e.g., g/glibc/glibc-2.42.tar.bz2)
+ * and extract the .build script to extras cache. This provides build instructions
+ * when not included in package metadata.
+ * 
+ * @param pkg_name Package name
+ * @param version Package version
+ * @param extras_subdir Directory to extract .build script to
+ * @param repo_base_url Base URL of repository
+ */
 static void try_download_build_script(const char *pkg_name, const char *version, const char *extras_subdir, const char *repo_base_url) {
     if (!pkg_name || !version || !extras_subdir || !repo_base_url) {
         log_debug(2, "try_download_build_script: missing params - pkg=%s, ver=%s, extras=%s, repo=%s",
@@ -424,13 +511,13 @@ static void try_download_build_script(const char *pkg_name, const char *version,
     char build_path[2048];
     snprintf(build_path, sizeof(build_path), "%s/.build", extras_subdir);
     
-    // Pokud už existuje, skip
+    // Skip if .build script already cached
     if (access(build_path, F_OK) == 0) {
         log_info("Build script already cached: %s", build_path);
         return;
     }
     
-    // Sestavit URL repository archivu: https://repo.../g/glibc/glibc-2.42.tar.bz2
+    // Construct repository archive URL using standard structure
     char first_letter = tolower(pkg_name[0]);
     char repo_archive_url[2048];
     snprintf(repo_archive_url, sizeof(repo_archive_url), "%s/%c/%s/%s-%s.tar.bz2", 
@@ -438,7 +525,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
     
     log_info("Repository archive URL: %s", repo_archive_url);
     
-    // Stáhnout repository archiv do dočasného souboru
+    // Download repository archive to temporary file
     char temp_archive[2048];
     snprintf(temp_archive, sizeof(temp_archive), "%s/repo_archive.tar.bz2", extras_subdir);
     
@@ -450,7 +537,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
                      strncmp(repo_archive_url, "file://", 7) != 0));
     
     if (is_local) {
-        // Lokální soubor - zkopíruj
+        // Local file - copy it
         char cmd[4096];
         snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", repo_archive_url, temp_archive);
         if (system(cmd) != 0) {
@@ -458,7 +545,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
             return;
         }
     } else {
-        // Stáhnout přes HTTP
+        // Download via HTTP
         FILE *fp = fopen(temp_archive, "wb");
         if (!fp) return;
         
@@ -506,10 +593,23 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         log_warn("Failed to extract .build from repository archive (exit code: %d)", extract_result);
     }
     
-    // Odstranit dočasný archiv
+    // Remove temporary archive
     remove(temp_archive);
 }
 
+/**
+ * Download extra files (patches, additional files) for a package.
+ * 
+ * Downloads extras defined in package metadata, plus attempts to download
+ * .build script from repository archive. Files are cached in extras/<pkg_name>/
+ * for use during build process.
+ * 
+ * @param extras JSON array of extra file URLs
+ * @param pkg_name Package name
+ * @param version Package version
+ * @param repo_base_url Base URL of repository
+ * @param tmp_dir Temporary directory (unused)
+ */
 void download_extras(json_t *extras, const char *pkg_name, const char *version, const char *repo_base_url, const char *tmp_dir) {
     if (!pkg_name) return;
 
@@ -519,7 +619,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", extras_subdir);
     system(cmd);
     
-    // Automaticky zkusit stáhnout .build skript z repository
+    // Automatically try to download .build script from repository
     log_info("download_extras called: pkg=%s, version=%s, repo_base_url=%s", 
              pkg_name, version ? version : "NULL", repo_base_url ? repo_base_url : "NULL");
     if (version && repo_base_url) {
@@ -530,7 +630,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
                  version ? "OK" : "NULL", repo_base_url ? "OK" : "NULL");
     }
 
-    // Stáhnout ostatní extras z JSON
+    // Download remaining extras from JSON array
     if (!extras || !json_is_array(extras)) return;
 
     size_t i;
@@ -543,7 +643,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
         const char *extra_name = strrchr(extra_url, '/') ? strrchr(extra_url, '/') + 1 : "extra_file";
         snprintf(extra_path, sizeof(extra_path), "%s/%s", extras_subdir, extra_name);
 
-        // Podobný logic jako download_package, ale bez Solvable (jen URL)
+        // Similar logic to download_package, but without Solvable (just URL)
         if (access(extra_path, F_OK) == 0) {
             log_info("Using cached extra: %s", extra_path);
             continue;

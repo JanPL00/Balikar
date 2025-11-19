@@ -7,19 +7,21 @@
 
 #include "../../common/common.h"
 #include "../../utils/includes/cli_helpers.h"
-#include "../../utils/includes/string_helpers.h"  // Pro solvable_to_string pokud potřeba
-#include "parser.h"  // Pro get_custom_source, get_custom_extras
-
+#include "../../utils/includes/string_helpers.h"
+#include "parser.h"
 
 // Safe cache dir allocator macro (caller frees result of CACHE_DIR)
 #define CACHE_DIR (get_cache_dir())
 
+// Get the cache directory path.
 static inline char *get_cache_dir(void) {
 	return strdup("/var/cache/balikar/downloads");
 }
 
-// Hlavní funkce
+// Download a package and return a file pointer to the downloaded archive.
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
+
+// Download extra files (patches, etc.) for a package.
 void download_extras(json_t *extras, const char *pkg_name, const char *version, const char *repo_base_url, const char *tmp_dir);
 
-#endif //PROJ6_BALIKAR_DOWNLOADER_H
+#endif

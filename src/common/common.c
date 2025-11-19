@@ -6,25 +6,39 @@
 #include <stdarg.h>       // For va_list and variadic args
 #include <stdio.h>        // Already in common.h, but explicit for clarity
 #include <solv/poolarch.h>
-// ========================================
-// GLOBAL UTILS IMPLEMENTATION
-// ========================================
+
+// Global utilities implementation
+// Provides logging functions and architecture helpers used throughout the project
 
 # ifndef UNIT_TESTS
 
+/**
+ * Logs an error message to stderr and exits the program.
+ * Use for fatal errors that cannot be recovered from.
+ * @param fmt Printf-style format string
+ * @param ... Variable arguments for format string
+ */
 void log_error(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
     fprintf(stderr, "[ERROR] ");
-    vfprintf(stderr, fmt, args);  // Variadic print
+    vfprintf(stderr, fmt, args);  // Print formatted message
     fprintf(stderr, "\n");
     va_end(args);
-    exit(1);  // Simple exit(1); use ERR_SOLVE_FAIL if you want specific codes
+    exit(1);  // Fatal error - terminate program
 }
 
+/**
+ * Logs a debug message to stderr if level meets threshold.
+ * Only prints if level >= DEBUG_LEVEL (controlled by -d flag).
+ * @param level Debug verbosity level (1=basic, 2=verbose, etc.)
+ * @param fmt Printf-style format string
+ * @param ... Variable arguments for format string
+ */
 void log_debug(int level, const char *fmt, ...) {
+    // Skip if debug level is below threshold
     if (level < DEBUG_LEVEL) {
-        return;  // Skip if below threshold
+        return;
     }
     va_list args;
     va_start(args, fmt);
@@ -32,7 +46,7 @@ void log_debug(int level, const char *fmt, ...) {
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
     va_end(args);
-    fflush(stderr);  // Ensure immediate output for debugging
+    fflush(stderr);  // Immediate output for real-time debugging
 }
 
 void log_info(const char *fmt, ...) {
@@ -57,14 +71,19 @@ void log_warn(const char *fmt, ...) {
 
 #endif
 
-
+/**
+ * Retrieves the architecture string from a libsolv pool.
+ * Uses direct access to pool->lastarch for accurate architecture detection.
+ * @param pool Pool instance to query
+ * @return Architecture string (e.g., "x86_64", "i686"), or "unknown" if pool is NULL
+ */
 const char *get_pool_arch(const Pool *pool) {
 
     if (!pool) {
         return "unknown";
     }
 
-    // Přímý přístup k lastarch - toto je správný způsob
+    // Direct access to lastarch - correct method for getting current architecture
     if (pool->lastarch) {
         const char *arch = pool_id2str(pool, pool->lastarch);
         if (arch && strlen(arch) > 0) {
@@ -72,6 +91,6 @@ const char *get_pool_arch(const Pool *pool) {
         }
     }
 
-    // Fallback
+    // Fallback to default architecture
     return "x86_64";
 }

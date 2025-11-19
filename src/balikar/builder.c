@@ -3,52 +3,84 @@
 //
 
 #include "includes/builder.h"
-#include <sys/wait.h>  // Pro waitpid
 
 // Lokální stav
 static int g_staging_enabled = 1;  // default zapnuto
 static char *g_staging_dir = NULL;  // NULL = použít STAGING_DIR z common.h
 static char *g_build_tmp_dir = NULL;  // NULL = použít /tmp
 
+/**
+ * Enables or disables staging during package build process.
+ * When enabled, DESTDIR environment variable is set to staging directory.
+ * @param enabled Non-zero to enable staging, zero to disable
+ */
 void set_staging_enabled(int enabled) {
     g_staging_enabled = enabled ? 1 : 0;
 }
 
+/**
+ * Sets the custom staging directory path.
+ * If NULL, the default STAGING_DIR from common.h will be used.
+ * @param dir Path to staging directory or NULL for default
+ */
 void set_staging_dir(const char *dir) {
     if (g_staging_dir) free(g_staging_dir);
     g_staging_dir = dir ? strdup(dir) : NULL;
 }
 
+/**
+ * Sets the custom build temporary directory path.
+ * If NULL, /tmp will be used as the base for build directories.
+ * @param dir Path to temporary directory or NULL for default /tmp
+ */
 void set_build_tmp_dir(const char *dir) {
     if (g_build_tmp_dir) free(g_build_tmp_dir);
     g_build_tmp_dir = dir ? strdup(dir) : NULL;
-}// Detekce komprese podle magic
+}
+
+/**
+ * Detects compression type of an archive by reading magic bytes.
+ * Supports gzip, xz, and bzip2 compression formats.
+ * @param fp File pointer to the archive (will be rewound after reading)
+ * @return Compression type: 0=none/unknown, 1=xz, 2=bz2, 3=gz
+ */
 static int detect_compression(FILE *fp) {
 	unsigned char buf[6];
 	size_t r = fread(buf, 1, sizeof(buf), fp);
-	rewind(fp);
+	rewind(fp);  // Reset file position after reading magic bytes
 	if (r < 2) return 0;
-	// gzip magic 1F 8B
+	
+	// Check for gzip magic bytes: 1F 8B
 	if (buf[0] == 0x1F && buf[1] == 0x8B) return 3; // gz
-	// xz magic FD 37 7A 58 5A 00
+	
+	// Check for xz magic bytes: FD 37 7A 58 5A 00
 	if (r >= 6 && buf[0] == 0xFD && buf[1] == 0x37 && buf[2] == 0x7A && buf[3] == 0x58 && buf[4] == 0x5A && buf[5] == 0x00) return 1; // xz
-	// bzip2 magic 'BZ'
+	
+	// Check for bzip2 magic bytes: 'BZ'
 	if (buf[0] == 'B' && buf[1] == 'Z') return 2; // bz2
+	
 	return 0; // unknown / plain
 }
 
-// Helper: rekurzivně hledá .build nebo první subdir s obsahem
+/**
+ * Recursively searches for build script (.build) or build system files.
+ * Looks for .build, Makefile, or configure files within directory tree.
+ * @param dir Directory to search in
+ * @param depth Current recursion depth (limited to 3 levels)
+ * @return Allocated path to directory containing build files, or NULL if not found
+ */
 static char *find_build_or_source(const char *dir, int depth) {
-	if (depth > 3) return NULL;  // limit rekurze
+	// Limit recursion depth to avoid excessive searching
+	if (depth > 3) return NULL;
 	
-	// Zkus najít .build v aktuálním dir
+	// First priority: check for .build script in current directory
 	char build_path[MAX_PATH_LEN];
 	snprintf(build_path, sizeof(build_path), "%s/.build", dir);
 	if (access(build_path, F_OK) == 0) {
 		return strdup(dir);
 	}
 	
-	// Zkus najít Makefile nebo configure
+	// Second priority: check for Makefile or configure script
 	char make_path[MAX_PATH_LEN];
 	snprintf(make_path, sizeof(make_path), "%s/Makefile", dir);
 	char conf_path[MAX_PATH_LEN];
@@ -57,52 +89,81 @@ static char *find_build_or_source(const char *dir, int depth) {
 		return strdup(dir);
 	}
 	
-	// Zkus subdirectories
+	// Third priority: recursively search subdirectories
 	DIR *d = opendir(dir);
 	if (!d) return NULL;
 	struct dirent *ent;
 	char *result = NULL;
 	while ((ent = readdir(d)) != NULL) {
+		// Skip hidden directories
 		if (ent->d_name[0] == '.') continue;
+		
 		char path[MAX_PATH_LEN];
 		snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
 		struct stat st;
+		
+		// Recursively check subdirectories
 		if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
 			result = find_build_or_source(path, depth + 1);
-			if (result) break;
+			if (result) break;  // Stop on first match
 		}
 	}
 	closedir(d);
 	return result;
 }
 
+/**
+ * Finds the source directory within an extracted archive.
+ * First tries to locate .build, Makefile, or configure files recursively.
+ * Falls back to returning the first subdirectory if no build files found.
+ * @param tmp_dir Root directory of extracted archive
+ * @return Allocated path to source directory, or NULL on error
+ */
 char *find_source_path(const char *tmp_dir) {
 	if (!tmp_dir) return NULL;
 	
-	// Nejdřív zkus rekurzivní hledání .build/Makefile
+	// Strategy 1: Try recursive search for build files
 	char *found = find_build_or_source(tmp_dir, 0);
 	if (found) return found;
 	
-	// Fallback: první subdirectory (původní logika)
+	// Strategy 2: Fallback to first subdirectory
+	// (common pattern: archives contain a top-level directory)
 	DIR *d = opendir(tmp_dir);
 	if (!d) return strdup(tmp_dir);
+	
 	struct dirent *ent;
 	while ((ent = readdir(d)) != NULL) {
+		// Skip hidden entries
 		if (ent->d_name[0] == '.') continue;
+		
 		char path[MAX_PATH_LEN];
 		snprintf(path, sizeof(path), "%s/%s", tmp_dir, ent->d_name);
 		struct stat st;
+		
+		// Return first directory found
 		if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
 			closedir(d);
 			return strdup(path);
 		}
 	}
 	closedir(d);
-	return strdup(tmp_dir); // fallback root
+	
+	// Strategy 3: Last resort - use tmp_dir itself
+	return strdup(tmp_dir);
 }
 
+/**
+ * Applies extra files (patches, custom build scripts) to the source directory.
+ * Copies files from cache/extras/<pkg_name>/ to the build directory.
+ * .build scripts are copied to source_dir, other files to parent directory.
+ * @param extras JSON array of extra file names to apply
+ * @param pkg_name Package name (used to locate extras directory)
+ * @param source_dir Source directory where extras should be applied
+ */
 void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) {
 	if (!extras || !json_is_array(extras) || !pkg_name || !source_dir) return;
+	
+	// Locate the extras directory in cache
 	char *cache_dir = get_cache_dir();
 	if (!cache_dir) return;
 	char patch_root[2048];
@@ -110,25 +171,31 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 	DIR *d = opendir(patch_root);
 	if (!d) { free(cache_dir); return; }
 	
-	// Získat parent directory source_dir pro kopírování souborů
+	// Get parent directory of source_dir for copying non-build files
 	char parent_dir[4096];
 	snprintf(parent_dir, sizeof(parent_dir), "%s/..", source_dir);
 	
 	struct dirent *ent;
 	while ((ent = readdir(d)) != NULL) {
+		// Special handling for .build script (always copy if present)
 		if (ent->d_name[0] == '.') {
-			// Speciální handling pro .build skript
 			if (strcmp(ent->d_name, ".build") != 0) continue;
 		}
 		
-		// Ověř zda je v JSON seznamu NEBO je to .build skript
+		// Check if file should be applied:
+		// 1. Always copy .build script
+		// 2. Copy file if listed in extras JSON array
 		int found = 0;
 		if (strcmp(ent->d_name, ".build") == 0) {
-			found = 1;  // .build vždy zkopírovat
+			found = 1;  // .build always copied
 		} else {
+			// Check if filename is in the extras list
 			size_t i; json_t *item;
 			json_array_foreach(extras, i, item) {
-				if (json_is_string(item) && strstr(json_string_value(item), ent->d_name)) { found = 1; break; }
+				if (json_is_string(item) && strstr(json_string_value(item), ent->d_name)) { 
+					found = 1; 
+					break; 
+				}
 			}
 		}
 		if (!found) continue;
@@ -136,7 +203,9 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 		char extra_file[4096];
 		snprintf(extra_file, sizeof(extra_file), "%s/%s", patch_root, ent->d_name);
 		
-		// .build skript zkopírovat do source_dir, ostatní do parent
+		// Determine destination:
+		// - .build script goes to source_dir (where it will be executed)
+		// - Other files (patches, configs) go to parent directory
 		char dest_path[4096];
 		if (strcmp(ent->d_name, ".build") == 0) {
 			snprintf(dest_path, sizeof(dest_path), "%s/%s", source_dir, ent->d_name);
@@ -158,9 +227,19 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 	free(cache_dir);
 }
 
+/**
+ * Executes a build callback function in a chroot environment.
+ * Forks a child process, chroots to specified directory, and runs the callback.
+ * Useful for isolated builds with controlled filesystem access.
+ * @param root Root directory for chroot
+ * @param func Callback function to execute in chroot
+ * @param data User data to pass to callback
+ * @return Exit status of callback, or -1 on error
+ */
 int run_with_chroot(const char *root, build_callback func, void *data) {
 	if (!root || !func) return -1;
 	
+	// Fork to create isolated process for chroot
 	pid_t pid = fork();
 	if (pid < 0) {
 		log_error("Fork selhal pro chroot izolaci");
@@ -168,44 +247,65 @@ int run_with_chroot(const char *root, build_callback func, void *data) {
 	}
 	
 	if (pid == 0) {
-		// Child: chroot a spusť callback
+		// Child process: perform chroot and execute callback
 		if (chroot(root) != 0) {
 			log_error("Chroot selhal: %s", strerror(errno));
 			exit(1);
 		}
+		
+		// Change to root directory within chroot
 		if (chdir("/") != 0) {
 			log_error("Chdir po chroot selhal");
 			exit(1);
 		}
+		
+		// Execute callback and exit with its return code
 		int rc = func(data);
 		exit(rc);
 	}
 	
-	// Parent: čekej na child
+	// Parent process: wait for child to complete
 	int status;
 	if (waitpid(pid, &status, 0) < 0) {
 		log_error("Waitpid selhal");
 		return -1;
 	}
 	
+	// Return child's exit status
 	if (WIFEXITED(status)) {
 		return WEXITSTATUS(status);
 	}
 	return -1;
 }
 
+/**
+ * Extracts an archive file to a directory.
+ * Automatically detects compression type and uses appropriate tar flags.
+ * Supports plain tar, gzip, xz, and bzip2 compressed archives.
+ * @param fp File pointer to archive (will be read from start)
+ * @param tmp_dir Target directory for extraction
+ * @return 0 on success, -1 on error
+ */
 static int extract_archive(FILE *fp, const char *tmp_dir) {
 	if (!fp || !tmp_dir) return -1;
+	
 	rewind(fp);
+	// Detect compression format by magic bytes
 	int comp = detect_compression(fp);
-	const char *tarflag = "xf"; // plain
+	
+	// Select appropriate tar flags based on compression
+	const char *tarflag = "xf"; // plain tar
 	if (comp == 1) tarflag = "xJf"; // xz
 	else if (comp == 2) tarflag = "xjf"; // bz2
 	else if (comp == 3) tarflag = "xzf"; // gz
+	
+	// Open tar process with pipe for stdin
 	char cmd[4096];
 	snprintf(cmd, sizeof(cmd), "tar %s - -C '%s'", tarflag, tmp_dir);
 	FILE *tar = popen(cmd, "w");
 	if (!tar) return -1;
+	
+	// Stream archive data to tar process
 	unsigned char buf[8192];
 	size_t r;
 	while ((r = fread(buf, 1, sizeof(buf), fp)) > 0) {
@@ -214,34 +314,57 @@ static int extract_archive(FILE *fp, const char *tmp_dir) {
 			return -1;
 		}
 	}
+	
+	// Wait for tar to complete
 	int status = pclose(tar);
 	if (status != 0) return -1;
+	
 	return 0;
 }
 
+/**
+ * Builds and installs a package from source archive.
+ * This is the main build orchestration function that:
+ * 1. Extracts the archive to temporary directory
+ * 2. Locates the source directory with build files
+ * 3. Applies extra files (patches, custom build scripts)
+ * 4. Sets up build environment (staging, MAKEFLAGS)
+ * 5. Executes build script or fallback configure+make
+ * 6. Handles errors and cleanup
+ * @param trans Transaction context (currently unused)
+ * @param data Repository data for the package
+ * @param p Package ID
+ * @param fp File pointer to source archive
+ * @param pool Dependency resolution pool
+ * @return 0 on success, -1 on error
+ */
 int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *pool) {
-	(void)trans; // zatím nevyužito pro pořadí
+	(void)trans; // Reserved for future use (e.g., transaction ordering)
 	if (!data || !fp || !pool) return -1;
 
-	// Metadata
+	// Extract package metadata
 	int is_group = get_custom_is_group(data, p, pool);
 	int no_package = get_custom_no_package(data, p, pool);
 	json_t *extras = get_custom_extras(data, p, pool);
 
 	char *pkg_name = pool_id2str(pool, pool->solvables[p].name);
+	
+	// Skip virtual packages (no actual files to build)
 	if (no_package) {
 		log_info("Skipping virtual/no_package: %s", pkg_name);
-		if (fp) fclose(fp);  // Zavři fp i pro skip
+		if (fp) fclose(fp);
 		if (extras) json_decref(extras);
 		return 0;
 	}
 
-	// mkdtemp dir v konfigurovatelném tmp
+	// Create temporary build directory using configured tmp location
 	const char *tmp_base = g_build_tmp_dir ? g_build_tmp_dir : "/tmp";
 	char tmpl[512];
 	snprintf(tmpl, sizeof(tmpl), "%s/balikar_build_%s_XXXXXX", tmp_base, pkg_name ? pkg_name : "pkg");
 	char *build_dir = strdup(tmpl);
 	if (!build_dir) return -1;
+	
+	// Create unique directory with mkdtemp (replaces XXXXXX with random chars)
 	if (!mkdtemp(build_dir)) {
 		log_error("mkdtemp selhalo pro %s", pkg_name);
 		free(build_dir);
@@ -249,11 +372,13 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	}
 	log_info("Build dir: %s", build_dir);
 
+	// Extract source archive to build directory
 	if (extract_archive(fp, build_dir) != 0) {
 		log_error("Extrahování archivu selhalo pro %s", pkg_name);
 		goto fail;
 	}
 
+	// Locate the actual source directory within extracted archive
 	char *source_dir = find_source_path(build_dir);
 	if (!source_dir) {
 		log_error("Nenalezen source dir pro %s", pkg_name);
@@ -261,44 +386,57 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	}
 	log_info("Source dir: %s", source_dir);
 
-	// Extras (patches)
+	// Apply extra files (patches, custom build scripts)
 	if (extras) apply_extras(extras, pkg_name, source_dir);
 
-	// Staging env
+	// Configure build environment
+	// Set DESTDIR for staging installation if enabled
 	if (g_staging_enabled) {
 		const char *destdir = g_staging_dir ? g_staging_dir : STAGING_DIR;
 		setenv("DESTDIR", destdir, 1);
-		setenv("P", destdir, 1);  // P je alias pro DESTDIR používaný v .build skriptech
+		setenv("P", destdir, 1);  // P is alias for DESTDIR used in .build scripts
 		log_debug(1, "DESTDIR nastaveno na: %s", destdir);
 	} else {
 		unsetenv("DESTDIR");
 		unsetenv("P");
 	}
+	
+	// Set MAKEFLAGS for parallel compilation
 	long nproc = sysconf(_SC_NPROCESSORS_ONLN);
 	if (nproc < 1) nproc = 1;
 	char mf[64]; snprintf(mf, sizeof(mf), "-j%ld", nproc);
 	setenv("MAKEFLAGS", mf, 1);
 
-	// is_group => pouze data (žádný build)
+	// Handle group packages (data-only, no compilation needed)
 	if (is_group) {
 		log_info("is_group: pouze extrakce pro %s", pkg_name);
 		goto done;
 	}
 
-	// Build skript nebo fallback
+	// Execute build process
+	// Change to source directory for build
 	if (chdir(source_dir) != 0) {
 		log_error("Nelze chdir do %s", source_dir);
 		goto fail_chdir;
 	}
+	
+	// Determine build strategy:
+	// 1. If .build script exists, use it (preferred)
+	// 2. Otherwise use standard configure+make (fallback)
 	int have_build = access(".build", X_OK) == 0;
 	const char *build_cmd = have_build ? "bash -e .build > build.log 2>&1" : "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make install >/dev/null 2>&1";
 	log_info("Spouštím build: %s", have_build ? ".build" : "fallback configure+make");
+	
+	// Execute build command
 	int rc = system(build_cmd);
 	if (rc != 0) {
 		log_warn("Build selhal (%d) pro %s", rc, pkg_name);
+		
+		// Offer retry on failure
 		if (user_confirm("Retry build? [y/N]", 0)) {
 			rc = system(build_cmd);
 		}
+		
 		if (rc != 0) {
 			log_error("Build definitivně selhal pro %s", pkg_name);
 			goto fail_chdir;
@@ -306,12 +444,15 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	}
 
 done:
-	// Cleanup
+	// Successful completion - cleanup resources
 	free(source_dir);
 	fclose(fp);
-	// Změnit cwd pryč z build_dir před smazáním
+	
+	// Change directory away from build_dir before removing it
+	// (some systems don't allow deleting current working directory)
 	chdir("/tmp");
-	// Odstranění build dir (jednoduché rm -rf)
+	
+	// Remove temporary build directory
 	char rmcmd[512];
 	snprintf(rmcmd, sizeof(rmcmd), "rm -rf '%s'", build_dir);
 	system(rmcmd);
@@ -322,9 +463,13 @@ done:
 fail_chdir:
 	free(source_dir);
 fail:
+	// Error handling - cleanup resources
 	fclose(fp);
-	// Změnit cwd pryč z build_dir před smazáním
+	
+	// Change directory away from build_dir before removing it
 	chdir("/tmp");
+	
+	// Remove temporary build directory
 	char rmcmd2[512];
 	snprintf(rmcmd2, sizeof(rmcmd2), "rm -rf '%s'", build_dir);
 	system(rmcmd2);

@@ -11,21 +11,33 @@
 #include "../common/config.h"
 #include <getopt.h>
 
-// Globální konfigurace z CLI
+/**
+ * CLI configuration structure.
+ * Holds all command-line arguments and options parsed from user input.
+ * Controls program behavior including debug level, staging, paths, and commands.
+ */
 typedef struct {
-    int debug_level;
-    int dry_run;
-    int no_staging;
-    char *staging_dir;
-    char *chroot_path;
-    char *build_tmp_dir;
-    char *repo_path;
-    char *local_package;
-    char *clean_cache_pkg;
-    const char *command;
-    const char *package_name;
+    int debug_level;         // Verbosity level for debugging output
+    int dry_run;             // If 1, simulate actions without executing them
+    int no_staging;          // If 1, disable staging directory usage
+    char *staging_dir;       // Custom staging directory path
+    char *chroot_path;       // Chroot environment path (for isolated builds)
+    char *build_tmp_dir;     // Custom temporary directory for builds
+    char *repo_path;         // Repository URL or local path
+    char *local_package;     // Local package file path
+    char *clean_cache_pkg;   // Package name for cache cleaning
+    const char *command;     // Main command (install, build, resolve, etc.)
+    const char *package_name;// Package or subcommand name
 } cli_config_t;
 
+/**
+ * Parses command-line arguments and populates configuration structure.
+ * Handles both short and long options using getopt_long.
+ * Supports options for debugging, staging, paths, and various commands.
+ * @param argc Argument count from main()
+ * @param argv Argument vector from main()
+ * @param cfg Configuration structure to populate
+ */
 static void parse_args(int argc, char **argv, cli_config_t *cfg) {
     static struct option long_options[] = {
         {"help", no_argument, 0, 'h'},
@@ -42,36 +54,37 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
     };
     
     int opt;
+    // Parse all command-line options
     while ((opt = getopt_long(argc, argv, "hd", long_options, NULL)) != -1) {
         switch (opt) {
-            case 'h':
+            case 'h':  // Help - display usage and exit
                 print_usage(0);
                 break;
-            case 'd':
+            case 'd':  // Debug - increment debug level (can be used multiple times)
                 cfg->debug_level++;
                 break;
-            case 'D':
+            case 'D':  // Dry-run - simulate without executing
                 cfg->dry_run = 1;
                 break;
-            case 'S':
+            case 'S':  // No-staging - disable staging directory
                 cfg->no_staging = 1;
                 break;
-            case 's':
+            case 's':  // Staging-dir - custom staging directory
                 cfg->staging_dir = strdup(optarg);
                 break;
-            case 'c':
+            case 'c':  // Chroot-path - chroot environment path
                 cfg->chroot_path = strdup(optarg);
                 break;
-            case 't':
+            case 't':  // Build-tmp-dir - custom build temporary directory
                 cfg->build_tmp_dir = strdup(optarg);
                 break;
-            case 'r':
+            case 'r':  // Repo - repository URL or path
                 cfg->repo_path = strdup(optarg);
                 break;
-            case 'l':
+            case 'l':  // Local-package - local package file
                 cfg->local_package = strdup(optarg);
                 break;
-            case 'p':
+            case 'p':  // Pkg - package name for cache cleaning
                 cfg->clean_cache_pkg = strdup(optarg);
                 break;
             default:
@@ -79,24 +92,42 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         }
     }
     
-    // Parsuj command a package_name
+    // Parse positional arguments: command and package name
+    // Command is the first non-option argument (e.g., "install", "build")
     if (optind < argc) {
         cfg->command = argv[optind++];
     }
+    
+    // Package name or subcommand is the second positional argument
     if (optind < argc) {
         cfg->package_name = argv[optind];
     }
     
-    // Výchozí repo path pokud není zadán - použij z konfigurace
+    // Set default repository path if not specified via CLI
+    // Load from configuration file and use primary repository
     if (!cfg->repo_path) {
         init_repo_config();
         cfg->repo_path = strdup(get_primary_repo_url());
     }
 }
 
+/**
+ * Main entry point for Balikar package manager.
+ * Orchestrates the complete workflow:
+ * 1. Parse command-line arguments
+ * 2. Handle special commands (repo, clean-cache)
+ * 3. Initialize libsolv pool and load repository
+ * 4. Execute requested command (install, build, resolve, etc.)
+ * 5. Cleanup and return exit code
+ * @param argc Argument count
+ * @param argv Argument vector
+ * @return Exit code: 0 on success, error code on failure
+ */
 int main(int argc, char **argv) {
-    // Inicializuj konfiguraci
+    // Initialize configuration structure with zeros
     cli_config_t cfg = {0};
+    
+    // Parse and validate command-line arguments
     parse_args(argc, argv, &cfg);
     
     if (!cfg.command) {
@@ -104,7 +135,8 @@ int main(int argc, char **argv) {
         print_usage(1);
     }
 
-    // Zpracuj 'repo' příkazy přednostně (nepotřebují pool)
+    // Handle 'repo' commands early - they don't require pool/repository loading
+    // These commands manage repository configuration: list, add, remove, enable, disable
     if (strcmp(cfg.command, "repo") == 0) {
         init_repo_config();
         
@@ -113,12 +145,16 @@ int main(int argc, char **argv) {
             print_usage(1);
         }
         
+        // Subcommand: list - display all configured repositories
         if (strcmp(cfg.package_name, "list") == 0) {
             list_repositories();
             free_repo_config();
             return 0;
-        } else if (strcmp(cfg.package_name, "add") == 0) {
-            // Očekává další argumenty: name url [priority]
+        } 
+        // Subcommand: add - add new repository with name, URL, and optional priority
+        else if (strcmp(cfg.package_name, "add") == 0) {
+            // Expects: name url [priority]
+            // Priority defaults to 50 if not specified
             if (optind + 2 >= argc) {
                 log_error("Usage: balikar repo add <name> <url> [priority]");
                 return 1;
@@ -132,7 +168,10 @@ int main(int argc, char **argv) {
             }
             free_repo_config();
             return 0;
-        } else if (strcmp(cfg.package_name, "remove") == 0) {
+        } 
+        // Subcommand: remove - remove repository by name
+        else if (strcmp(cfg.package_name, "remove") == 0) {
+            // Expects: name
             if (optind + 1 >= argc) {
                 log_error("Usage: balikar repo remove <name>");
                 return 1;
@@ -143,7 +182,9 @@ int main(int argc, char **argv) {
             }
             free_repo_config();
             return 0;
-        } else if (strcmp(cfg.package_name, "enable") == 0) {
+        } 
+        // Subcommand: enable - enable repository by name
+        else if (strcmp(cfg.package_name, "enable") == 0) {
             if (optind + 1 >= argc) {
                 log_error("Usage: balikar repo enable <name>");
                 return 1;
@@ -154,7 +195,9 @@ int main(int argc, char **argv) {
             }
             free_repo_config();
             return 0;
-        } else if (strcmp(cfg.package_name, "disable") == 0) {
+        } 
+        // Subcommand: disable - disable repository by name
+        else if (strcmp(cfg.package_name, "disable") == 0) {
             if (optind + 1 >= argc) {
                 log_error("Usage: balikar repo disable <name>");
                 return 1;
@@ -171,7 +214,8 @@ int main(int argc, char **argv) {
         }
     }
 
-    // Zpracuj clean-cache příkaz přednostně (nepotřebuje pool/repo)
+    // Handle 'clean-cache' command early - doesn't require pool/repository
+    // Cleans download cache: either specific package or entire cache directory
     if (strcmp(cfg.command, "clean-cache") == 0) {
         char *cache_dir = get_cache_dir();
         if (!cache_dir) {
@@ -180,17 +224,18 @@ int main(int argc, char **argv) {
         }
         
         if (cfg.clean_cache_pkg) {
-            // Vymaž cache konkrétního balíčku
+            // Clean cache for specific package
+            // Removes: tar archives, sha256 checksums, and extras directory
             log_info("Cleaning cache for package: %s", cfg.clean_cache_pkg);
             
-            // Smaž tar archivy a sha256 soubory
+            // Remove tar archives and sha256 checksum files
             char pattern_cmd[2048];
             snprintf(pattern_cmd, sizeof(pattern_cmd), 
                      "rm -f \"%s/%s\"* 2>/dev/null", 
                      cache_dir, cfg.clean_cache_pkg);
             system(pattern_cmd);
             
-            // Smaž extras adresář
+            // Remove extras directory (patches, custom build scripts)
             char extras_dir[2048];
             snprintf(extras_dir, sizeof(extras_dir), "%s/extras/%s", cache_dir, cfg.clean_cache_pkg);
             char rm_cmd[4096];
@@ -199,7 +244,8 @@ int main(int argc, char **argv) {
             
             log_info("Cache cleaned for package: %s", cfg.clean_cache_pkg);
         } else {
-            // Vymaž celou cache
+            // Clean entire cache directory
+            // Requires user confirmation due to destructive nature
             log_info("Cleaning entire cache: %s", cache_dir);
             
             if (user_confirm("This will delete all cached downloads. Continue?", 0)) {
@@ -222,7 +268,8 @@ int main(int argc, char **argv) {
         return 0;
     }
 
-    // Aplikuj konfiguraci
+    // Apply configuration settings from CLI arguments
+    // These affect how builds are performed
     if (cfg.staging_dir) set_staging_dir(cfg.staging_dir);
     if (cfg.no_staging) set_staging_enabled(0);
     if (cfg.build_tmp_dir) set_build_tmp_dir(cfg.build_tmp_dir);
@@ -230,14 +277,15 @@ int main(int argc, char **argv) {
     log_info("Balikar Package Manager - Command: %s", cfg.command);
     if (cfg.dry_run) log_info("DRY-RUN mode enabled");
     
-    // Inicializuj Pool
+    // Initialize libsolv Pool - central data structure for dependency resolution
     Pool *pool = pool_create();
     if (!pool) {
         log_error("Failed to create pool.");
         return 1;
     }
     
-    // Načti repozitář (z konfigurace nebo CLI override)
+    // Load repository metadata (from configuration or CLI override)
+    // Repository contains package information and dependencies
     log_info("Using repository: %s", cfg.repo_path);
     Repo *repo = load_repository(pool, cfg.repo_path);
     if (!repo) {
@@ -246,9 +294,10 @@ int main(int argc, char **argv) {
         return 1;
     }
     
-    // Zpracuj příkazy
+    // Process main commands
     int exit_code = 0;
     
+    // Command: install/build - complete workflow from dependency resolution to build
     if (strcmp(cfg.command, "install") == 0 || strcmp(cfg.command, "build") == 0) {
         if (!cfg.package_name) {
             log_error("Package name required for %s command.", cfg.command);
@@ -257,7 +306,7 @@ int main(int argc, char **argv) {
         
         log_info("Starting %s workflow for package: %s", cfg.command, cfg.package_name);
         
-        // 1. Vytvoř solver
+        // Step 1: Create solver for dependency resolution
         Solver *solv = create_solver(pool);
         if (!solv) {
             log_error("Failed to create solver.");
@@ -265,7 +314,8 @@ int main(int argc, char **argv) {
             goto cleanup;
         }
         
-        // 2. Solve dependencies
+        // Step 2: Solve dependencies
+        // Determines all packages needed to satisfy requirements
         Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo);
         if (!solution) {
             log_error("Dependency resolution failed for %s.", cfg.package_name);
@@ -274,7 +324,8 @@ int main(int argc, char **argv) {
             goto cleanup;
         }
         
-        // 3. Vytvoř a zobraz transakci
+        // Step 3: Create transaction from solution
+        // Transaction contains ordered list of packages to install
         Transaction *trans = solver_create_transaction(solv);
         if (!trans) {
             log_error("Failed to create transaction.");
@@ -284,13 +335,14 @@ int main(int argc, char **argv) {
             goto cleanup;
         }
         
+        // Display transaction to user
         if (trans->steps.count == 0) {
             log_info("No changes needed - package may already be resolved.");
         } else {
             display_transaction(trans);
         }
         
-        // 4. Confirm (pokud není dry-run)
+        // Step 4: Confirm transaction (unless in dry-run mode)
         if (!cfg.dry_run) {
             if (!user_confirm("Proceed with transaction?", 1)) {
                 log_info("Transaction cancelled by user.");
@@ -300,20 +352,24 @@ int main(int argc, char **argv) {
                 goto cleanup;
             }
             
-            // 5. Download + Build
+            // Step 5: Download and Build packages
             log_info("Downloading packages...");
-            transaction_order(trans, 0);  // Seřaď podle závislostí
             
+            // Order transaction by dependencies (ensures correct build order)
+            transaction_order(trans, 0);
+            
+            // Process each package in transaction
             for (int i = 0; i < trans->steps.count; i++) {
                 Id p = trans->steps.elements[i];
                 Id type = transaction_type(trans, p, SOLVER_TRANSACTION_RPM_ONLY);
                 
+                // Only process install transactions
                 if (type == SOLVER_TRANSACTION_INSTALL || type == SOLVER_TRANSACTION_MULTIINSTALL) {
                     Solvable *s = pool_id2solvable(pool, p);
                     const char *pkg_name = pool_id2str(pool, s->name);
                     
-                    // Získej download URL
-                    Repodata *data = repo_id2repodata(repo, 1);  // První repodata
+                    // Get source download URL from repository metadata
+                    Repodata *data = repo_id2repodata(repo, 1);  // First repodata
                     const char *source_url = get_custom_source(data, p, pool);
                     
                     if (!source_url) {
@@ -321,6 +377,7 @@ int main(int argc, char **argv) {
                         continue;
                     }
                     
+                    // Download source archive
                     log_info("Downloading %s from %s", pkg_name, source_url);
                     FILE *fp = download_package(s, source_url, pool, data, cfg.repo_path);
                     if (!fp) {
@@ -329,13 +386,13 @@ int main(int argc, char **argv) {
                         break;
                     }
                     
-                    // Download extras (patches) a .build skript
+                    // Download extra files (patches, custom build scripts)
                     json_t *extras = get_custom_extras(data, p, pool);
                     const char *version = pool_id2str(pool, s->evr);
                     download_extras(extras, pkg_name, version, cfg.repo_path, NULL);
                     if (extras) json_decref(extras);
                     
-                    // Build
+                    // Build and install package
                     log_info("Building %s...", pkg_name);
                     int build_rc = commit_element(trans, data, p, fp, pool);
                     if (build_rc != 0) {
@@ -355,13 +412,18 @@ int main(int argc, char **argv) {
         queue_free(solution);
         solver_free(solv);
         
-    } else if (strcmp(cfg.command, "resolve") == 0) {
+    } 
+    // Command: resolve - display dependencies without downloading or building
+    // Useful for previewing what would be installed
+    else if (strcmp(cfg.command, "resolve") == 0) {
         if (!cfg.package_name) {
             log_error("Package name required for resolve command.");
             print_usage(1);
         }
         
         log_info("Resolving dependencies for: %s", cfg.package_name);
+        
+        // Create solver and resolve dependencies
         Solver *solv = create_solver(pool);
         if (!solv) {
             log_error("Failed to create solver.");
@@ -377,6 +439,7 @@ int main(int argc, char **argv) {
             goto cleanup;
         }
         
+        // Display what would be installed (without actually doing it)
         Transaction *trans = solver_create_transaction(solv);
         display_transaction(trans);
         
@@ -384,31 +447,39 @@ int main(int argc, char **argv) {
         queue_free(solution);
         solver_free(solv);
         
-    } else if (strcmp(cfg.command, "repos") == 0) {
-        // List all configured repositories
+    } 
+    // Command: repos - display repository information
+    // Shows all configured repositories and currently active one
+    else if (strcmp(cfg.command, "repos") == 0) {
+        // List all configured repositories from config
         list_repositories();
         
-        // Show currently active repository
+        // Show currently active repository and package count
         log_info("\nCurrently using: %s", cfg.repo_path);
         if (repo) {
             log_info("Packages available: %d", repo->nsolvables);
         }
         
-    } else if (strcmp(cfg.command, "repo-update") == 0) {
+    } 
+    // Command: repo-update - refresh repository metadata
+    // Downloads new metadata for remote repos or regenerates for local repos
+    else if (strcmp(cfg.command, "repo-update") == 0) {
         log_info("Updating repository metadata: %s", cfg.repo_path);
         
-        // Uvolni současné repo a pool
+        // Free current repo and pool to start fresh
         repo_free(repo, 1);
         pool_free(pool);
         
-        // Znovu vytvoř pool pro čerstvý start
+        // Recreate pool for clean state
         pool = pool_create();
         if (!pool) {
             log_error("Failed to recreate pool.");
             return 1;
         }
         
-        // Update metadata (download for remote, generate for local)
+        // Update metadata:
+        // - For remote repos: download new metadata files
+        // - For local repos: regenerate metadata from packages
         int rc = update_repository_metadata(cfg.repo_path);
         if (rc != 0) {
             log_error("Failed to update repository metadata.");
@@ -419,7 +490,7 @@ int main(int argc, char **argv) {
         
         log_info("Reloading repository...");
         
-        // Načti znovu repository s novými metadaty
+        // Reload repository with fresh metadata
         repo = load_repository(pool, cfg.repo_path);
         if (!repo) {
             log_error("Failed to reload repository.");
@@ -436,11 +507,12 @@ int main(int argc, char **argv) {
     }
     
 cleanup:
-    // Cleanup
+    // Cleanup: free repository and pool resources
     repo_free(repo, 1);
     pool_free(pool);
     
 cleanup_no_repo:
+    // Cleanup: free all dynamically allocated configuration strings
     if (cfg.staging_dir) free(cfg.staging_dir);
     if (cfg.chroot_path) free(cfg.chroot_path);
     if (cfg.build_tmp_dir) free(cfg.build_tmp_dir);

@@ -1,19 +1,25 @@
 
+//
 // Created by placeja5 on 11/12/25.
-// Kostra pro solver.c podle akčního plánu (subkrok 2.1).
-// Adaptováno z solv.c a libsolv manuálů (pool_create, solver_create, queue_init, solver_solve, transaction_create atd.).
-// Zaměřeno na: create_solver (s flags pro Conda/LFS), rekurze pro mkdeps (add_mkdeps_to_queue s depth limitem),
-// solve_dependencies (hlavní funkce: mkdeps rekurze + runtime jobs, solver_solve, transaction handling).
-// display_problem_proof adaptováno z solv.c (doshowproof + showproof).
-// Použití: Integruj s main.c (načti pool/repo z parser.c, zavolej solve_dependencies, print transaction z utils/print.c).
 //
 
 #include "includes/solver.h"
 
-// Privátní helper pro rekurzi (interní, ne v .h)
+// Private helper for recursion (internal, not in .h)
 static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq);
 
-// Vytvoření solveru s nastavením flags a arch (adaptace z solv.c a pool.3 man)
+/**
+ * Create a solver instance for the given pool.
+ * 
+ * Configures solver flags for the package management workflow:
+ * - Allows uninstall operations for conflict resolution
+ * - Allows vendor changes for LFS flexibility
+ * - Disables downgrade for security
+ * - Disables auto-targeting for explicit job control
+ * 
+ * @param pool The pool to create the solver for
+ * @return Configured solver instance, or NULL on failure
+ */
 Solver *create_solver(Pool *pool) {
     if (!pool) {
         log_error("Cannot create solver: Invalid pool.");
@@ -45,22 +51,34 @@ Solver *create_solver(Pool *pool) {
     return solv;
 }
 
-// Rekurzní přidání mkdeps do job queue (separace build-time deps, z plánu)
-// Používá get_custom_mkdeps z parser.c (vrací json_t array), pool_str2id, FOR_PROVIDES (z pool.3)
+/**
+ * Recursively add makedeps to the job queue.
+ * 
+ * Separates build-time dependencies from runtime dependencies by extracting
+ * custom makedeps metadata and adding them as install jobs. Includes depth
+ * limiting to prevent infinite recursion from circular dependencies.
+ * 
+ * @param job The job queue to add makedeps to
+ * @param p The solvable ID to process
+ * @param pool The pool containing package information
+ * @param repo The repository containing the solvable
+ * @param depth Current recursion depth (starts at 0)
+ */
 void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
+    // Check recursion depth to prevent infinite loops from circular dependencies
     if (depth > MAX_RECURSION_DEPTH) {
         log_error("Recursion depth exceeded (%d) – possible circular dependency.", depth);
-        return;  // Nebo exit(1) pro striktní chybu
+        return;
     }
 
-    // Načti Repodata (z bindings.3: repo_last_repodata nebo repo_add_repodata)
-    Repodata *data = repo_last_repodata(repo);  // Předpokládáme, že repo má data (po internalize v parser.c)
+    // Load repodata for this solvable (assumes repo has been internalized)
+    Repodata *data = repo_last_repodata(repo);
     if (!data) {
         log_warn("No repodata for solvable %d – skipping mkdeps.", p);
         return;
     }
 
-    // Získej mkdeps jako json_t* array (z parser.c)
+    // Get makedeps as JSON array from custom metadata
     json_t *mkdeps = get_custom_mkdeps(data, p, pool);
     if (!mkdeps || !json_is_array(mkdeps)) {
         log_debug(2, "No mkdeps for solvable %d.", p);
@@ -75,26 +93,28 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
         return;
     }
 
-    // Pro každý mkdep item (string pkg name)
+    // Process each makedep item (package name string)
     size_t i;
     json_t *item;
     json_array_foreach(mkdeps, i, item) {
         if (!json_is_string(item)) continue;
 
         const char *pkg_name = json_string_value(item);
-        Id pkg_id = pool_str2id(pool, pkg_name, 1);  // Z pool.3: create=1 pro nový Id
+        // Convert package name to pool ID (create=1 to add if not exists)
+        Id pkg_id = pool_str2id(pool, pkg_name, 1);
 
-        // Přidej do job jako SOLVER_INSTALL | SOLVER_SOLVABLE_NAME (z constantids.3 a bindings.3)
+        // Add to job queue as install operation
         queue_push2(job, SOLVER_INSTALL | SOLVER_SOLVABLE_NAME, pkg_id);
         log_debug(2, "Added mkdep '%s' to job queue at depth %d.", pkg_name, depth);
 
-        // Rekurze: Najdi Solvable pro tento pkg a zavolej rekurzivně
+        // Recursion: Find the solvable for this package and process its makedeps
         Id q;
         Solvable *s;
         FOR_REPO_SOLVABLES(repo, q, s) {
-            if (s->name == pkg_id) {  // Match name Id
+            if (s->name == pkg_id) {
+                // Recurse into this dependency's makedeps
                 add_mkdeps_to_queue(job, q, pool, repo, depth + 1);
-                break;  // Předpokládáme unikátní name v repo
+                break;  // Assume unique name in repo
             }
         }
     }
@@ -103,23 +123,39 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
     log_debug(1, "Added %zu mkdeps for solvable %d at depth %d.", mkdep_count, p, depth);
 }
 
-// Hlavní funkce: Resolvuj deps pro pkg_name (mkdeps rekurze + runtime, solver_solve, transaction)
-// Vrátí Queue* installedresult (z bindings.3: transaction_installedresult), caller musí free
+/**
+ * Resolve all dependencies for a package.
+ * 
+ * This is the main dependency resolution function that:
+ * 1. Finds the target package solvable
+ * 2. Recursively processes all makedeps (build-time dependencies)
+ * 3. Adds the main package as a runtime install job
+ * 4. Runs the solver to compute the installation transaction
+ * 5. Handles any solver problems that arise
+ * 
+ * @param solv The solver instance to use
+ * @param pkg_name Name of the package to resolve dependencies for
+ * @param pool The pool containing package information
+ * @param repo The repository to search for packages
+ * @return Queue with success indicator (1) on success, NULL on failure
+ *         Caller must free the returned queue with queue_free() and solv_free()
+ */
 Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo) {
     if (!solv || !pool || !repo || !pkg_name) {
         log_error("Invalid arguments in solve_dependencies.");
         return NULL;
     }
 
-    Queue *result = solv_calloc(1, sizeof(Queue));  // Výstup: alloc + init (z bindings.3 pro Queue)
+    // Allocate result queue to return success status
+    Queue *result = solv_calloc(1, sizeof(Queue));
     queue_init(result);
 
-    // Vytvoř job queue (z solv.c)
+    // Create job queue for solver operations
     Queue job;
     queue_init(&job);
 
-    // Najdi hlavní Solvable pro pkg_name
-    Id name_id = pool_str2id(pool, pkg_name, 0);  // create=0, pokud neexistuje -> 0
+    // Find the main solvable for the requested package name
+    Id name_id = pool_str2id(pool, pkg_name, 0);  // create=0 (don't create if not exists)
     if (!name_id) {
         log_error("Package '%s' not found in pool string table.", pkg_name);
         goto cleanup;
@@ -137,21 +173,23 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     
     log_debug(1, "Found solvable %d for package '%s'.", main_p, pkg_name);
 
-    // Nejdřív rekurze pro mkdeps (build-time, separace od runtime)
+    // First, recursively process all makedeps (build-time dependencies)
+    // This ensures build dependencies are resolved before runtime dependencies
     add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
 
-    // Pak runtime deps: Přidej hlavní pkg jako SOLVER_INSTALL (z constantids.3)
-    // Použij SOLVER_SOLVABLE s Id solvable (main_p), ne SOLVER_SOLVABLE_NAME
+    // Then add runtime dependencies: Add main package as SOLVER_INSTALL
+    // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME
     queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
 
-    // Spusť solver (z bindings.3: solver_solve(solv, &job))
-    int problem_count = solver_solve(solv, &job);  // Vrátí počet problémů
+    // Run the solver to compute the installation transaction
+    int problem_count = solver_solve(solv, &job);
     if (problem_count > 0) {
         log_warn("Solver found %d problems.", problem_count);
+        // Display detailed proof for each problem to help diagnose issues
         for (int prob = 1; prob <= problem_count; prob++) {
-            display_problem_proof(solv, prob);  // Zobraz proof (adaptace z solv.c)
+            display_problem_proof(solv, prob);
         }
-        // V testech chceme pokračovat i s problémy, v produkci by se ptal uživatele
+        // In unit tests, continue despite problems; in production, ask user
         #ifndef UNIT_TESTS
         if (!user_confirm("Problems found. Continue anyway? [y/n]", 0)) {
             goto cleanup;
@@ -162,22 +200,30 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         log_debug(1, "Solver completed successfully with no problems.");
     }
 
-    // Note: Transaction is created by caller (main.c), not here
-    // Just set a success flag in result to indicate solver completed
-    queue_push(result, 1);  // Dummy value to indicate success
+    // Transaction creation is handled by caller (main.c)
+    // Set success flag in result to indicate solver completed
+    queue_push(result, 1);
 
 cleanup:
     queue_free(&job);
-    if (result->count == 0) {  // Pokud prázdné, free a return NULL
+    if (result->count == 0) {
         queue_free(result);
         solv_free(result);
         return NULL;
     }
-    return result;  // Caller: queue_free(result) po použití
+    return result;
 }
 
-// Adaptace display_problem_proof z solv.c (doshowproof + showproof)
-// Používá queue_init/free, solver_get_learnt, solver_get_decisionlist, solver_decisioninfo2str atd. (z bindings.3)
+/**
+ * Display detailed proof information for a solver problem.
+ * 
+ * Shows learnt rules and decision traces that led to the problem.
+ * Adapted from solv.c (doshowproof + showproof) to help diagnose
+ * why the solver could not find a valid solution.
+ * 
+ * @param solv The solver instance containing the problem
+ * @param problem The problem number to display (1-indexed)
+ */
 void display_problem_proof(Solver *solv, int problem) {
     if (!solv) {
         log_error("Invalid solver in display_problem_proof.");
@@ -189,21 +235,35 @@ void display_problem_proof(Solver *solv, int problem) {
 
     printf("\n");
     queue_init(&lq);
+    
+    // Get learnt rules (rules the solver derived during conflict resolution)
     solver_get_learnt(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
 
+    // Display each learnt rule
     for (i = 0; i < lq.count; i++) {
         printf("Learnt rule #%d:\n", i + 1);
         internal_display_proof(solv, lq.elements[i], SOLVER_DECISIONLIST_LEARNTRULE, &lq);
     }
 
+    // Display the full decision proof that led to this problem
     printf("Proof:\n");
     internal_display_proof(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
 
     queue_free(&lq);
 }
 
-// Interní helper pro display_proof (adaptace doshowproof z solv.c)
-// Používá queue_init/free, solver_get_decisionlist, solver_decisioninfo2str, pool_solvidset2str atd.
+/**
+ * Internal helper to display proof information recursively.
+ * 
+ * Adapted from doshowproof in solv.c. Traverses the decision list
+ * and displays the reasoning chain that led to each decision or conflict.
+ * Filters out "obvious" decisions to reduce noise in the output.
+ * 
+ * @param solv The solver instance
+ * @param id The decision/problem ID to display
+ * @param flags Control flags for decision list retrieval
+ * @param lq Learnt rules queue for reference
+ */
 static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq) {
     Pool *pool = solv->pool;
     Queue q, qp;
@@ -211,33 +271,41 @@ static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq) {
 
     queue_init(&q);
     queue_init(&qp);
+    
+    // Get decision list with sorting and detailed information
     solver_get_decisionlist(solv, id, flags | SOLVER_DECISIONLIST_SORTED | SOLVER_DECISIONLIST_WITHINFO | SOLVER_DECISIONLIST_MERGEDINFO, &q);
 
+    // Process each decision in the list (8 elements per decision)
     for (i = 0; i < q.count; i += 8) {
         Id v = q.elements[i];
         int reason = q.elements[i + 1], bits = q.elements[i + 3], type = q.elements[i + 4];
         Id from = q.elements[i + 5], to = q.elements[i + 6], dep = q.elements[i + 7];
 
+        // Skip "obvious" decisions (same package name) unless unsolvable
         if (reason != SOLVER_REASON_UNSOLVABLE && type == SOLVER_RULE_PKG_SAME_NAME) {
-            continue;  // Skip "obvious" decisions (z solv.c)
+            continue;
         }
 
+        // Get affected solvables for this decision
         solver_decisionlist_solvables(solv, &q, i, &qp);
         if (qp.count) {
-            i += qp.count * 8 - 8;  // Skip merged
+            i += qp.count * 8 - 8;  // Skip merged decisions
         }
 
+        // Print decision type and affected packages
         if (reason == SOLVER_REASON_UNSOLVABLE) {
             printf("unsolvable: ");
         } else {
             printf("%s %s: ", v < 0 ? "conflicted" : "installed", pool_solvidset2str(pool, &qp));
         }
 
+        // If no specific rule type, just print the reason
         if (type == 0) {
             printf("%s\n", solver_reason2str(solv, reason));
             continue;
         }
 
+        // Check if this is a learnt rule and reference it
         if (type == SOLVER_RULE_LEARNT && lq) {
             for (j = 0; j < lq->count; j++) {
                 if (lq->elements[j] == q.elements[i + 2]) break;
@@ -248,6 +316,7 @@ static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq) {
             }
         }
 
+        // Print detailed decision information
         printf("%s\n", solver_decisioninfo2str(solv, bits, type, from, to, dep));
     }
 

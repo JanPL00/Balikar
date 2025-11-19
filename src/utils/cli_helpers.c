@@ -6,6 +6,12 @@
 
 #include <stdarg.h>       // For va_list in potential extensions (not used yet)
 
+/**
+ * Displays program usage information and exits.
+ * Shows all available commands, options, and usage examples.
+ * Called when user requests help or provides invalid arguments.
+ * @param exit_code Exit code to use when terminating (0 for success, non-zero for error)
+ */
 void print_usage(int exit_code) {
     fprintf(stderr, "Usage: balikar [OPTIONS] COMMAND [ARGS]\n");
     fprintf(stderr, "\n");
@@ -44,36 +50,59 @@ void print_usage(int exit_code) {
     exit(exit_code);
 }
 
+/**
+ * Prompts user for yes/no confirmation.
+ * Accepts 'y', 'n', or Enter for default. 'q' aborts the program.
+ * Loops until valid input is received.
+ * @param prompt Question to display to user
+ * @param default_yes Default answer if user presses Enter (1=yes, 0=no)
+ * @return 1 for yes, 0 for no (never returns on abort/error)
+ */
 int user_confirm(const char *prompt, int default_yes) {
     char inbuf[128], *ip;
     char default_char = default_yes ? 'y' : 'n';
 
     for (;;) {
-        printf("%s [%c]: ", prompt, default_char);  // Show default
+        // Display prompt with default indication
+        printf("%s [%c]: ", prompt, default_char);
         fflush(stdout);
+        
         *inbuf = 0;
+        
+        // Read user input
         if (!(ip = fgets(inbuf, sizeof(inbuf), stdin))) {
             log_error("Input error: EOF or interrupt. Aborting.");
-            exit(1);  // Fatal – use log_error from common (implement later)
+            exit(1);  // Fatal error - can't continue without user input
         }
-        while (*ip == ' ' || *ip == '\t') ip++;  // Skip whitespace
+        
+        // Skip leading whitespace
+        while (*ip == ' ' || *ip == '\t') ip++;
+        
+        // Empty input (just Enter) - use default
         if (*ip == '\n' || *ip == 0) {
-            return default_yes;  // Enter = default
+            return default_yes;
         }
+        
+        // 'q' or 'Q' - user wants to abort
         if (*ip == 'q' || *ip == 'Q') {
             printf("\n");
             log_error("User aborted.");
             exit(1);
         }
+        
+        // 'y' or 'Y' - affirmative answer
         if (*ip == 'y' || *ip == 'Y') {
             printf("\n");
             return 1;
         }
+        
+        // 'n' or 'N' - negative answer
         if (*ip == 'n' || *ip == 'N') {
             printf("\n");
             return 0;
         }
-        // Invalid – loop again
+        
+        // Invalid input - prompt again
         printf("Please enter 'y', 'n', or '%c' (default).\n", default_char);
     }
 }

@@ -7,27 +7,23 @@
 
 #include "../../common/common.h"  // Pro Pool, Solver, Queue, Id
 
+// Public debug API
 
-// ========================================
-// DEBUG PROTOTYPES
-// ========================================
-
-/**
- * Display a proof for a specific decision or learnt rule.
- * Adapted from doshowproof in solv.c.
- * @param solv The Solver instance.
- * @param id The ID of the decision or problem.
- * @param flags Flags for decision list (e.g., SOLVER_DECISIONLIST_SORTED).
- * @param lq Optional queue of learnt rules (for context).
- */
+// Display a proof/trace of solver decisions for debugging.
+// Shows why packages were installed or conflicts occurred.
+// Helps understand dependency resolution process and diagnose issues.
+// Based on libsolv's decision list mechanism (adapted from solv.c doshowproof).
+// solv: Solver instance containing decisions
+// id: Solvable ID to display proof for
+// flags: Additional flags for decision list retrieval
+// lq: Queue of learnt rules (optional, can be NULL)
 void display_proof(Solver *solv, Id id, int flags, Queue *lq);
 
-/**
- * Display the full problem proof, including learnt rules.
- * Adapted from showproof in solv.c.
- * @param solv The Solver instance.
- * @param problem The problem ID to display.
- */
+// Display the full problem proof, including learnt rules.
+// Shows complete chain of decisions leading to conflict or unsolvable situation.
+// Adapted from showproof in solv.c.
+// solv: Solver instance
+// problem: Problem ID to display
 void display_problem_proof(Solver *solv, int problem);
 
 #endif //IMPL_DEBUG_H

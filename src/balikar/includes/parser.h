@@ -9,35 +9,53 @@
 #include "../../common/common.h"
 #include <curl/curl.h>
 
-
+// Load JSON from a file.
 json_t* load_json(const char* filepath);
+
+// Load a repository into the pool.
 Repo *load_repository(Pool *pool, const char *repo_path);
 
+// Generate default metadata for a package.
 json_t* generate_default_metadata(const char* basename);
+
+// Generate a package key from JSON index.
 char* generate_package_key(json_t* index);
 
-void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo);  // Přidej pool a repo parametry
+// Collect packages from directory and add them to the repository.
+void collect_packages(const char* root_path, json_t* packages, Pool *pool, Repo *repo);
 
+// Generate repository data file.
 int generate_repodata(const char* repo_path);
 
-// Nové funkce
-// Pro parsing depends array do Solvable requires (pomocí SOLVABLE_REQUIRES z constantids)
-void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);  // Přidá do s->requires pomocí solvable_add_deparray
+// Parse depends array into Solvable requires (using SOLVABLE_REQUIRES).
+void parse_depends_to_solvable(Solvable *s, json_t *depends, Pool *pool);
 
-// Pro lookup custom metadat z Repodata (např. pro solver.c rekurzi)
-json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);  // Načte "makedeps" string a parse do json_array
-const char* get_custom_source(Repodata *data, Id p, Pool *pool);  // Načte "download_url"
-json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);  // Načte "source" array z metadat
-json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);  // Načte "extras" string a parse do json_array
-int get_custom_is_group(Repodata *data, Id p, Pool *pool);  // Načte "is_group" jako bool (z string "true"/"false")
-int get_custom_no_package(Repodata *data, Id p, Pool *pool);  // Podobně pro "no_package"
+// Lookup custom makedeps metadata from Repodata.
 
-// Pro internalizaci repo po načtení (z pool manpage: nutné pro lookup funkce)
-void internalize_repo(Repo *repo);  // Volá repo_internalize(repo) pro indexaci whatprovides
+json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
 
-Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);  // Nové: Přidání tar.bz2 balíčku
+// Lookup custom download_url metadata from Repodata.
+const char* get_custom_source(Repodata *data, Id p, Pool *pool);
 
-// Repository metadata update
-int update_repository_metadata(const char *repo_path);  // Update repodata.json (download for remote, generate for local)
+// Lookup custom source array metadata from Repodata.
+json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);
 
-#endif //IMPL_REPO_PARSER_H
+// Lookup custom extras metadata from Repodata.
+json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
+
+// Lookup custom is_group flag from Repodata.
+int get_custom_is_group(Repodata *data, Id p, Pool *pool);
+
+// Lookup custom no_package flag from Repodata.
+int get_custom_no_package(Repodata *data, Id p, Pool *pool);
+
+// Internalize repository after loading (necessary for lookup functions).
+void internalize_repo(Repo *repo);
+
+// Add a tar.bz2 package to the repository.
+Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
+
+// Update repository metadata (download for remote, generate for local).
+int update_repository_metadata(const char *repo_path);
+
+#endif

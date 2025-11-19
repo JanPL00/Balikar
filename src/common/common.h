@@ -39,6 +39,7 @@
 #include <solv/knownid.h>       // For SOLVABLE_REQUIRES and other constants
 #include <ctype.h>
 #include <errno.h>
+#include <sys/wait.h>
 
 
 // Jansson – for JSON parsing (index.json, repodata.json)
@@ -83,11 +84,23 @@ typedef struct {
 // ========================================
 // 5. SHARED FUNCTION PROTOTYPES (only globally shared ones)
 // ========================================
-// (Minimal – most go to module-specific .h; here only core utils like logging)
-void log_error(const char *fmt, ...);  // Global logger (printf + exit on fatal)
-void log_debug(int level, const char *fmt, ...);  // Debug print (if level >= DEBUG_LEVEL)
-void log_info(const char *fmt, ...);   // Info print (always shown)
-void log_warn(const char *fmt, ...);    // Warning print (always shown)
-const char *get_pool_arch(const Pool *pool); // Get architecture string from pool
+
+// Logging functions - used throughout the project
+
+// Log fatal error message and exit program (exit code 1)
+void log_error(const char *fmt, ...);
+
+// Log debug message if level >= DEBUG_LEVEL (controlled by -d flag)
+void log_debug(int level, const char *fmt, ...);
+
+// Log informational message (always shown, to stdout)
+void log_info(const char *fmt, ...);
+
+// Log warning message (always shown, to stderr)
+void log_warn(const char *fmt, ...);
+
+// Get architecture string from libsolv pool
+// Returns "x86_64", "i686", etc., or "unknown" if pool is NULL
+const char *get_pool_arch(const Pool *pool);
 
 #endif //IMPL_COMMON_H
