@@ -172,19 +172,90 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         log_info("Trying source[%zu].url: %s", url_idx, actual_url);
         
         // Determine if source is local file or remote URL
-        int is_local = (actual_url[0] == '/' || strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0 ||
-                        (strncmp(actual_url, "http://", 7) != 0 && strncmp(actual_url, "https://", 8) != 0 &&
-                         strncmp(actual_url, "ftp://", 6) != 0 && strncmp(actual_url, "file://", 7) != 0));
+        int is_remote = (strncmp(actual_url, "http://", 7) == 0 || 
+                        strncmp(actual_url, "https://", 8) == 0 ||
+                        strncmp(actual_url, "ftp://", 6) == 0 || 
+                        strncmp(actual_url, "file://", 7) == 0);
+        int is_local = !is_remote;
         
         if (is_local) {
+            // Try multiple possible local paths for the source file
+            char full_local_path[2048];
+            int found_local = 0;
+            
+            // If it's an absolute path, use it directly
+            if (actual_url[0] == '/') {
+                snprintf(full_local_path, sizeof(full_local_path), "%s", actual_url);
+                if (access(full_local_path, F_OK) == 0) {
+                    found_local = 1;
+                }
+            }
+            // If it's a ./ or ../ relative path, try relative to repo_path (if local)
+            else if (strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0) {
+                if (repo_path && repo_path[0] == '/') {
+                    // Only works if repo_path is local (not a URL)
+                    snprintf(full_local_path, sizeof(full_local_path), "%s/%s", repo_path, actual_url);
+                    if (access(full_local_path, F_OK) == 0) {
+                        found_local = 1;
+                    }
+                }
+            }
+            // Otherwise it's a relative filename - try multiple locations:
+            else {
+                // 1. Try relative to repo_path (if it's a local path, not URL)
+                if (repo_path && repo_path[0] == '/' && pkg_name && version) {
+                    char first_letter = tolower(pkg_name[0]);
+                    snprintf(full_local_path, sizeof(full_local_path), "%s/%c/%s/%s-%s/%s",
+                            repo_path, first_letter, pkg_name, pkg_name, version, actual_url);
+                    if (access(full_local_path, F_OK) == 0) {
+                        found_local = 1;
+                        log_debug(1, "Found local source via repo_path: %s", full_local_path);
+                    }
+                }
+                
+                // 2. Try common local repository locations if not found yet
+                if (!found_local && pkg_name && version) {
+                    const char *local_repo_paths[] = {
+                        "/home/placeja5/Balikar/balikar-repository",
+                        "./repo",
+                        "../balikar-repository",
+                        NULL
+                    };
+                    
+                    for (int i = 0; local_repo_paths[i] != NULL && !found_local; i++) {
+                        char first_letter = tolower(pkg_name[0]);
+                        snprintf(full_local_path, sizeof(full_local_path), "%s/%c/%s/%s-%s/%s",
+                                local_repo_paths[i], first_letter, pkg_name, pkg_name, version, actual_url);
+                        if (access(full_local_path, F_OK) == 0) {
+                            found_local = 1;
+                            log_info("Found local source in %s: %s", local_repo_paths[i], actual_url);
+                        }
+                    }
+                }
+                
+                // 3. Try as-is (current directory)
+                if (!found_local) {
+                    snprintf(full_local_path, sizeof(full_local_path), "%s", actual_url);
+                    if (access(full_local_path, F_OK) == 0) {
+                        found_local = 1;
+                    }
+                }
+            }
+            
+            // If no local file found, skip to next source
+            if (!found_local) {
+                log_info("Local source file not found for: %s (trying next source)", actual_url);
+                continue;  // Try next source
+            }
+            
             // Try local file copy
             char cmd_local[2048];
-            snprintf(cmd_local, sizeof(cmd_local), "cp \"%s\" \"%s\"", actual_url, cache_path);
+            snprintf(cmd_local, sizeof(cmd_local), "cp \"%s\" \"%s\"", full_local_path, cache_path);
             if (system(cmd_local) == 0) {
-                log_info("Copied local file to cache: %s", cache_path);
+                log_info("Copied local file to cache: %s -> %s", full_local_path, cache_path);
                 download_success = 1;
             } else {
-                log_warn("Failed to copy from source[%zu]: %s", url_idx, actual_url);
+                log_warn("Failed to copy from source[%zu]: %s", url_idx, full_local_path);
             }
         } else {
             // Try remote download
