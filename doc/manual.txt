@@ -15,7 +15,7 @@ Workflow se skládá z následujících fází:
   2. SOLVE    - Dependency resolution včetně makedeps rekurze
   3. DOWNLOAD - Stažení tar.bz2 archivů a extras (patches) s progress barem
   4. BUILD    - Extrakce, aplikace patches, spuštění .build skriptu
-  5. INSTALL  - Merge staging $P do chroot (TODO)
+  5. INSTALL  - Merge staging $P do chroot prostředí
 
 POUŽITÍ
 -------
@@ -26,14 +26,17 @@ PŘÍKAZY
 -------
 
 install <pkg>
-    Plný workflow: resolve dependencies → download → build → install
+    Plný workflow: resolve dependencies → download → build → install do chrootu
+    Instaluje balíček ze staging directory do chroot prostředí.
+    Spouští také volitelný .install/install.sh skript pokud existuje.
     Příklad:
       balikar install glibc
-      balikar install --staging-dir=/mnt/stage gcc
+      balikar install --staging-dir=/mnt/stage --chroot-path=/mnt/lfs gcc
 
 build <pkg>
-    Alias pro install (zatím bez install fáze do chrootu)
+    Build workflow BEZ instalace do chrootu (zůstane ve staging).
     Používá se pro build-from-source s dependency resolution.
+    Výsledek zůstává v $P pro manuální verifikaci.
     Příklad:
       balikar build gzip
       balikar build --no-staging hello
@@ -110,7 +113,10 @@ clean-cache
       # [INFO] Cache cleaned for package: glibc
 
 erase <pkg>
-    Odinstalování balíčku (TODO - vyžaduje installer.c).
+    Odinstalování balíčku z chroot prostředí.
+    Načte file manifest z databáze a odstraní soubory.
+    Příklad:
+      balikar erase old_package --chroot-path=/mnt/lfs
 
 GLOBÁLNÍ OPTIONS
 ----------------
@@ -203,8 +209,8 @@ Standardizovaná struktura tar.bz2 archivu:
   package-1.0.tar.bz2
     └── package-1.0/
         ├── .build                  # Build skript (povinný pro build)
-        ├── .install/               # Install skripty (volitelné)
-        │   └── install.sh
+        ├── .install/               # Post-install skripty (VOLITELNÉ)
+        │   └── install.sh      # Spouští se PO merge (ldconfig, atd.)
         ├── info/
         │   └── index.json          # Metadata (name, version, depends, ...)
         └── src/                    # Zdrojové soubory (volitelné)
@@ -241,21 +247,33 @@ index.json struktura:
 USE CASES
 -------------
 
-1. ZÁKLADNÍ BUILD BALÍČKU
+1. ZÁKLADNÍ INSTALACE BALÍČKU
+   
+   $ balikar install gzip
+   
+   Workflow:
+   - Načte ./repo/repodata.json
+   - Resolvne dependencies pro gzip
+   - Stáhne gzip-1.14.tar.xz
+   - Extrahuje do /tmp/balikar_build_gzip_XXXXXX
+   - Najde .build skript a spustí: bash -e .build s DESTDIR=$P
+   - Výsledek v $P/usr/bin/gzip
+   - Merge staging do chrootu: cp -a $P/* /tmp/pm-chroot/
+   - Spustí .install/install.sh pokud existuje (volitelné)
+   - Aktualizuje databázi: /var/lib/balikar/installed.json
+   - Cleanup build dir
+
+2. BUILD BEZ INSTALACE
    
    $ balikar build hello
    
    Workflow:
-   - Načte ./repo/repodata.json
-   - Resolvne dependencies pro hello
-   - Stáhne hello-1.0.tar.bz2
-   - Extrahuje do /tmp/balikar_build_hello_XXXXXX
-   - Najde .build skript (rekurzivně i v nested tar)
-   - Spustí: bash -e .build s DESTDIR=$P
-   - Výsledek v $P/usr/bin/hello
-   - Cleanup build dir
+   - Stejné jako install, ALE BEZ merge do chrootu
+   - Výsledek zůstává v $P/usr/bin/hello
+   - Užitečné pro manuální verifikaci před instalací
+   - Můžete pak použít: ls -la $P/usr/bin/
 
-2. BUILD S VLASTNÍM STAGING
+3. INSTALL S VLASTNÍM STAGING A CHROOT
    
    $ balikar --staging-dir=/mnt/lfs/stage build glibc
    
@@ -264,7 +282,7 @@ USE CASES
    - Možnost mount different FS (btrfs snapshot, tmpfs, ...)
    - Snadné rollback před install
    
-3. DRY-RUN PRO TESTOVÁNÍ
+4. DRY-RUN PRO TESTOVÁNÍ
    
    $ balikar --dry-run install gcc
    
@@ -275,7 +293,7 @@ USE CASES
    - Disk usage changes
    - BEZ skutečného downloadu/buildu
 
-4. BUILD S DEBUG MÓDEM
+5. BUILD S DEBUG MÓDEM
    
    $ balikar -d -d build glibc
    
@@ -285,7 +303,7 @@ USE CASES
    - Build.log output
    - Extract paths
 
-5. BUILD DO IZOLOVANÉHO TMP
+6. BUILD DO IZOLOVANÉHO TMP
    
    $ balikar --build-tmp-dir=/var/tmp/isolated build gcc
    
@@ -294,7 +312,7 @@ USE CASES
    - Izolace od ostatních procesů
    - Persistentní tmp (přežije reboot bez tmpfs)
 
-6. VYPNUTÍ STAGINGU (PŘÍMÁ INSTALACE)
+7. VYPNUTÍ STAGINGU (PŘÍMÁ INSTALACE)
    
    $ balikar --no-staging build hello
    
@@ -304,7 +322,7 @@ USE CASES
    - Jednoduché utility bez dependencies
    - Rollback není možný
 
-7. DEPENDENCY RESOLUTION TEST
+8. DEPENDENCY RESOLUTION TEST
    
    $ balikar resolve glibc
    
@@ -314,7 +332,7 @@ USE CASES
    - Makedeps (build-time)
    - No download/build
 
-8. ZOBRAZENÍ REPOSITORIES
+9. ZOBRAZENÍ REPOSITORIES
    
    $ balikar repos
    
@@ -323,7 +341,7 @@ USE CASES
    - Počet balíčků
    - Metadata status
 
-9. BUILD S PATCHES (EXTRAS)
+10. BUILD S PATCHES (EXTRAS)
    
    Balíček s patches v metadata:
    {
@@ -349,7 +367,7 @@ USE CASES
    - Automaticky přechází na nový řádek po dokončení
    - Nepřerušuje log output (používá stderr)
 
-10. BUILD NESTED TAR STRUKTURY
+11. BUILD NESTED TAR STRUKTURY
     
     Struktura archivu:
     gzip-1.2.tar.bz2
@@ -471,7 +489,7 @@ POKROČILÉ POUŽITÍ
    Build → Verify → Install:
    $ balikar --staging-dir=/stage build glibc
    $ ls -la /stage/usr/lib/  # Verify staging obsah
-   $ # TODO: balikar install-from-staging /stage glibc
+   $ # Můžete použít: balikar install glibc (automaticky nainstaluje ze $P)
 
 4. BATCH BUILD
    

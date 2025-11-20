@@ -23,6 +23,20 @@ fi
 echo "Creating configuration directory: $CONFIG_DIR"
 mkdir -p "$CONFIG_DIR"
 
+# Create database directory for installed packages tracking
+if [ "$SYSTEM_INSTALL" = true ]; then
+    DB_DIR="/var/lib/balikar"
+    echo "Creating package database directory: $DB_DIR"
+    mkdir -p "$DB_DIR"
+    chmod 755 "$DB_DIR"
+    echo "✓ Database directory created: $DB_DIR"
+else
+    DB_DIR="$HOME/.local/share/balikar"
+    echo "Creating package database directory: $DB_DIR"
+    mkdir -p "$DB_DIR"
+    echo "✓ Database directory created: $DB_DIR"
+fi
+
 # Copy configuration file
 if [ -f "$CONFIG_DIR/repos.conf" ]; then
     echo "Configuration already exists at $CONFIG_DIR/repos.conf (keeping existing)"

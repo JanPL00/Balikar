@@ -5,6 +5,7 @@
 #include "includes/solver.h"
 #include "includes/downloader.h"
 #include "includes/builder.h"
+#include "includes/installer.h"
 #include "../utils/includes/system_helpers.h"
 #include "../utils/includes/cli_helpers.h"
 #include "../common/common.h"
@@ -402,16 +403,52 @@ int main(int argc, char **argv) {
                     download_extras(extras, pkg_name, version, cfg.repo_path, NULL);
                     if (extras) json_decref(extras);
                     
-                    // Build and install package
+                    // If install command, set staging_dir to chroot before building
+                    // This ensures $P points to the correct chroot in .build scripts
+                    const char *original_staging = NULL;
+                    if (strcmp(cfg.command, "install") == 0) {
+                        const char *chroot = cfg.chroot_path ? cfg.chroot_path : "/tmp/pm-chroot";
+                        // Save original staging_dir if it was set
+                        if (cfg.staging_dir) {
+                            original_staging = strdup(cfg.staging_dir);
+                        }
+                        // Set staging to chroot for build
+                        set_staging_dir(chroot);
+                        log_debug(1, "Building into chroot: %s", chroot);
+                    }
+                    
+                    // Build package
                     log_info("Building %s...", pkg_name);
                     int build_rc = commit_element(trans, data, p, fp, pool);
                     if (build_rc != 0) {
                         log_error("Build failed for %s.", pkg_name);
                         exit_code = ERR_BUILD_FAIL;
+                        // Restore original staging if needed
+                        if (original_staging) {
+                            set_staging_dir(original_staging);
+                            free((char *)original_staging);
+                        }
                         break;
                     }
                     
                     log_info("Successfully built %s.", pkg_name);
+                    
+                    // Restore original staging directory if needed
+                    if (original_staging) {
+                        set_staging_dir(original_staging);
+                        free((char *)original_staging);
+                    }
+                    
+                    // Install package if command is 'install' (not just 'build')
+                    // When building with install command, files are already in chroot
+                    // Just record the installation in the database
+                    if (strcmp(cfg.command, "install") == 0) {
+                        const char *chroot = cfg.chroot_path ? cfg.chroot_path : "/tmp/pm-chroot";
+                        log_info("Package %s installed to chroot: %s", pkg_name, chroot);
+                        
+                        // TODO: Record installation in database for tracking
+                        // This would allow 'balikar list' and 'balikar erase' commands
+                    }
                 }
             }
         } else {

@@ -1,0 +1,537 @@
+================================================================================
+INSTALLER.C - PACKAGE INSTALLATION FROM STAGING TO CHROOT
+================================================================================
+
+PŘEHLED
+-------
+installer.c implementuje fázi INSTALL v Balikar workflow. Zpracovává
+výsledky buildu ze staging directory ($P) a merguje je do chroot prostředí.
+Navrženo podle LFS/LLD tutorialu s podporou pro post-install hooks,
+package tracking databáze a file manifest pro budoucí odinstalaci.
+
+KLÍČOVÁ ZJIŠTĚNÍ
+----------------
+**.install/ SKRIPTY JSOU VOLITELNÉ!**
+
+Build proces s DESTDIR už nainstaluje vše do správných cest:
+  DESTDIR=$P ./configure --prefix=/usr
+  make install  # Instaluje do $P/usr/bin, $P/usr/lib, atd.
+
+Installer jen potřebuje:
+  cp -a $P/* /chroot/  # Zkopírovat ze staging do chrootu
+
+.install/install.sh se používá POUZE pro speciální post-install úkony:
+  - ldconfig (rebuild linker cache)
+  - update-alternatives (konfigurace alternativ)
+  - systemctl enable (systemd služby)
+  - Custom symlinky nebo konfigurace
+
+DVA KLÍČOVÉ KONCEPTY
+--------------------
+
+1. STAGING DIRECTORY ($P)
+   - Dočasná oblast pro výsledky buildu
+   - Výchozí: $P (shell expanduje na hodnotu proměnné)
+   - Alternativa: --staging-dir=/mnt/lfs/stage
+   
+   Účel:
+   - Builder instaluje sem výsledky: DESTDIR=$P make install
+   - Izoluje build od cílového systému
+   - Umožňuje verifikaci před instalací
+   - Po instalaci může být vymazán
+   
+   Struktura:
+   $P/
+   ├── usr/
+   │   ├── bin/gzip       # Binárky
+   │   ├── lib/...        # Knihovny
+   │   └── share/...      # Data
+   └── etc/...            # Konfigurace (volitelné)
+
+2. CHROOT PROSTŘEDÍ
+   - Cílová oblast pro instalaci
+   - Výchozí: /tmp/pm-chroot
+   - Typicky: /mnt/lfs (při budování LFS systému)
+   
+   Účel:
+   - Finální umístění nainstalovaných souborů
+   - Izolovaný filesystem pro nový systém
+   - Může být mount point pro jiný disk
+   - Persistentní - obsahuje kompletní systém
+   
+   Po instalaci:
+   /chroot/
+   ├── usr/
+   │   ├── bin/gzip       # Zkopírováno z $P
+   │   ├── lib/...
+   │   └── share/...
+   └── etc/...
+
+WORKFLOW: STAGING → CHROOT
+--------------------------
+   
+   [Builder]
+      ↓
+   DESTDIR=$P make install
+      ↓
+   Staging ($P):              Chroot (/mnt/lfs):
+   ┌─────────────┐           ┌─────────────┐
+   │ /usr/bin/   │           │ /usr/bin/   │
+   │ /usr/lib/   │  cp -a    │ /usr/lib/   │
+   │ /usr/share/ │  ────→    │ /usr/share/ │
+   └─────────────┘           └─────────────┘
+   (dočasné)                 (finální)
+      ↓
+   Může být smazáno          Persistentní systém
+
+PŘÍKLAD: Instalace gzip do LFS
+------------------------------
+
+1. BUILD FÁZE (builder.c):
+   $ balikar build gzip
+   → Builder: DESTDIR=$P ./configure --prefix=/usr && make install
+   → Výsledek v staging:
+     $P/usr/bin/gzip
+     $P/usr/bin/gunzip
+     $P/usr/share/man/man1/gzip.1
+
+2. INSTALL FÁZE (installer.c):
+   $ balikar install gzip --chroot-path=/mnt/lfs
+   → Installer: cp -a $P/* /mnt/lfs/
+   → Výsledek v chroot:
+     /mnt/lfs/usr/bin/gzip
+     /mnt/lfs/usr/bin/gunzip
+     /mnt/lfs/usr/share/man/man1/gzip.1
+
+3. FINÁLNÍ SYSTÉM:
+   → Chroot (/mnt/lfs) obsahuje funkční gzip
+   → Po dokončení LFS: boot z /mnt/lfs
+   → Staging ($P) může být vymazán
+
+HLAVNÍ KOMPONENTY
+-----------------
+
+1. PACKAGE TRACKING DATABASE
+   Soubor: /var/lib/balikar/installed.json (system-wide)
+   nebo: $HOME/.local/share/balikar/installed.json (user install)
+   
+   Poznámka: install.sh automaticky vytvoří tento adresář při instalaci.
+   
+   Struktura:
+   {
+     "packages": {
+       "glibc-2.40-0": {
+         "name": "glibc",
+         "version": "2.40",
+         "install_date": "2025-11-20T14:30:00Z",
+         "files": [
+           "/usr/lib/libc.so.6",
+           "/usr/include/stdio.h",
+           ...
+         ]
+       }
+     }
+   }
+   
+   Funkce:
+   - load_installed_db() - načte databázi (nebo vytvoří prázdnou)
+   - save_installed_db() - uloží databázi
+   - add_installed_package() - přidá balíček do databáze
+   
+   Účel:
+   - Tracking nainstalovaných balíčků
+   - File manifest pro erase command
+   - Query pro dependency checks
+
+2. FILE MANIFEST COLLECTION
+   Funkce: collect_file_manifest(staging_dir)
+   
+   Workflow:
+   - Rekurzivně prochází staging dir
+   - Sbírá všechny soubory a symlinky
+   - Vrací JSON array s relative paths
+   - Používá se před merge pro tracking
+   
+   Příklad výstupu:
+   [
+     "/usr/bin/gzip",
+     "/usr/bin/gunzip",
+     "/usr/share/man/man1/gzip.1",
+     ...
+   ]
+
+3. CHROOT VALIDATION
+   Funkce: validate_chroot(chroot_path)
+   
+   Kontroluje:
+   - Existence chroot path
+   - Je to adresář?
+   - Základní FHS struktura (/usr, /lib, /bin)
+   
+   Varování:
+   - Missing standard directories
+   - User confirmation před instalací
+   - Prevence náhodného přepsání
+
+4. MERGE STAGING TO CHROOT
+   Funkce: merge_staging_to_chroot(staging_dir, chroot_path)
+   
+   Hlavní logika:
+   A. VALIDACE
+      - Staging dir existuje a je adresář
+      - Chroot path existuje a je adresář
+      - Staging dir není prázdný (má nějaké soubory)
+   
+   B. MERGE OPERACE
+      - Použití: cp -a staging/* chroot/
+      - Zachovává permissions, timestamps, symlinks
+      - Rekurzivní kopírování
+      - Atomic operace (buď vše nebo nic)
+   
+   C. ERROR HANDLING
+      - Capture cp output (errors/warnings)
+      - Return non-zero při selhání
+      - Logging všech kroků
+
+5. POST-INSTALL HOOKS
+   Funkce: execute_install_script(staging_dir, chroot_path)
+   
+   Hledání .install/install.sh:
+   - Kontrola: staging_dir/.install/install.sh
+   - Test executable flag (access(X_OK))
+   - Nepovinné - pokud neexistuje, pokračuje
+   
+   Spuštění:
+   - bash -e .install/install.sh
+   - Environment: DESTDIR=$chroot, CHROOT=$chroot
+   - Redirect output: > /dev/null 2>&1
+   - User confirmation při selhání skriptu
+   
+   Použití:
+   - ldconfig (rebuild library cache)
+   - update-alternatives (setup alternatives)
+   - Custom post-install konfigurace
+
+6. MAIN INSTALL FUNCTION
+   Funkce: install_package(pkg_name, pkg_version, staging_dir, chroot_path)
+   
+   Workflow:
+   
+   A. VALIDATE CHROOT
+      - validate_chroot(chroot_path)
+      - User confirmation pokud suspicious
+   
+   B. COLLECT FILE MANIFEST
+      - collect_file_manifest(staging_dir)
+      - Count files, check not empty
+      - Store for database
+   
+   C. MERGE TO CHROOT
+      - merge_staging_to_chroot()
+      - Return error pokud fail
+   
+   D. EXECUTE POST-INSTALL
+      - execute_install_script()
+      - Optional - pokračuje pokud chybí
+      - User choice pokud selže
+   
+   E. UPDATE DATABASE
+      - add_installed_package()
+      - Store name, version, date, files
+      - Persist to disk
+   
+   F. SUCCESS
+      - Log completion
+      - Return 0
+
+VEŘEJNÉ API
+-----------
+
+int install_package(const char *pkg_name, const char *pkg_version,
+                    const char *staging_dir, const char *chroot_path)
+  Hlavní instalační funkce.
+  Vrací: 0 = úspěch, -1 = chyba
+
+int is_package_installed(const char *pkg_name)
+  Zkontroluje zda je balíček nainstalován.
+  Vrací: 1 = installed, 0 = not installed, -1 = error
+
+json_t* get_installed_packages(void)
+  Vrací JSON object všech nainstalovaných balíčků.
+  Caller musí json_decref() result.
+
+int erase_package(const char *pkg_name, const char *chroot_path)
+  Odinstaluje balíček.
+  Vrací: 0 = úspěch, -1 = chyba
+
+int validate_chroot(const char *chroot_path)
+  Validuje chroot strukturu.
+  Vrací: 1 = valid, 0 = suspicious
+
+INTEGRACE S OSTATNÍMI MODULY
+-----------------------------
+
+Builder (builder.c):
+  - Builduje do staging dir s DESTDIR=$P
+  - Výstup: $P/usr/bin/..., $P/usr/lib/..., atd.
+  - Installer převezme od buildu
+
+Main (main.c):
+  - Po commit_element() volá install_package()
+  - Pouze pro command='install' (ne 'build')
+  - Build command: build without install
+  - Install command: build + install
+
+Config (common.h):
+  - STAGING_DIR = "$P" (default)
+  - CHROOT_PATH = "/tmp/pm-chroot" (default)
+  - CLI overrides: --staging-dir, --chroot-path
+
+PŘÍKLADY POUŽITÍ
+----------------
+
+1. ZÁKLADNÍ INSTALACE
+   
+   const char *staging = "/mnt/lfs/stage";
+   const char *chroot = "/mnt/lfs";
+   
+   int rc = install_package("gzip", "1.14", staging, chroot);
+   if (rc != 0) {
+       log_error("Installation failed");
+   }
+
+2. KONTROLA INSTALOVANÝCH BALÍČKŮ
+   
+   if (is_package_installed("glibc")) {
+       log_info("glibc is already installed");
+   }
+
+3. SEZNAM VŠECH BALÍČKŮ
+   
+   json_t *packages = get_installed_packages();
+   const char *key;
+   json_t *value;
+   
+   json_object_foreach(packages, key, value) {
+       const char *name = json_string_value(json_object_get(value, "name"));
+       printf("Installed: %s\n", name);
+   }
+   
+   json_decref(packages);
+
+4. ODINSTALACE
+   
+   int rc = erase_package("old_package", "/mnt/lfs");
+   if (rc != 0) {
+       log_error("Erase failed");
+   }
+
+WORKFLOW DIAGRAM
+----------------
+
+[Builder dokončen - výsledky v STAGING DIR]
+      ↓
+   Staging Directory ($P):
+   - $P/usr/bin/gzip
+   - $P/usr/lib/...
+   - $P/usr/share/...
+      ↓
+[install_package() - MERGE DO CHROOT]
+      ↓
+┌──────────────────┐
+│ 1. Validate      │ Check chroot structure
+│    chroot        │ Chroot: /mnt/lfs nebo /tmp/pm-chroot
+└──────────────────┘
+      ↓
+┌──────────────────┐
+│ 2. Collect files │ Build file manifest
+│                  │ Scan $P/ for all files
+└──────────────────┘
+      ↓
+┌──────────────────┐
+│ 3. Merge         │ cp -a $P/* /chroot/
+│                  │ $P/usr/bin/gzip → /chroot/usr/bin/gzip
+└──────────────────┘
+      ↓
+┌──────────────────┐
+│ 4. Post-install  │ .install/install.sh (optional)
+│    hooks         │ Runs INSIDE or FOR chroot context
+└──────────────────┘
+      ↓
+┌──────────────────┐
+│ 5. Update DB     │ installed.json
+│                  │ /var/lib/balikar/installed.json
+└──────────────────┘
+      ↓
+[Balíček nainstalován v CHROOT]
+   Chroot obsahuje:
+   - /chroot/usr/bin/gzip
+   - /chroot/usr/lib/...
+   - /chroot/usr/share/...
+
+ERROR HANDLING
+--------------
+
+1. Staging dir neexistuje:
+   - Log error: "Staging directory does not exist"
+   - Return -1
+   - Workflow: fix staging dir path
+
+2. Chroot validation fail:
+   - Log warning: "Chroot missing standard directories"
+   - User confirmation
+   - Pokud no → return 0 (not error, user cancelled)
+
+3. Merge fail:
+   - cp command non-zero exit
+   - Log error: "Merge failed (cp returned X)"
+   - Return -1
+   - Možné příčiny: disk full, permission denied
+
+4. Post-install script fail:
+   - Log warn: "Post-install script failed"
+   - User confirmation: continue?
+   - Pokud yes → pokračuje (script je optional)
+   - Pokud no → return -1
+
+5. Database write fail:
+   - Log error: "Failed to save installed database"
+   - Return -1
+   - Package JE nainstalován, ale není tracked
+
+BEZPEČNOST
+----------
+
+1. Chroot validation:
+   - Prevence náhodného přepsání /
+   - Check pro standard FHS directories
+   - User confirmation před risky operations
+
+2. Atomic merge:
+   - cp -a je atomic operace
+   - Buď vše nebo nic (pokud disk full)
+   - Nedojde k partial install (nebo ano, viz rollback TODO)
+
+3. File tracking:
+   - Každý soubor je zaznamenán
+   - Možnost rollback (TODO: implement)
+   - Dependency tracking (TODO)
+
+4. Permission preservation:
+   - cp -a zachovává ownership, permissions
+   - Symlinks preserved
+   - Timestamps preserved
+
+TESTOVÁNÍ
+---------
+
+Test suite v tests/tests-src/test_installer.c:
+
+1. test_validate_chroot_basic()
+   - Vytvoří mock chroot s /usr/bin, /lib, /bin
+   - Ověří validaci uspěje
+
+2. test_validate_chroot_nonexistent()
+   - Test s neexistujícím path
+   - Očekává return 0
+
+3. test_is_package_installed()
+   - Query na neexistující balíček
+   - Ověří return >= 0 (ne error)
+
+4. test_get_installed_packages()
+   - Load databáze
+   - Ověří je JSON object
+
+5. test_install_package_basic()
+   - Mock staging s test_program
+   - Mock chroot
+   - Install
+   - Verify file zkopírován
+
+6. test_install_with_script()
+   - Mock staging s .install/install.sh
+   - Script vytvoří marker file
+   - Verify script ran
+
+Integrace test:
+  Build real package → Install → Verify in chroot
+
+BUDOUCÍ VYLEPŠENÍ
+-----------------
+
+1. Rollback mechanism:
+   - Backup list před merge
+   - Pokud fail → odstranit částečně zkopírované
+   - Transaction-like behavior
+
+2. Conflict detection:
+   - Check file collisions před merge
+   - Warn pokud file už existuje (ne z upgrade)
+   - --force flag pro override
+
+3. Parallel installs:
+   - Install více balíčků současně
+   - Lock database pro concurrency
+
+4. Compression:
+   - Store file manifests compressed
+   - Reduce database size
+
+5. Incremental install:
+   - Delta updates
+   - Only copy changed files
+
+6. Pre-install hooks:
+   - .install/pre-install.sh
+   - Run PŘED merge
+   - Prepare chroot environment
+
+ZNÁMÉ LIMITACE
+--------------
+
+1. No rollback:
+   - Pokud merge fail v půlce → partial install
+   - Musí cleanup manually
+
+2. No conflict detection:
+   - Přepíše existující soubory bez varování
+   - Možná data loss
+
+3. No dependency tracking:
+   - erase_package nezkontroluje dependencies
+   - Může zlomit jiné balíčky
+
+4. Single-threaded:
+   - Install jeden balíček najednou
+   - No parallelism
+
+5. No verification:
+   - cp -a může selhat partly
+   - No post-merge verification
+
+DEPENDENCIES
+------------
+
+Knihovny:
+  - jansson: JSON parsing (databáze)
+  - dirent.h: Directory traversal
+  - sys/stat.h: File stats
+  - unistd.h: access(), unlink()
+
+Moduly:
+  - common.c: log_*, error codes
+  - cli_helpers.c: user_confirm()
+  - builder.c: produkuje staging dir
+
+SEE ALSO
+--------
+doc/balikar/builder.txt   - Build phase
+doc/manual.txt            - User manual
+doc/balikar/README.md     - Architecture
+
+AUTOR
+-----
+Installer module - Package installation automation
+Implementace: listopad 2025
+Založeno na: LFS/LLD tutorial (DESTDIR staging workflow)
