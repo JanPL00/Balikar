@@ -1,6 +1,6 @@
 @startuml Balikar Component Diagram
 
-title Balikar Package Manager - Component Diagram
+title Balikar Package Manager - Component Diagram (UML 2.5 Standard)
 
 skinparam componentStyle rectangle
 skinparam component {
@@ -10,6 +10,11 @@ skinparam component {
     BackgroundColor<<datastore>> LightGray
     BorderColor Black
     ArrowColor DarkBlue
+}
+
+skinparam interface {
+    BackgroundColor LightCyan
+    BorderColor DarkBlue
 }
 
 ' ==================== HLAVNÍ EXECUTABLE ====================
@@ -23,6 +28,7 @@ package "Core Modules" {
     component [Solver Module\n(solver.c)] as solver <<component>>
     component [Downloader Module\n(downloader.c)] as downloader <<component>>
     component [Builder Module\n(builder.c)] as builder <<component>>
+    component [Installer Module\n(installer.c)] as installer <<component>>
     component [Config Module\n(config.c)] as config <<component>>
     component [Common Module\n(common.c)] as common <<component>>
 }
@@ -93,36 +99,8 @@ package "Data Storage" {
     database "Build Temp\n/tmp/balikar_build_*" as buildtemp <<datastore>>
 }
 
-' ==================== HLAVNÍ DEPENDENCY VZTAHY ====================
-
-' Main používá všechny moduly
-main ..> parser : uses
-main ..> solver : uses
-main ..> downloader : uses
-main ..> builder : uses
-main ..> config : uses
-main ..> cli_helpers : uses
-
-' Dependency chain mezi moduly
-builder ..> downloader : needs files
-builder ..> parser : needs metadata
-builder ..> solver : needs transaction
-downloader ..> parser : needs source URLs
-solver ..> parser : needs dependencies
-parser ..> config : needs repo URL
-
-' Všechny moduly používají Common
-parser ..> common : logging
-solver ..> common : logging
-downloader ..> common : logging
-builder ..> common : logging
-config ..> common : logging
-
-' Utility dependencies
-main ..> cli_helpers : user interaction
-parser ..> sys_helpers : arch detection
-builder ..> print : formatted output
-solver ..> print : transaction display
+' Note: Dependencies are now modeled through interface connections above
+' using UML lollipop (provided) and socket (required) notation
 
 ' ==================== KNIHOVNÍ ZÁVISLOSTI ====================
 
@@ -137,44 +115,179 @@ builder ..> libarchive : extraction
 parser --> repo : reads
 downloader --> cache : reads/writes
 builder --> buildtemp : writes (temp)
-builder --> staging : writes (final)
+builder --> staging : writes (build output)
+installer --> staging : reads
+installer ..> cache : writes (installed.json)
 
-' ==================== PROVIDED INTERFACES ====================
+' ==================== PROVIDED INTERFACES (Lollipop notation) ====================
 
+' Provided interfaces (lollipop - circle symbol)
 interface "IRepositoryLoader" as IRepoLoader
 interface "IDependencyResolver" as IDepResolver
 interface "IPackageDownloader" as IPkgDownloader
 interface "IPackageBuilder" as IPkgBuilder
+interface "IPackageInstaller" as IPkgInstaller
+interface "IConfigManager" as IConfigMgr
+interface "ILogger" as ILogger
+interface "ICLIHelper" as ICLIHelper
+interface "IPrinter" as IPrinter
+interface "IDebugger" as IDebugger
+interface "ISystemHelper" as ISysHelper
 
-parser - IRepoLoader
-solver - IDepResolver
-downloader - IPkgDownloader
-builder - IPkgBuilder
+' Components provide interfaces (lollipop notation)
+parser -up- IRepoLoader
+solver -up- IDepResolver
+downloader -up- IPkgDownloader
+builder -up- IPkgBuilder
+installer -up- IPkgInstaller
+config -up- IConfigMgr
+common -up- ILogger
+cli_helpers -up- ICLIHelper
+print -up- IPrinter
+debug -up- IDebugger
+sys_helpers -up- ISysHelper
 
+' ==================== REQUIRED INTERFACES (Assembly connectors) ====================
+
+' Main requires interfaces from all modules
+main --( IRepoLoader
+main --( IDepResolver
+main --( IPkgDownloader
+main --( IPkgBuilder
+main --( IPkgInstaller
+main --( IConfigMgr
+main --( ICLIHelper
+
+' Builder requires interfaces from other modules
+builder --( IRepoLoader : metadata
+builder --( IPkgDownloader : files
+builder --( IDepResolver : transaction
+
+' Installer requires builder and parser
+installer --( IPkgBuilder : after build
+installer --( IRepoLoader : metadata
+
+' Downloader requires parser for URLs
+downloader --( IRepoLoader : source URLs
+
+' Solver requires parser for dependencies
+solver --( IRepoLoader : dependencies
+
+' Parser requires config for repo URL
+parser --( IConfigMgr : repo URL
+
+' All core modules require common logger
+parser --( ILogger
+solver --( ILogger
+downloader --( ILogger
+builder --( ILogger
+installer --( ILogger
+config --( ILogger
+
+' Utilities required by various modules
+parser --( ISysHelper : arch detection
+builder --( IPrinter : output
+solver --( IPrinter : transaction
+main --( IPrinter : disk usage
+solver --( IDebugger : problem proof
+
+' Interface operations (UML 2.5 format - simplified for PlantUML)
 note right of IRepoLoader
-    load_repository()
-    get_custom_source()
-    get_custom_mkdeps()
-    parse_depends()
+    **IRepositoryLoader API:**
+    + load_repository()
+    + load_json()
+    + get_custom_source()
+    + get_custom_source_array()
+    + get_custom_mkdeps()
+    + get_custom_extras()
+    + get_custom_is_group()
+    + get_custom_no_package()
+    + parse_depends_to_solvable()
+    + generate_repodata()
+    + update_repository_metadata()
+    + add_package_tar_bz2()
+    + internalize_repo()
 end note
 
 note right of IDepResolver
-    solve_dependencies()
-    create_solver()
-    add_mkdeps_to_queue()
+    **IDependencyResolver API:**
+    + create_solver()
+    + solve_dependencies()
+    + add_mkdeps_to_queue()
+    + display_problem_proof()
 end note
 
 note right of IPkgDownloader
-    download_package()
-    download_extras()
-    multi-source fallback
+    **IPackageDownloader API:**
+    + download_package()
+    + download_extras()
+    + download_package_to_directory()
+    + get_cache_dir()
 end note
 
 note right of IPkgBuilder
-    commit_element()
-    extract_archive()
-    apply_extras()
-    find_source_path()
+    **IPackageBuilder API:**
+    + commit_element()
+    + find_source_path()
+    + apply_extras()
+    + set_staging_enabled()
+    + set_staging_dir()
+    + set_build_tmp_dir()
+    + run_with_chroot()
+end note
+
+note right of IPkgInstaller
+    **IPackageInstaller API (NEW):**
+    + install_package()
+    + is_package_installed()
+    + get_installed_packages()
+    + erase_package()
+    + validate_chroot()
+end note
+
+note right of IConfigMgr
+    **IConfigManager API:**
+    + init_repo_config()
+    + get_primary_repo_url()
+    + get_enabled_repos()
+    + add_repository()
+    + remove_repository()
+    + enable_repository()
+    + save_repo_config()
+    + list_repositories()
+    + free_repo_config()
+end note
+
+note left of ILogger
+    **ILogger API:**
+    + log_error()
+    + log_warn()
+    + log_info()
+    + log_debug()
+    + get_pool_arch()
+end note
+
+note left of ICLIHelper
+    **ICLIHelper API:**
+    + print_usage()
+    + user_confirm()
+end note
+
+note left of IPrinter
+    **IPrinter API:**
+    + display_transaction()
+    + print_disk_usage_changes()
+end note
+
+note left of IDebugger
+    **IDebugger API:**
+    + display_proof()
+    + display_problem_proof()
+end note
+
+note left of ISysHelper
+    **ISystemHelper API:**
+    + set_system_arch()
 end note
 
 ' ==================== WORKFLOW NOTES ====================
@@ -182,30 +295,65 @@ end note
 note top of main
     **Entry Point**
     Commands: build, install, resolve,
-    repos, download, clean-cache
+    repos, download, clean-cache, repo
+    
+    **Main Workflow:**
+    1. Parse CLI arguments
+    2. Initialize pool and repo
+    3. Execute command
+    4. Cleanup resources
 end note
 
 note bottom of builder
     **Build Phases:**
-    1. Extract archive
-    2. Find .build script
-    3. Apply patches
-    4. Execute build
-    5. Stage to $P
+    1. Extract archive to /tmp
+    2. Find source directory
+    3. Apply extras (.build, patches)
+    4. Set environment ($P, DESTDIR)
+    5. Execute .build script
+    6. Stage to $P/DESTDIR
+    7. Cleanup temp directory
 end note
 
 note bottom of solver
     **Dependency Resolution:**
-    1. Recursive makedeps
-    2. Runtime depends
-    3. Transaction ordering
-    4. Conflict detection
+    1. Create job queue
+    2. Add makedeps recursively
+    3. Add runtime depends
+    4. Solve with libsolv
+    5. Create transaction
+    6. Order by dependencies
 end note
 
 note bottom of downloader
     **Multi-source Fallback:**
     Tries all URLs in source[]
-    array until success
+    array until success.
+    Caches downloads in
+    /var/cache/balikar/
+end note
+
+note bottom of installer
+    **Installation Phases:**
+    1. Validate chroot structure
+    2. Collect file manifest
+    3. Merge staging to chroot (cp -a)
+    4. Execute .install/install.sh
+    5. Update installed.json database
+    
+    **Database Location:**
+    /var/lib/balikar/installed.json
+end note
+
+note right of config
+    **Configuration Files:**
+    - ~/.config/balikar/repos.conf (user)
+    - /etc/balikar/repos.conf (system)
+    - ./repos.conf (fallback)
+    
+    **Repository Priority:**
+    Higher priority = preferred
+    Disabled repos are skipped
 end note
 
 @enduml
