@@ -17,86 +17,44 @@ skinparam interface {
     BorderColor DarkBlue
 }
 
+left to right direction
+
 ' ==================== HLAVNÍ EXECUTABLE ====================
-package "Balikar Executable" {
-    component [Main CLI\n(main.c)] as main <<executable>>
-}
+component [Main CLI\n(main.c)] as main <<executable>>
 
 ' ==================== CORE MODULY ====================
 package "Core Modules" {
-    component [Parser Module\n(parser.c)] as parser <<component>>
-    component [Solver Module\n(solver.c)] as solver <<component>>
-    component [Downloader Module\n(downloader.c)] as downloader <<component>>
-    component [Builder Module\n(builder.c)] as builder <<component>>
-    component [Installer Module\n(installer.c)] as installer <<component>>
-    component [Config Module\n(config.c)] as config <<component>>
-    component [Common Module\n(common.c)] as common <<component>>
+    component [Parser\n(parser.c)] as parser <<component>>
+    component [Solver\n(solver.c)] as solver <<component>>
+    component [Downloader\n(downloader.c)] as downloader <<component>>
+    component [Builder\n(builder.c)] as builder <<component>>
+    component [Installer\n(installer.c)] as installer <<component>>
+    component [Config\n(config.c)] as config <<component>>
+    component [Common\n(common.c)] as common <<component>>
 }
 
 ' ==================== UTILITY MODULY ====================
-package "Utility Modules" {
-    component [CLI Helpers\n(cli_helpers.c)] as cli_helpers <<component>>
-    component [System Helpers\n(system_helpers.c)] as sys_helpers <<component>>
-    component [Print Module\n(print.c)] as print <<component>>
-    component [Debug Module\n(debug.c)] as debug <<component>>
+package "Utilities" {
+    component [CLI Helpers] as cli_helpers <<component>>
+    component [System Helpers] as sys_helpers <<component>>
+    component [Print] as print <<component>>
+    component [Debug] as debug <<component>>
 }
 
 ' ==================== EXTERNÍ KNIHOVNY ====================
 package "External Libraries" {
-    component [libsolv] as libsolv <<library>> {
-        note right
-            Pool, Repo, Solvable
-            Solver, Transaction
-        end note
-    }
-    
-    component [jansson] as jansson <<library>> {
-        note right
-            JSON parsing
-            json_t structures
-        end note
-    }
-    
-    component [libcurl] as libcurl <<library>> {
-        note right
-            HTTP/HTTPS
-            download
-        end note
-    }
-    
-    component [libarchive/tar] as libarchive <<library>> {
-        note right
-            Archive extraction
-            tar.xz, tar.bz2
-        end note
-    }
+    component [libsolv] as libsolv <<library>>
+    component [jansson] as jansson <<library>>
+    component [libcurl] as libcurl <<library>>
+    component [libarchive] as libarchive <<library>>
 }
 
 ' ==================== DATOVÁ ÚLOŽIŠTĚ ====================
 package "Data Storage" {
-    database "Repository\n./repo/" as repo <<datastore>> {
-        note right
-            repodata.json
-            index.json files
-            package structure
-        end note
-    }
-    
-    database "Download Cache\n/var/cache/balikar/" as cache <<datastore>> {
-        note right
-            Downloaded packages
-            extras (patches)
-        end note
-    }
-    
-    database "Staging Area\n$P/ or custom" as staging <<datastore>> {
-        note right
-            Built packages
-            DESTDIR output
-        end note
-    }
-    
-    database "Build Temp\n/tmp/balikar_build_*" as buildtemp <<datastore>>
+    database "Repository" as repo <<datastore>>
+    database "Cache" as cache <<datastore>>
+    database "Staging" as staging <<datastore>>
+    database "Installed DB" as instdb <<datastore>>
 }
 
 ' Note: Dependencies are now modeled through interface connections above
@@ -104,20 +62,20 @@ package "Data Storage" {
 
 ' ==================== KNIHOVNÍ ZÁVISLOSTI ====================
 
-parser ..> libsolv : Pool/Repo API
-parser ..> jansson : JSON parsing
-solver ..> libsolv : Solver API
-downloader ..> libcurl : HTTP download
-builder ..> libarchive : extraction
+parser ..> libsolv
+parser ..> jansson
+solver ..> libsolv
+downloader ..> libcurl
+builder ..> libarchive
+installer ..> jansson
 
 ' ==================== DATA FLOW ====================
 
-parser --> repo : reads
-downloader --> cache : reads/writes
-builder --> buildtemp : writes (temp)
-builder --> staging : writes (build output)
-installer --> staging : reads
-installer ..> cache : writes (installed.json)
+parser --> repo
+downloader --> cache
+builder --> staging
+installer --> staging
+installer --> instdb
 
 ' ==================== PROVIDED INTERFACES (Lollipop notation) ====================
 
@@ -149,7 +107,7 @@ sys_helpers -up- ISysHelper
 
 ' ==================== REQUIRED INTERFACES (Assembly connectors) ====================
 
-' Main requires interfaces from all modules
+' Main requires all core interfaces
 main --( IRepoLoader
 main --( IDepResolver
 main --( IPkgDownloader
@@ -158,38 +116,25 @@ main --( IPkgInstaller
 main --( IConfigMgr
 main --( ICLIHelper
 
-' Builder requires interfaces from other modules
-builder --( IRepoLoader : metadata
-builder --( IPkgDownloader : files
-builder --( IDepResolver : transaction
+' Core module dependencies
+builder --( IRepoLoader
+builder --( IPkgDownloader
+installer --( IRepoLoader
+downloader --( IRepoLoader
+solver --( IRepoLoader
+parser --( IConfigMgr
 
-' Installer requires builder and parser
-installer --( IPkgBuilder : after build
-installer --( IRepoLoader : metadata
-
-' Downloader requires parser for URLs
-downloader --( IRepoLoader : source URLs
-
-' Solver requires parser for dependencies
-solver --( IRepoLoader : dependencies
-
-' Parser requires config for repo URL
-parser --( IConfigMgr : repo URL
-
-' All core modules require common logger
+' Logger dependencies (simplified)
 parser --( ILogger
 solver --( ILogger
 downloader --( ILogger
 builder --( ILogger
 installer --( ILogger
-config --( ILogger
 
-' Utilities required by various modules
-parser --( ISysHelper : arch detection
-builder --( IPrinter : output
-solver --( IPrinter : transaction
-main --( IPrinter : disk usage
-solver --( IDebugger : problem proof
+' Utility dependencies
+parser --( ISysHelper
+builder --( IPrinter
+solver --( IPrinter
 
 ' Interface operations (UML 2.5 format - simplified for PlantUML)
 note right of IRepoLoader
