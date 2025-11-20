@@ -112,6 +112,6 @@ void log_warn(const char *fmt, ...);
 
 // Get architecture string from libsolv pool
 // Returns "x86_64", "i686", etc., or "unknown" if pool is NULL
-const char *get_pool_arch(const Pool *pool);
+
 
 #endif //IMPL_COMMON_H

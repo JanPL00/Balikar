@@ -45,3 +45,27 @@ void set_system_arch(Pool *pool) {
     pool_setarch(pool, final_arch);
     log_info("Pool arch set to: %s", final_arch);
 }
+
+/**
+ * Retrieves the architecture string from a libsolv pool.
+ * Uses direct access to pool->lastarch for accurate architecture detection.
+ * @param pool Pool instance to query
+ * @return Architecture string (e.g., "x86_64", "i686"), or "unknown" if pool is NULL
+ */
+const char *get_pool_arch(const Pool *pool) {
+
+    if (!pool) {
+        return "unknown";
+    }
+
+    // Direct access to lastarch - correct method for getting current architecture
+    if (pool->lastarch) {
+        const char *arch = pool_id2str(pool, pool->lastarch);
+        if (arch && strlen(arch) > 0) {
+            return arch;
+        }
+    }
+
+    // Fallback to default architecture
+    return "x86_64";
+}

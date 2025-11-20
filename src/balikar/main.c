@@ -20,7 +20,7 @@ typedef struct {
     int no_staging;          // If 1, disable staging directory usage
     int no_deps;             // If 1, download without dependencies
     char *staging_dir;       // Custom staging directory path
-    char *chroot_path;       // Chroot environment path (for isolated builds)
+    char *root_path;         // Target root for installation (default /)
     char *build_tmp_dir;     // Custom temporary directory for builds
     char *repo_path;         // Repository URL or local path
     char *local_package;     // Local package file path
@@ -46,7 +46,7 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         {"no-staging", no_argument, 0, 'S'},
         {"no-deps", no_argument, 0, 'N'},
         {"staging-dir", required_argument, 0, 's'},
-        {"chroot-path", required_argument, 0, 'c'},
+        {"root", required_argument, 0, 'R'},
         {"build-tmp-dir", required_argument, 0, 't'},
         {"repo", required_argument, 0, 'r'},
         {"local-package", required_argument, 0, 'l'},
@@ -77,8 +77,8 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
             case 's':  // Staging-dir - custom staging directory
                 cfg->staging_dir = strdup(optarg);
                 break;
-            case 'c':  // Chroot-path - chroot environment path
-                cfg->chroot_path = strdup(optarg);
+            case 'R':  // Root - target root for installation
+                cfg->root_path = strdup(optarg);
                 break;
             case 't':  // Build-tmp-dir - custom build temporary directory
                 cfg->build_tmp_dir = strdup(optarg);
@@ -400,51 +400,43 @@ int main(int argc, char **argv) {
                     download_extras(extras, pkg_name, version, cfg.repo_path, NULL);
                     if (extras) json_decref(extras);
                     
-                    // If install command, set staging_dir to chroot before building
-                    // This ensures $P points to the correct chroot in .build scripts
-                    const char *original_staging = NULL;
-                    if (strcmp(cfg.command, "install") == 0) {
-                        const char *chroot = cfg.chroot_path ? cfg.chroot_path : "/tmp/pm-chroot";
-                        // Save original staging_dir if it was set
-                        if (cfg.staging_dir) {
-                            original_staging = strdup(cfg.staging_dir);
-                        }
-                        // Set staging to chroot for build
-                        set_staging_dir(chroot);
-                        log_debug(1, "Building into chroot: %s", chroot);
-                    }
-                    
-                    // Build package
+                    // Build package into staging directory
+                    // Always build to staging first, then install if needed
                     log_info("Building %s...", pkg_name);
                     int build_rc = commit_element(trans, data, p, fp, pool);
                     if (build_rc != 0) {
                         log_error("Build failed for %s.", pkg_name);
                         exit_code = ERR_BUILD_FAIL;
-                        // Restore original staging if needed
-                        if (original_staging) {
-                            set_staging_dir(original_staging);
-                            free((char *)original_staging);
-                        }
                         break;
                     }
                     
                     log_info("Successfully built %s.", pkg_name);
                     
-                    // Restore original staging directory if needed
-                    if (original_staging) {
-                        set_staging_dir(original_staging);
-                        free((char *)original_staging);
-                    }
-                    
                     // Install package if command is 'install' (not just 'build')
-                    // When building with install command, files are already in chroot
-                    // Just record the installation in the database
+                    // Two-stage approach: build → install
                     if (strcmp(cfg.command, "install") == 0) {
-                        const char *chroot = cfg.chroot_path ? cfg.chroot_path : "/tmp/pm-chroot";
-                        log_info("Package %s installed to chroot: %s", pkg_name, chroot);
+                        // Determine target root for installation
+                        const char *target_root = cfg.root_path ? cfg.root_path : "/"; // Default: native system
                         
-                        // TODO: Record installation in database for tracking
-                        // This would allow 'balikar list' and 'balikar erase' commands
+                        // Get staging directory where builder created files
+                        const char *staging = cfg.staging_dir ? cfg.staging_dir : STAGING_DIR;
+                        
+                        log_info("Installing %s to %s...", pkg_name, target_root);
+                        
+                        // Call installer to merge staging → target root
+                        if (install_package(pkg_name, version, staging, target_root) != 0) {
+                            log_error("Installation failed for %s.", pkg_name);
+                            exit_code = ERR_BUILD_FAIL;
+                            break;
+                        }
+                        
+                        log_info("Successfully installed %s to %s", pkg_name, target_root);
+                        
+                        // Cleanup staging directory after successful installation
+                        char cleanup_cmd[512];
+                        snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s'/* 2>/dev/null", staging);
+                        system(cleanup_cmd);
+                        log_debug(1, "Cleaned up staging directory: %s", staging);
                     }
                 }
             }
@@ -756,7 +748,7 @@ cleanup:
 cleanup_no_repo:
     // Cleanup: free all dynamically allocated configuration strings
     if (cfg.staging_dir) free(cfg.staging_dir);
-    if (cfg.chroot_path) free(cfg.chroot_path);
+    if (cfg.root_path) free(cfg.root_path);
     if (cfg.build_tmp_dir) free(cfg.build_tmp_dir);
     if (cfg.repo_path) free(cfg.repo_path);
     if (cfg.local_package) free(cfg.local_package);

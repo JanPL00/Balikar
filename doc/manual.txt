@@ -26,15 +26,17 @@ PŘÍKAZY
 -------
 
 install <pkg>
-    Plný workflow: resolve dependencies → download → build → install do chrootu
-    Instaluje balíček ze staging directory do chroot prostředí.
+    Plný workflow: resolve dependencies → download → build → install
+    Dvě fáze:
+      1. Build do staging directory ($P)
+      2. Install: merge staging → target root (default /)
     Spouští také volitelný .install/install.sh skript pokud existuje.
     Příklad:
-      balikar install glibc
-      balikar install --staging-dir=/mnt/stage --chroot-path=/mnt/lfs gcc
+      sudo balikar install glibc              # Instalace do nativu (/)
+      balikar install gcc --root=/mnt/lfs    # Instalace do LFS
 
 build <pkg>
-    Build workflow BEZ instalace do chrootu (zůstane ve staging).
+    Build workflow BEZ instalace (zůstane ve staging).
     Používá se pro build-from-source s dependency resolution.
     Výsledek zůstává v $P pro manuální verifikaci.
     Příklad:
@@ -147,10 +149,11 @@ GLOBÁLNÍ OPTIONS
     Příklad:
       balikar --staging-dir=/mnt/lfs/stage install gcc
 
---chroot-path=PATH
-    Cesta k chroot pro instalaci (výchozí: /tmp/pm-chroot).
+--root=PATH
+    Cílový root pro instalaci (výchozí: /).
+    Používá se pro LFS build nebo alternativní root.
     Příklad:
-      balikar --chroot-path=/mnt/lfs install glibc
+      balikar install glibc --root=/mnt/lfs
 
 --build-tmp-dir=PATH
     Vlastní tmp adresář pro build extrakci a patches.
@@ -258,24 +261,24 @@ USE CASES
    - Extrahuje do /tmp/balikar_build_gzip_XXXXXX
    - Najde .build skript a spustí: bash -e .build s DESTDIR=$P
    - Výsledek v $P/usr/bin/gzip
-   - Merge staging do chrootu: cp -a $P/* /tmp/pm-chroot/
+   - Merge staging do target root: cp -a $P/* /
    - Spustí .install/install.sh pokud existuje (volitelné)
    - Aktualizuje databázi: /var/lib/balikar/installed.json
-   - Cleanup build dir
+   - Cleanup staging a build dir
 
 2. BUILD BEZ INSTALACE
    
    $ balikar build hello
    
    Workflow:
-   - Stejné jako install, ALE BEZ merge do chrootu
+   - Stejné jako install, ALE BEZ merge a trackingu
    - Výsledek zůstává v $P/usr/bin/hello
-   - Užitečné pro manuální verifikaci před instalací
+   - Umožňuje manuální kontrolu před instalací
    - Můžete pak použít: ls -la $P/usr/bin/
 
-3. INSTALL S VLASTNÍM STAGING A CHROOT
+3. INSTALL S VLASTNÍM STAGING A ROOT
    
-   $ balikar --staging-dir=/mnt/lfs/stage build glibc
+   $ balikar --staging-dir=/tmp/stage --root=/mnt/lfs install glibc
    
    Výhody:
    - Izolace do vlastního filesystému

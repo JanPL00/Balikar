@@ -1,0 +1,144 @@
+@startuml Balikar Core Components
+
+title Balikar Core Modules – Interfaces Overview
+
+left to right direction
+skinparam componentStyle rectangle
+skinparam interfaceBackgroundColor LightCyan
+skinparam interfaceBorderColor DarkBlue
+skinparam nodesep 90
+skinparam ranksep 120
+skinparam linetype ortho
+
+rectangle "Command Entry" {
+	component [Main CLI\n(main.c)] as main <<executable>>
+}
+
+' Core components (ordered by workflow)
+rectangle "Core Workflow" {
+	component [Config\n(config.c)] as config
+	component [Parser\n(parser.c)] as parser
+	component [Solver\n(solver.c)] as solver
+	component [Downloader\n(downloader.c)] as downloader
+	component [Builder\n(builder.c)] as builder
+	component [Installer\n(installer.c)] as installer
+}
+
+rectangle "Shared Services" {
+	component [Common\n(common.c)] as common
+}
+
+' Provided interfaces (lollipop)
+interface "IRepositoryLoader" as IRepoLoader
+interface "IDependencyResolver" as IDepResolver
+interface "IPackageDownloader" as IPkgDownloader
+interface "IPackageBuilder" as IPkgBuilder
+interface "IPackageInstaller" as IPkgInstaller
+interface "IConfigManager" as IConfigMgr
+interface "ILogger" as ILogger
+
+config -up- IConfigMgr
+parser -up- IRepoLoader
+solver -up- IDepResolver
+downloader -up- IPkgDownloader
+builder -up- IPkgBuilder
+installer -up- IPkgInstaller
+common -up- ILogger
+
+' Interface method descriptions
+note right of IConfigMgr
+  **IConfigManager API:**
+  • init_repo_config()
+  • get_primary_repo_url()
+  • get_enabled_repos()
+  • add_repository()
+  • remove_repository()
+  • enable_repository()
+  • save_repo_config()
+  • list_repositories()
+  • free_repo_config()
+end note
+
+note right of IRepoLoader
+  **IRepositoryLoader API:**
+  • load_repository()
+  • load_json()
+  • get_custom_source()
+  • get_custom_source_array()
+  • get_custom_mkdeps()
+  • get_custom_extras()
+  • get_custom_is_group()
+  • get_custom_no_package()
+  • parse_depends_to_solvable()
+  • generate_repodata()
+  • update_repository_metadata()
+  • add_package_tar_bz2()
+  • internalize_repo()
+end note
+
+note right of IDepResolver
+  **IDependencyResolver API:**
+  • create_solver()
+  • solve_dependencies()
+  • add_mkdeps_to_queue()
+  • display_problem_proof()
+end note
+
+note right of IPkgDownloader
+  **IPackageDownloader API:**
+  • download_package()
+  • download_extras()
+  • download_package_to_directory()
+  • get_cache_dir()
+end note
+
+note right of IPkgBuilder
+  **IPackageBuilder API:**
+  • commit_element()
+  • find_source_path()
+  • apply_extras()
+  • set_staging_enabled()
+  • set_staging_dir()
+  • set_build_tmp_dir()
+  • run_with_chroot()
+end note
+
+note right of IPkgInstaller
+  **IPackageInstaller API:**
+  • install_package()
+  • is_package_installed()
+  • get_installed_packages()
+  • erase_package()
+  • validate_chroot()
+end note
+
+note left of ILogger
+  **ILogger API:**
+  • log_error()
+  • log_warn()
+  • log_info()
+  • log_debug()
+end note
+
+' Required interfaces (socket) – assembly connectors
+main --( IRepoLoader
+main --( IDepResolver
+main --( IPkgDownloader
+main --( IPkgBuilder
+main --( IPkgInstaller
+main --( IConfigMgr
+
+builder --( IRepoLoader
+builder --( IPkgDownloader
+solver --( IRepoLoader
+downloader --( IRepoLoader
+
+' Logging dependency via ILogger interface
+parser --( ILogger
+solver --( ILogger
+downloader --( ILogger
+builder --( ILogger
+installer --( ILogger
+config --( ILogger
+
+@enduml

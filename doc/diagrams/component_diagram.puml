@@ -119,17 +119,16 @@ main --( ICLIHelper
 ' Core module dependencies
 builder --( IRepoLoader
 builder --( IPkgDownloader
-installer --( IRepoLoader
 downloader --( IRepoLoader
 solver --( IRepoLoader
-parser --( IConfigMgr
 
-' Logger dependencies (simplified)
+' Logger dependencies (all core modules use common)
 parser --( ILogger
 solver --( ILogger
 downloader --( ILogger
 builder --( ILogger
 installer --( ILogger
+config --( ILogger
 
 ' Utility dependencies
 parser --( ISysHelper
@@ -209,7 +208,6 @@ note left of ILogger
     + log_warn()
     + log_info()
     + log_debug()
-    + get_pool_arch()
 end note
 
 note left of ICLIHelper
@@ -233,6 +231,7 @@ end note
 note left of ISysHelper
     **ISystemHelper API:**
     + set_system_arch()
+    + get_pool_arch()
 end note
 
 ' ==================== WORKFLOW NOTES ====================

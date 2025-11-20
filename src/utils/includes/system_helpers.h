@@ -17,4 +17,10 @@
 // pool: Pool instance to configure
 void set_system_arch(Pool *pool);
 
+// Retrieves the architecture string from a libsolv pool.
+// Uses direct access to pool->lastarch for accurate architecture detection.
+// pool: Pool instance to query
+// Returns: Architecture string (e.g., "x86_64", "i686"), or "unknown" if pool is NULL
+const char *get_pool_arch(const Pool *pool);
+
 #endif //IMPL_SYSTEM_HELPERS_H

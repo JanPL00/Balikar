@@ -42,7 +42,7 @@ User → main.c
   ↓
   → builder.c → extract + build → $P/ (staging)
   ↓
-  → installer.c → merge to chroot → /var/lib/balikar/installed.json
+  → installer.c → merge to target root → /var/lib/balikar/installed.json
 ```
 
 ## Provided Interfaces (UML 2.5)
@@ -93,11 +93,11 @@ User → main.c
 
 ### IPackageInstaller (installer.c) - NEW
 ```c
-+ install_package(pkg_name: const char*, pkg_version: const char*, staging_dir: const char*, chroot_path: const char*): int
++ install_package(pkg_name: const char*, pkg_version: const char*, staging_dir: const char*, root_path: const char*): int
 + is_package_installed(pkg_name: const char*): int
 + get_installed_packages(): json_t*
-+ erase_package(pkg_name: const char*, chroot_path: const char*): int
-+ validate_chroot(chroot_path: const char*): int
++ erase_package(pkg_name: const char*, root_path: const char*): int
++ validate_root(root_path: const char*): int
 ```
 
 ### IConfigManager (config.c)
@@ -119,7 +119,6 @@ User → main.c
 + log_warn(fmt: const char*, ...): void
 + log_info(fmt: const char*, ...): void
 + log_debug(level: int, fmt: const char*, ...): void
-+ get_pool_arch(pool: const Pool*): const char*
 ```
 
 ### ICLIHelper (cli_helpers.c)
@@ -143,6 +142,7 @@ User → main.c
 ### ISystemHelper (system_helpers.c)
 ```c
 + set_system_arch(pool: Pool*): void
++ get_pool_arch(pool: const Pool*): const char*
 ```
 
 ## Key Workflows
