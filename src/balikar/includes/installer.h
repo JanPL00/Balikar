@@ -5,9 +5,8 @@
 #ifndef INSTALLER_H
 #define INSTALLER_H
 
-#include <jansson.h>
-#include <solv/pool.h>
-#include <solv/repo.h>
+#include "../../common/common.h"
+
 
 /**
  * Installs a package from staging directory to chroot environment.

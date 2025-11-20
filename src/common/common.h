@@ -19,6 +19,9 @@
 #include <time.h>       // For timestamps in metadata (time(NULL))
 #include  <check.h>
 #include <sys/stat.h>
+#include <getopt.h>
+#include <errno.h>
+
 
 
 // ========================================
@@ -36,7 +39,6 @@
 #include <solv/evr.h>           // Version comparison
 #include <solv/knownid.h>       // For SOLVABLE_REQUIRES and other constants
 #include <ctype.h>
-#include <errno.h>
 #include <sys/wait.h>
 
 
@@ -52,7 +54,18 @@
 // Optional others (if needed): libarchive for tar extraction (but minimize – use system("tar"))
 
 // ========================================
-// 3. GLOBAL MACROS AND CONSTANTS
+// 3. SHARED PROJECT UTILS NCLUDES
+// ========================================
+#include "../utils/includes/system_helpers.h"   // System helper functions
+#include "../utils/includes/string_helpers.h"      // String helper functions
+#include "../utils/includes/cli_helpers.h"      // CLI helper functions
+#include "../utils/includes/debug.h"      // Debug helper functions
+#include "../utils/includes/print.h"      // Print functions for logging
+
+
+
+// ========================================
+// 4. GLOBAL MACROS AND CONSTANTS
 // ========================================
 #define STAGING_DIR "$P"                // Staging directory for LFS/LLD (DESTDIR=$P)
 #define CHROOT_PATH "/tmp/pm-chroot"    // Default chroot for installation (CLI-overridable)
@@ -69,7 +82,7 @@
 #define ERR_BUILD_FAIL 4
 
 // ========================================
-// 4. GLOBAL STRUCTURES AND TYPEDEFS
+// 5. GLOBAL STRUCTURES AND TYPEDEFS
 // ========================================
 typedef struct {
     char *source;               // URL for download (from index.json)
@@ -80,7 +93,7 @@ typedef struct {
 } CustomMeta;                   // Custom metadata for Solvable->userdata (Conda + LFS)
 
 // ========================================
-// 5. SHARED FUNCTION PROTOTYPES (only globally shared ones)
+// 6. SHARED FUNCTION PROTOTYPES (only globally shared ones)
 // ========================================
 
 // Logging functions - used throughout the project

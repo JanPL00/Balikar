@@ -6,8 +6,6 @@
 #define PROJ6_BALIKAR_DOWNLOADER_H
 
 #include "../../common/common.h"
-#include "../../utils/includes/cli_helpers.h"
-#include "../../utils/includes/string_helpers.h"
 #include "parser.h"
 
 // Safe cache dir allocator macro (caller frees result of CACHE_DIR)

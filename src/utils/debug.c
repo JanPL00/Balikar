@@ -3,7 +3,6 @@
 //
 
 #include "includes/debug.h"
-#include "includes/string_helpers.h"  // Pro solvable_to_string (pro lepší výpis)
 
 /**
  * Displays a proof/trace of solver decisions for debugging.

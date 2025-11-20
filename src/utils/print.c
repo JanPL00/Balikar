@@ -3,7 +3,6 @@
 //
 
 #include "includes/print.h"
-#include "../includes/string_helpers.h"
 
 /**
  * Calculates and displays disk usage changes for a transaction.

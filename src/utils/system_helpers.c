@@ -3,7 +3,6 @@
 //
 
 #include "includes/system_helpers.h"
-#include <solv/pool.h>
 
 /**
  * Detects and configures system architecture for the dependency resolver.

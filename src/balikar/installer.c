@@ -3,17 +3,7 @@
 //
 
 #include "includes/installer.h"
-#include "../common/common.h"
-#include "../utils/includes/cli_helpers.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <sys/stat.h>
-#include <sys/types.h>
-#include <dirent.h>
-#include <time.h>
-#include <errno.h>
+
 
 // Path to installed packages database
 // Use /tmp for tests when running in test mode

@@ -6,11 +6,8 @@
 #include "includes/downloader.h"
 #include "includes/builder.h"
 #include "includes/installer.h"
-#include "../utils/includes/system_helpers.h"
-#include "../utils/includes/cli_helpers.h"
 #include "../common/common.h"
 #include "../common/config.h"
-#include <getopt.h>
 
 /**
  * CLI configuration structure.

@@ -9,7 +9,6 @@
 #include "parser.h"
 #include "downloader.h"
 #include "solver.h"
-#include "../../utils/includes/cli_helpers.h"
 
 // Public builder API
 

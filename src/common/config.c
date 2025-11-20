@@ -3,7 +3,6 @@
 // Manages repository list with priorities and enable/disable states
 
 #include "config.h"
-#include <sys/stat.h>
 
 #define SYSTEM_CONFIG "/etc/balikar/repos.conf"
 #define USER_CONFIG_DIR ".config/balikar"

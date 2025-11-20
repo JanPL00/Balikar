@@ -3,9 +3,6 @@
 //
 
 #include "common.h"       // Own header (includes stdarg.h? No – add it here if needed)
-#include <stdarg.h>       // For va_list and variadic args
-#include <stdio.h>        // Already in common.h, but explicit for clarity
-#include <solv/poolarch.h>
 
 // Global utilities implementation
 // Provides logging functions and architecture helpers used throughout the project

@@ -4,13 +4,6 @@
 
 #include "includes/string_helpers.h"
 
-#include <solv/pool.h>      // Pro pool_id2str, pool_id2evr
-#include <solv/solvable.h>  // Pro Solvable struktura
-#include <solv/evr.h>       // Pro EVR handling (version)
-#include <string.h>         // Pro strlen, strcpy
-#include <stdlib.h>         // Pro malloc, free
-#include <stdio.h>          // Pro snprintf
-
 /**
  * Converts a solvable to a human-readable string.
  * Format: "name-version.architecture" (e.g., "glibc-2.35.x86_64")
