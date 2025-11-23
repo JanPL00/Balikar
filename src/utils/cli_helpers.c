@@ -19,8 +19,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  install <pkg>         Install package with deps resolution\n");
     fprintf(stderr, "  build <pkg>           Build from source (with mkdeps)\n");
     fprintf(stderr, "  resolve <pkg>         Resolve dependencies only (dry-run)\n");
-    fprintf(stderr, "  erase <pkg>           Erase installed package\n");
-    fprintf(stderr, "  show <pkg>            Show package information\n");
+    fprintf(stderr, "  remove <pkg>          Remove installed package\n");
     fprintf(stderr, "  repo list             List configured repositories\n");
     fprintf(stderr, "  repo add <name> <url> Add new repository\n");
     fprintf(stderr, "  repo remove <name>    Remove repository\n");
@@ -32,7 +31,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "Options:\n");
     fprintf(stderr, "  -d                    Increase debug level\n");
     fprintf(stderr, "  --staging-dir=PATH    Set staging directory (default: %s)\n", STAGING_DIR);
-    fprintf(stderr, "  --chroot-path=PATH    Set chroot path (default: %s)\n", CHROOT_PATH);
+    fprintf(stderr, "  --root=PATH           Set target root for install/remove (default: /)\n");
     fprintf(stderr, "  --no-staging          Disable staging, install directly (stable mode)\n");
     fprintf(stderr, "  --dry-run             Simulate without changes\n");
     fprintf(stderr, "  --repo=PATH           Override repository path\n");

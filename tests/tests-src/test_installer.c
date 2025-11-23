@@ -36,14 +36,14 @@ END_TEST
 // Test: Check if package is installed
 START_TEST(test_is_package_installed) {
     // Should return 0 or 1, not -1 (error)
-    int result = is_package_installed("nonexistent_package_xyz");
+    int result = is_package_installed("nonexistent_package_xyz", "/");
     ck_assert_int_ge(result, 0);
 }
 END_TEST
 
 // Test: Get installed packages
 START_TEST(test_get_installed_packages) {
-    json_t *packages = get_installed_packages();
+    json_t *packages = get_installed_packages("/");
     ck_assert_ptr_nonnull(packages);
     
     // Should be an object

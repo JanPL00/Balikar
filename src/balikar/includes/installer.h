@@ -30,20 +30,22 @@ int install_package(const char *pkg_name, const char *pkg_version,
 
 /**
  * Checks if a package is already installed.
- * Queries the installed packages database (/var/lib/balikar/installed.json).
+ * Queries the installed packages database ({chroot}/var/lib/balikar/installed.json).
  * 
  * @param pkg_name Package name to check
+ * @param chroot_path Root directory (defaults to "/" if NULL)
  * @return 1 if installed, 0 if not installed, -1 on error
  */
-int is_package_installed(const char *pkg_name);
+int is_package_installed(const char *pkg_name, const char *chroot_path);
 
 /**
  * Retrieves list of all installed packages from database.
  * 
+ * @param chroot_path Root directory (defaults to "/" if NULL)
  * @return JSON array of installed package objects, or NULL on error
  *         Caller must json_decref() the returned object
  */
-json_t* get_installed_packages(void);
+json_t* get_installed_packages(const char *chroot_path);
 
 /**
  * Removes (erases) an installed package from the system.

@@ -114,11 +114,11 @@ clean-cache
       # [INFO] Cleaning cache for package: glibc
       # [INFO] Cache cleaned for package: glibc
 
-erase <pkg>
-    Odinstalování balíčku z chroot prostředí.
-    Načte file manifest z databáze a odstraní soubory.
+remove <pkg>
+    Odinstalování balíčku z target root.
+    Načte tracking soubor /var/lib/balikar/installed/<pkg>.list a odstraní soubory.
     Příklad:
-      balikar erase old_package --chroot-path=/mnt/lfs
+      balikar remove old_package --root=/mnt/lfs
 
 GLOBÁLNÍ OPTIONS
 ----------------
@@ -152,8 +152,10 @@ GLOBÁLNÍ OPTIONS
 --root=PATH
     Cílový root pro instalaci (výchozí: /).
     Používá se pro LFS build nebo alternativní root.
+    Funguje s příkazy: install, remove
     Příklad:
       balikar install glibc --root=/mnt/lfs
+      balikar remove glibc --root=/mnt/lfs
 
 --build-tmp-dir=PATH
     Vlastní tmp adresář pro build extrakci a patches.
@@ -168,9 +170,14 @@ GLOBÁLNÍ OPTIONS
       balikar --repo=/srv/repo install hello
 
 --local-package=PATH
-    Instalace z lokálního tar.bz2 mimo repository (TODO).
+    Instalace z lokálního tar archivu mimo repository.
+    Přeskočí dependency resolution a stažení z repozitáře.
+    Očekává formát: <name>-<version>.tar.{bz2,gz,xz} nebo <name>-<version>-<release>.tar.{bz2,gz,xz}
+    Podporované formáty: .tar.bz2, .tar.gz, .tar.xz
+    Podporuje příkazy: install, build
     Příklad:
-      balikar --local-package=/path/to/gzip-1.2.tar.bz2
+      balikar install --local-package=/path/to/gzip-1.2.tar.bz2
+      balikar build --local-package=/tmp/hello-1.0.tar.xz --dry-run
 
 --pkg=NAME
     Název balíčku pro příkaz clean-cache.
@@ -501,10 +508,11 @@ POKROČILÉ POUŽITÍ
      balikar build $pkg || exit 1
    done
 
-5. CHROOT BUILD IZOLACE
+5. ALTERNATIVNÍ ROOT PRO INSTALACI
    
-   TODO: run_with_chroot() integrace
-   $ balikar --chroot=/mnt/lfs build glibc
+   Instalace do vlastního root (např. LFS prostředí):
+   $ balikar install glibc --root=/mnt/lfs
+   $ balikar build gcc --staging-dir=/mnt/lfs/stage --root=/mnt/lfs
 
 6. STAŽENÍ ZDROJOVÝCH BALÍČKŮ BEZ BUILDU
    

@@ -73,7 +73,9 @@
 #define REPO_METADATA "repodata.json"   // Name of aggregated file for Conda-like repos
 #define PKG_METADATA "index.json"       // Name of metadata file in tar.xz
 #define MAX_PATH_LEN 1024               // Buffer size for paths (snprintf)
-#define DEBUG_LEVEL 0                   // Default debug level (CLI -d to increase)
+
+// Global debug level (controlled by -d flag in main.c)
+extern int DEBUG_LEVEL;
 
 // Error codes (enum-like macros for consistent error handling)
 #define ERR_NO_REPO 1

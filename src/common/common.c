@@ -7,6 +7,9 @@
 // Global utilities implementation
 // Provides logging functions and architecture helpers used throughout the project
 
+// Global debug level variable (set by main.c from CLI -d flag)
+int DEBUG_LEVEL = 0;
+
 # ifndef UNIT_TESTS
 
 /**
@@ -33,8 +36,9 @@ void log_error(const char *fmt, ...) {
  * @param ... Variable arguments for format string
  */
 void log_debug(int level, const char *fmt, ...) {
-    // Skip if debug level is below threshold
-    if (level < DEBUG_LEVEL) {
+    // Skip if requested debug level is higher than configured DEBUG_LEVEL
+    // e.g., if DEBUG_LEVEL=0 (no debug), skip all debug messages (level 1, 2, ...)
+    if (DEBUG_LEVEL < level) {
         return;
     }
     va_list args;

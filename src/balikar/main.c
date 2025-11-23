@@ -8,6 +8,11 @@
 #include "includes/installer.h"
 #include "../common/common.h"
 #include "../common/config.h"
+#include <archive.h>
+#include <archive_entry.h>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <ctype.h>
 
 /**
  * CLI configuration structure.
@@ -111,6 +116,9 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         cfg->package_name = argv[optind];
     }
     
+    // Set global debug level BEFORE any log_debug() calls
+    DEBUG_LEVEL = cfg->debug_level;
+    
     // Set default repository path if not specified via CLI
     // Load from configuration file and use primary repository
     if (!cfg->repo_path) {
@@ -135,7 +143,7 @@ int main(int argc, char **argv) {
     // Initialize configuration structure with zeros
     cli_config_t cfg = {0};
     
-    // Parse and validate command-line arguments
+    // Parse and validate command-line arguments (sets DEBUG_LEVEL internally)
     parse_args(argc, argv, &cfg);
     
     if (!cfg.command) {
@@ -307,6 +315,260 @@ int main(int argc, char **argv) {
     
     // Command: install/build - complete workflow from dependency resolution to build
     if (strcmp(cfg.command, "install") == 0 || strcmp(cfg.command, "build") == 0) {
+        // Handle local package installation (bypass repository and dependency resolution)
+        if (cfg.local_package) {
+            log_info("Local package mode: %s", cfg.local_package);
+            
+            // Validate file exists
+            if (access(cfg.local_package, F_OK) != 0) {
+                log_error("Local package file not found: %s", cfg.local_package);
+                exit_code = 1;
+                goto cleanup;
+            }
+            
+            // Validate file is readable
+            if (access(cfg.local_package, R_OK) != 0) {
+                log_error("Local package file not readable: %s", cfg.local_package);
+                exit_code = 1;
+                goto cleanup;
+            }
+            
+            // Extract package name and version from filename
+            // Expected format: <name>-<version>.tar.bz2 or <name>-<version>-<release>.tar.bz2
+            char *basename = strrchr(cfg.local_package, '/');
+            basename = basename ? basename + 1 : cfg.local_package;
+            
+            char pkg_name[256] = {0};
+            char pkg_version[256] = {0};
+            
+            // Copy basename and remove tar extension
+            char *name_copy = strdup(basename);
+            char *ext = strstr(name_copy, ".tar.bz2");
+            if (!ext) {
+                ext = strstr(name_copy, ".tar.gz");
+            }
+            if (!ext) {
+                ext = strstr(name_copy, ".tar.xz");
+            }
+            if (!ext) {
+                log_error("Invalid package file: must be .tar.bz2, .tar.gz or .tar.xz format");
+                free(name_copy);
+                exit_code = 1;
+                goto cleanup;
+            }
+            *ext = '\0';
+            
+            // Parse name-version format (find last dash)
+            char *last_dash = strrchr(name_copy, '-');
+            if (last_dash) {
+                *last_dash = '\0';
+                strncpy(pkg_name, name_copy, sizeof(pkg_name) - 1);
+                strncpy(pkg_version, last_dash + 1, sizeof(pkg_version) - 1);
+                
+                // Check if there's a release number (another dash before version)
+                char *version_dash = strrchr(pkg_name, '-');
+                if (version_dash && isdigit(*(version_dash + 1))) {
+                    // This is actually name-version-release format
+                    // Combine version-release as version
+                    snprintf(pkg_version, sizeof(pkg_version), "%s-%s", version_dash + 1, last_dash + 1);
+                    *version_dash = '\0';
+                }
+            } else {
+                // No version in filename, use just the name
+                strncpy(pkg_name, name_copy, sizeof(pkg_name) - 1);
+                strcpy(pkg_version, "local");
+            }
+            free(name_copy);
+            
+            log_info("Detected package: %s, version: %s", pkg_name, pkg_version);
+            
+            if (!cfg.dry_run) {
+                // Open local package file
+                FILE *local_fp = fopen(cfg.local_package, "rb");
+                if (!local_fp) {
+                    log_error("Failed to open local package: %s", cfg.local_package);
+                    exit_code = 1;
+                    goto cleanup;
+                }
+                
+                // Build package from local file (simplified workflow without metadata)
+                log_info("Building %s from local package...", pkg_name);
+                
+                // Create temporary build directory
+                char build_dir[512];
+                snprintf(build_dir, sizeof(build_dir), "/tmp/balikar_build_%s_local_XXXXXX", pkg_name);
+                if (!mkdtemp(build_dir)) {
+                    log_error("Failed to create build directory");
+                    fclose(local_fp);
+                    exit_code = ERR_BUILD_FAIL;
+                    goto cleanup;
+                }
+                
+                log_info("Build directory: %s", build_dir);
+                
+                // Extract archive
+                struct archive *a = archive_read_new();
+                archive_read_support_filter_all(a);
+                archive_read_support_format_all(a);
+                
+                if (archive_read_open_FILE(a, local_fp) != ARCHIVE_OK) {
+                    log_error("Failed to open archive: %s", archive_error_string(a));
+                    archive_read_free(a);
+                    fclose(local_fp);
+                    exit_code = ERR_BUILD_FAIL;
+                    goto cleanup;
+                }
+                
+                struct archive_entry *entry;
+                while (archive_read_next_header(a, &entry) == ARCHIVE_OK) {
+                    // Prepend build_dir to entry pathname
+                    const char *current_file = archive_entry_pathname(entry);
+                    char full_path[1024];
+                    snprintf(full_path, sizeof(full_path), "%s/%s", build_dir, current_file);
+                    archive_entry_set_pathname(entry, full_path);
+                    
+                    // Extract entry
+                    if (archive_read_extract(a, entry, ARCHIVE_EXTRACT_TIME | ARCHIVE_EXTRACT_PERM) != ARCHIVE_OK) {
+                        log_warn("Extract warning: %s", archive_error_string(a));
+                    }
+                }
+                
+                archive_read_close(a);
+                archive_read_free(a);
+                fclose(local_fp);
+                
+                log_info("Archive extracted successfully");
+                
+                // Find source directory (first subdirectory)
+                DIR *dir = opendir(build_dir);
+                if (!dir) {
+                    log_error("Failed to open build directory");
+                    exit_code = ERR_BUILD_FAIL;
+                    goto cleanup;
+                }
+                
+                char source_dir[1024] = {0};
+                struct dirent *ent;
+                while ((ent = readdir(dir)) != NULL) {
+                    if (ent->d_name[0] == '.') continue;
+                    
+                    char test_path[1024];
+                    snprintf(test_path, sizeof(test_path), "%s/%s", build_dir, ent->d_name);
+                    
+                    struct stat st;
+                    if (stat(test_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+                        strncpy(source_dir, test_path, sizeof(source_dir) - 1);
+                        break;
+                    }
+                }
+                closedir(dir);
+                
+                if (!source_dir[0]) {
+                    log_error("Source directory not found in archive");
+                    exit_code = ERR_BUILD_FAIL;
+                    goto cleanup;
+                }
+                
+                log_info("Source directory: %s", source_dir);
+                
+                // Download extra files (including .build script) from repository
+                log_info("Attempting to download .build script and extras from repository...");
+                download_extras(NULL, pkg_name, pkg_version, cfg.repo_path, source_dir);
+                
+                // Set up build environment
+                const char *staging = cfg.staging_dir ? cfg.staging_dir : STAGING_DIR;
+                setenv("DESTDIR", staging, 1);
+                setenv("P", staging, 1);  // P is alias for DESTDIR used in .build scripts
+                
+                long nproc = sysconf(_SC_NPROCESSORS_ONLN);
+                if (nproc < 1) nproc = 1;
+                char makeflags[64];
+                snprintf(makeflags, sizeof(makeflags), "-j%ld", nproc);
+                setenv("MAKEFLAGS", makeflags, 1);
+                
+                // Copy .build script from cache to source directory if it exists
+                char build_cache[1024];
+                char *cache_dir = get_cache_dir();
+                snprintf(build_cache, sizeof(build_cache), "%s/extras/%s/.build", cache_dir, pkg_name);
+                free(cache_dir);
+                
+                if (access(build_cache, F_OK) == 0) {
+                    char build_dest[1024];
+                    snprintf(build_dest, sizeof(build_dest), "%s/.build", source_dir);
+                    
+                    char cp_cmd[2048];
+                    snprintf(cp_cmd, sizeof(cp_cmd), "cp '%s' '%s' && chmod +x '%s'", 
+                             build_cache, build_dest, build_dest);
+                    if (system(cp_cmd) == 0) {
+                        log_info("Copied .build script to source directory");
+                    }
+                }
+                
+                // Change to source directory
+                if (chdir(source_dir) != 0) {
+                    log_error("Failed to chdir to source directory");
+                    exit_code = ERR_BUILD_FAIL;
+                    goto cleanup;
+                }
+                
+                // Build the package
+                int have_build = access(".build", X_OK) == 0;
+                const char *build_cmd = have_build ? 
+                    "bash -e .build > build.log 2>&1" : 
+                    "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make install >/dev/null 2>&1";
+                
+                log_info("Running build: %s", have_build ? ".build script" : "configure+make");
+                
+                int build_rc = system(build_cmd);
+                if (build_rc != 0) {
+                    log_error("Build failed with exit code %d", build_rc);
+                    exit_code = ERR_BUILD_FAIL;
+                    
+                    // Cleanup
+                    chdir("/tmp");
+                    char cleanup[1024];
+                    snprintf(cleanup, sizeof(cleanup), "rm -rf '%s'", build_dir);
+                    system(cleanup);
+                    goto cleanup;
+                }
+                
+                log_info("Successfully built %s", pkg_name);
+                
+                // Cleanup build directory
+                chdir("/tmp");
+                char cleanup[1024];
+                snprintf(cleanup, sizeof(cleanup), "rm -rf '%s'", build_dir);
+                system(cleanup);
+                
+                // Install if command is 'install'
+                if (strcmp(cfg.command, "install") == 0) {
+                    const char *target_root = cfg.root_path ? cfg.root_path : "/";
+                    const char *staging = cfg.staging_dir ? cfg.staging_dir : STAGING_DIR;
+                    
+                    const char *root_display = strcmp(target_root, "/") == 0 ? "system root (/)" : target_root;
+                    log_info("Installing %s to %s...", pkg_name, root_display);
+                    
+                    if (install_package(pkg_name, pkg_version, staging, target_root) != 0) {
+                        log_error("Installation failed for %s.", pkg_name);
+                        exit_code = ERR_BUILD_FAIL;
+                        goto cleanup;
+                    }
+                    
+                    log_info("Successfully installed %s to %s", pkg_name, root_display);
+                    
+                    // Cleanup staging
+                    char cleanup_cmd[512];
+                    snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s'/* 2>/dev/null", staging);
+                    system(cleanup_cmd);
+                    log_debug(1, "Cleaned up staging directory: %s", staging);
+                }
+            } else {
+                log_info("DRY-RUN: Would build and install %s from %s", pkg_name, cfg.local_package);
+            }
+            
+            goto cleanup;
+        }
+        
         if (!cfg.package_name) {
             log_error("Package name required for %s command.", cfg.command);
             print_usage(1);
@@ -421,7 +683,8 @@ int main(int argc, char **argv) {
                         // Get staging directory where builder created files
                         const char *staging = cfg.staging_dir ? cfg.staging_dir : STAGING_DIR;
                         
-                        log_info("Installing %s to %s...", pkg_name, target_root);
+                        const char *root_display = strcmp(target_root, "/") == 0 ? "system root (/)" : target_root;
+                        log_info("Installing %s to %s...", pkg_name, root_display);
                         
                         // Call installer to merge staging → target root
                         if (install_package(pkg_name, version, staging, target_root) != 0) {
@@ -430,7 +693,7 @@ int main(int argc, char **argv) {
                             break;
                         }
                         
-                        log_info("Successfully installed %s to %s", pkg_name, target_root);
+                        log_info("Successfully installed %s to %s", pkg_name, root_display);
                         
                         // Cleanup staging directory after successful installation
                         char cleanup_cmd[512];
@@ -482,6 +745,31 @@ int main(int argc, char **argv) {
         transaction_free(trans);
         queue_free(solution);
         solver_free(solv);
+        
+    } 
+    // Command: remove - remove installed package
+    // Uninstalls package from the system by removing all installed files
+    else if (strcmp(cfg.command, "remove") == 0) {
+        if (!cfg.package_name) {
+            log_error("Package name required for remove command.");
+            print_usage(1);
+        }
+        
+        log_info("Removing package: %s", cfg.package_name);
+        
+        // Determine target root where package is installed
+        const char *target_root = cfg.root_path ? cfg.root_path : "/";
+        
+        // Use erase_package from installer module
+        if (!cfg.dry_run) {
+            if (erase_package(cfg.package_name, target_root) != 0) {
+                log_error("Failed to remove package '%s'.", cfg.package_name);
+                exit_code = 1;
+                goto cleanup;
+            }
+        } else {
+            log_info("DRY-RUN: Would remove package '%s' from %s", cfg.package_name, target_root);
+        }
         
     } 
     // Command: download - resolve dependencies and download packages without building

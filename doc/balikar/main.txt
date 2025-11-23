@@ -22,12 +22,12 @@ typedef struct {
     int debug_level;      // Úroveň debug výpisů (0=off, 1=info, 2=detailed)
     int dry_run;          // Simulační režim bez skutečných změn
     int no_staging;       // Vypnutí staging režimu (instalace přímo)
-    char *staging_dir;    // Cesta k staging adresáři (výchozí: $P z system_helpers)
-    char *chroot_path;    // Cesta k chroot prostředí (výchozí: /tmp/pm-chroot)
+    char *staging_dir;    // Cesta k staging adresáři (výchozí: /tmp/balikar_staging)
+    char *root_path;      // Cesta k target root pro instalaci (výchozí: /)
     char *build_tmp_dir;  // Dočasný adresář pro buildy (výchozí: /tmp)
-    char *repo_path;      // Cesta k repozitáři (výchozí: ./repo)
-    char *local_package;  // Cesta k lokálnímu tar.bz2 mimo repo (TODO)
-    const char *command;  // Příkaz k provedení (install, build, resolve, repos, repo-update)
+    char *repo_path;      // Cesta k repozitáři (výchozí z repos.conf)
+    char *local_package;  // Cesta k lokálnímu tar.xz/tar.gz/tar.bz2 mimo repo
+    const char *command;  // Příkaz k provedení (install, build, resolve, remove, repos, repo-update, download)
     const char *package_name; // Název balíčku pro operaci
 } cli_config_t;
 - Struktura pro konfiguraci z CLI argumentů; inicializována v parse_args, použita v main workflow.
@@ -35,9 +35,9 @@ typedef struct {
 Klíčové funkce
 ----
 static void parse_args(int argc, char **argv, cli_config_t *cfg);
-- Parsuje CLI argumenty pomocí getopt_long; podporované long options: --help, --debug, --dry-run, --no-staging,
-  --staging-dir, --chroot-path, --build-tmp-dir, --repo, --local-package; krátké: -h, -d (debug lze opakovat);
-  zpracovává command (první pozitional arg) a package_name (druhý pozitional arg); nastavuje výchozí repo_path="./repo";
+- Parsuje CLI argumenty pomocí getopt_long; podporované long options: --help, --debug, --dry-run, --no-staging, --no-deps,
+  --staging-dir, --root, --build-tmp-dir, --repo, --local-package, --output-dir; krátké: -h, -d (debug lze opakovat);
+  zpracovává command (první pozitional arg) a package_name (druhý pozitional arg); nastavuje výchozí repo_path z repos.conf;
   volá print_usage při chybě nebo -h.
 
 int main(int argc, char **argv);
@@ -49,7 +49,9 @@ int main(int argc, char **argv);
   5. Rozhoduje podle příkazu:
      - install/build: Vytvoří solver, solve dependencies (solve_dependencies), vytvoří transakci (solver_create_transaction),
        zobrazí plán (display_transaction), user_confirm pokud není dry-run, iteruje přes transakční kroky,
-       stahuje balíčky (download_package), stahuje extras (download_extras), builduje (commit_element z builder.c)
+       stahuje balíčky (download_package), stahuje extras (download_extras), builduje (commit_element z builder.c),
+       instaluje (install_package z installer.c) pokud je příkaz install
+     - remove: Odinstaluje balíček voláním erase_package z installer.c
      - resolve: Pouze solve + zobrazí transakci bez download/build
      - repos: Zobrazí název repo a počet balíčků (repo->nsolvables)
      - repo-update: Uvolní repo/pool, znovu vytvoří pool, volá generate_repodata, znovu načte repository, zobrazí počet balíčků
@@ -59,12 +61,18 @@ int main(int argc, char **argv);
 Podporované příkazy
 ----
 install <pkg>
-- Plný workflow: dependency resolution → download → build → install (install fáze zatím TODO)
+- Plný workflow: dependency resolution → download → build → install do staging → merge do target root
+- Podporuje --local-package pro instalaci lokálního tar archivu
+- Podporuje --root pro instalaci do custom chroot (výchozí: /)
 - Použití: balikar install glibc
+          balikar install --root=/mnt/lfs gzip
+          balikar install --local-package=/path/to/pkg.tar.xz --root=/tmp/test
 
 build <pkg>
-- Alias pro install (stejné chování); sémanticky určeno pro build-from-source workflow
+- Podobné install, ale POUZE build do staging (bez merge do root)
+- Výsledek zůstane v --staging-dir pro manuální kontrolu
 - Použití: balikar build hello
+          balikar build --staging-dir=/tmp/my_staging gzip
 
 resolve <pkg>
 - Pouze dependency resolution (dry-run solver); zobrazí transakční plán bez provedení změn
@@ -86,6 +94,12 @@ download <pkg>
           balikar download --output-dir=/tmp/sources glibc
           balikar download --no-deps --output-dir=/custom/path gcc
 
+remove <pkg>
+- Odinstaluje balíček ze systému; odstraní všechny soubory a aktualizuje databázi
+- Podporuje --root pro odinstalaci z custom chroot
+- Použití: balikar remove gzip
+          balikar remove --root=/mnt/lfs bash
+
 Globální options
 ----
 -h, --help
@@ -101,10 +115,15 @@ Globální options
 - Vypne staging režim (set_staging_enabled(0)); instalace proběhne přímo bez DESTDIR=$P mezikroku
 
 --staging-dir=PATH
-- Nastaví vlastní staging adresář (výchozí: $P z system_helpers); volá set_staging_dir(PATH)
+- Nastaví vlastní staging adresář (výchozí: /tmp/balikar_staging); volá set_staging_dir(PATH)
+- Staging je dočasné místo pro DESTDIR během buildu
+- Po úspěšné instalaci se automaticky vyčistí
 
---chroot-path=PATH
-- Nastaví cestu k chroot prostředí (výchozí: /tmp/pm-chroot); zatím nepoužito (TODO pro installer)
+--root=PATH
+- Nastaví cílový root pro instalaci (výchozí: /)
+- Používá se pro LFS/chroot buildy nebo testovací prostředí
+- Databáze balíčků uložena v {root}/var/lib/balikar/installed.json
+- Použití: --root=/mnt/lfs nebo --root=/tmp/test_root
 
 --build-tmp-dir=PATH
 - Nastaví dočasný adresář pro buildy (volá set_build_tmp_dir); výchozí: /tmp
@@ -113,7 +132,10 @@ Globální options
 - Nastaví cestu k repozitáři (výchozí: ./repo); použito v load_repository
 
 --local-package=PATH
-- Cesta k lokálnímu tar.bz2 balíčku mimo repo (TODO: implementace add_package_tar_bz2 workflow)
+- Cesta k lokálnímu tar archivu (.tar.xz, .tar.gz, .tar.bz2) mimo repository
+- Stáhne .build script z repository podle jména balíčku
+- Provede stejný build workflow jako repository balíčky
+- Použití: --local-package=/path/to/gzip-1.14.tar.xz
 
 --output-dir=PATH
 - Cílový adresář pro download command; stáhne balíčky do specifikovaného adresáře
@@ -194,11 +216,12 @@ Testování
 
 Poznámky
 ----
-- local-package option zatím není implementována (TODO: přímé volání add_package_tar_bz2)
-- Install fáze (merge staging do chroot) zatím není implementována (TODO: installer.c)
 - Debug level lze nastavit opakováním -d (např. -d -d pro level 2)
 - Dry-run režim je užitečný pro CI/CD pipeline validace
 - Transaction ordering (transaction_order) je kritické pro správné pořadí buildu podle závislostí
+- Install workflow: build → staging (DESTDIR) → merge do root (cílový systém)
+- --root umožňuje izolované buildy pro LFS/chroot bez ovlivnění hostitelského systému
+- Databáze balíčků je per-root izolovaná v {root}/var/lib/balikar/installed.json
 
 ========================================
                 ENGLISH
@@ -395,8 +418,34 @@ Testing
 
 Notes
 ----
-- local-package option not yet implemented (TODO: direct call to add_package_tar_bz2)
-- Install phase (merge staging to chroot) not yet implemented (TODO: installer.c)
 - Debug level can be set by repeating -d (e.g., -d -d for level 2)
 - Dry-run mode useful for CI/CD pipeline validation
 - Transaction ordering (transaction_order) critical for correct build order by dependencies
+
+
+Workflow with --local-package
+----
+1. Extract archive to temporary build directory
+2. Download .build script and extras from repository
+3. Copy .build to source directory
+4. Set DESTDIR and P environment variables
+5. Execute .build script (or fallback to configure+make)
+6. Install from staging to target root
+7. Update package database
+8. Cleanup temporary directories
+
+Example: balikar install --local-package=/path/to/gzip-1.14.tar.xz --staging-dir=/tmp/staging --root=/mnt/lfs
+
+Staging vs Root directories
+----
+--staging-dir: Temporary build destination (DESTDIR for make install)
+  - Default: /tmp/balikar_staging
+  - Cleaned after installation
+  - Intermediate storage between build and install
+
+--root: Final installation target (chroot environment)
+  - Default: / (native system)
+  - Permanent installation location
+  - Database location: {root}/var/lib/balikar/installed.json
+  
+Process flow: BUILD → staging-dir → root

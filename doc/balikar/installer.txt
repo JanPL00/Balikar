@@ -48,9 +48,10 @@ DVA KLÍČOVÉ KONCEPTY
    │   └── share/...      # Data
    └── etc/...            # Konfigurace (volitelné)
 
-2. CHROOT PROSTŘEDÍ
+2. ROOT PROSTŘEDÍ (TARGET ROOT)
    - Cílová oblast pro instalaci
-   - Výchozí: /tmp/pm-chroot
+   - Výchozí: / (systémový root)
+   - Možnost nastavit: --root=/mnt/lfs nebo --root=/tmp/test_root
    - Typicky: /mnt/lfs (při budování LFS systému)
    
    Účel:
@@ -60,21 +61,25 @@ DVA KLÍČOVÉ KONCEPTY
    - Persistentní - obsahuje kompletní systém
    
    Po instalaci:
-   /chroot/
+   /target_root/
    ├── usr/
    │   ├── bin/gzip       # Zkopírováno z $P
    │   ├── lib/...
    │   └── share/...
+   ├── var/
+   │   └── lib/
+   │       └── balikar/
+   │           └── installed.json  # Databáze nainstalovaných balíčků
    └── etc/...
 
-WORKFLOW: STAGING → CHROOT
+WORKFLOW: STAGING → ROOT
 --------------------------
    
    [Builder]
       ↓
    DESTDIR=$P make install
       ↓
-   Staging ($P):              Chroot (/mnt/lfs):
+   Staging ($P):              Target Root (--root):
    ┌─────────────┐           ┌─────────────┐
    │ /usr/bin/   │           │ /usr/bin/   │
    │ /usr/lib/   │  cp -a    │ /usr/lib/   │
@@ -82,23 +87,24 @@ WORKFLOW: STAGING → CHROOT
    └─────────────┘           └─────────────┘
    (dočasné)                 (finální)
       ↓
-   Může být smazáno          Persistentní systém
+   Automaticky smazáno       Persistentní systém
+                            + databáze v /var/lib/balikar/
 
 PŘÍKLAD: Instalace gzip do LFS
 ------------------------------
 
 1. BUILD FÁZE (builder.c):
-   $ balikar build gzip
-   → Builder: DESTDIR=$P ./configure --prefix=/usr && make install
+   $ balikar build gzip --staging-dir=/tmp/staging_gzip
+   → Builder: DESTDIR=/tmp/staging_gzip ./configure --prefix=/usr && make install
    → Výsledek v staging:
-     $P/usr/bin/gzip
-     $P/usr/bin/gunzip
-     $P/usr/share/man/man1/gzip.1
+     /tmp/staging_gzip/usr/bin/gzip
+     /tmp/staging_gzip/usr/bin/gunzip
+     /tmp/staging_gzip/usr/share/man/man1/gzip.1
 
 2. INSTALL FÁZE (installer.c):
-   $ balikar install gzip --chroot-path=/mnt/lfs
+   $ balikar install gzip --root=/mnt/lfs
    → Installer: cp -a $P/* /mnt/lfs/
-   → Výsledek v chroot:
+   → Výsledek v target root:
      /mnt/lfs/usr/bin/gzip
      /mnt/lfs/usr/bin/gunzip
      /mnt/lfs/usr/share/man/man1/gzip.1
@@ -112,10 +118,13 @@ HLAVNÍ KOMPONENTY
 -----------------
 
 1. PACKAGE TRACKING DATABASE
-   Soubor: /var/lib/balikar/installed.json (system-wide)
-   nebo: $HOME/.local/share/balikar/installed.json (user install)
+   Soubor: {chroot_path}/var/lib/balikar/installed.json
+   Příklady:
+   - Systémový root: /var/lib/balikar/installed.json
+   - LFS chroot: /mnt/lfs/var/lib/balikar/installed.json
+   - Test root: /tmp/test_root/var/lib/balikar/installed.json
    
-   Poznámka: install.sh automaticky vytvoří tento adresář při instalaci.
+   Poznámka: Databáze je automaticky vytvořena při první instalaci do daného rootu.
    
    Struktura:
    {
@@ -134,9 +143,10 @@ HLAVNÍ KOMPONENTY
    }
    
    Funkce:
-   - load_installed_db() - načte databázi (nebo vytvoří prázdnou)
-   - save_installed_db() - uloží databázi
-   - add_installed_package() - přidá balíček do databáze
+   - load_installed_db(chroot_path) - načte databázi (nebo vytvoří prázdnou)
+   - save_installed_db(chroot_path, db) - uloží databázi
+   - add_installed_package(chroot_path, name, version, files) - přidá balíček
+   - erase_package(chroot_path, package_name) - odstraní balíček a jeho soubory
    
    Účel:
    - Tracking nainstalovaných balíčků
@@ -160,30 +170,30 @@ HLAVNÍ KOMPONENTY
      ...
    ]
 
-3. CHROOT VALIDATION
-   Funkce: validate_chroot(chroot_path)
+3. ROOT VALIDATION
+   Funkce: validate_root(root_path)
    
    Kontroluje:
-   - Existence chroot path
+   - Existence root path
    - Je to adresář?
-   - Základní FHS struktura (/usr, /lib, /bin)
+   - Základní FHS struktura (/usr, /var, /etc)
    
    Varování:
    - Missing standard directories
    - User confirmation před instalací
    - Prevence náhodného přepsání
 
-4. MERGE STAGING TO CHROOT
-   Funkce: merge_staging_to_chroot(staging_dir, chroot_path)
+4. MERGE STAGING TO ROOT
+   Funkce: merge_staging_to_root(staging_dir, root_path)
    
    Hlavní logika:
    A. VALIDACE
       - Staging dir existuje a je adresář
-      - Chroot path existuje a je adresář
+      - Root path existuje a je adresář
       - Staging dir není prázdný (má nějaké soubory)
    
    B. MERGE OPERACE
-      - Použití: cp -a staging/* chroot/
+      - Použití: cp -a staging/* root/
       - Zachovává permissions, timestamps, symlinks
       - Rekurzivní kopírování
       - Atomic operace (buď vše nebo nic)
@@ -194,7 +204,7 @@ HLAVNÍ KOMPONENTY
       - Logging všech kroků
 
 5. POST-INSTALL HOOKS
-   Funkce: execute_install_script(staging_dir, chroot_path)
+   Funkce: execute_install_script(staging_dir, root_path)
    
    Hledání .install/install.sh:
    - Kontrola: staging_dir/.install/install.sh
@@ -203,7 +213,7 @@ HLAVNÍ KOMPONENTY
    
    Spuštění:
    - bash -e .install/install.sh
-   - Environment: DESTDIR=$chroot, CHROOT=$chroot
+   - Environment: DESTDIR=$root, CHROOT=$root
    - Redirect output: > /dev/null 2>&1
    - User confirmation při selhání skriptu
    
@@ -213,12 +223,12 @@ HLAVNÍ KOMPONENTY
    - Custom post-install konfigurace
 
 6. MAIN INSTALL FUNCTION
-   Funkce: install_package(pkg_name, pkg_version, staging_dir, chroot_path)
+   Funkce: install_package(pkg_name, pkg_version, staging_dir, root_path)
    
    Workflow:
    
-   A. VALIDATE CHROOT
-      - validate_chroot(chroot_path)
+   A. VALIDATE ROOT
+      - validate_root(root_path)
       - User confirmation pokud suspicious
    
    B. COLLECT FILE MANIFEST
@@ -226,8 +236,8 @@ HLAVNÍ KOMPONENTY
       - Count files, check not empty
       - Store for database
    
-   C. MERGE TO CHROOT
-      - merge_staging_to_chroot()
+   C. MERGE TO ROOT
+      - merge_staging_to_root()
       - Return error pokud fail
    
    D. EXECUTE POST-INSTALL
@@ -236,9 +246,9 @@ HLAVNÍ KOMPONENTY
       - User choice pokud selže
    
    E. UPDATE DATABASE
-      - add_installed_package()
+      - add_installed_package(root_path, ...)
       - Store name, version, date, files
-      - Persist to disk
+      - Persist to {root_path}/var/lib/balikar/installed.json
    
    F. SUCCESS
       - Log completion
@@ -524,9 +534,44 @@ Moduly:
   - cli_helpers.c: user_confirm()
   - builder.c: produkuje staging dir
 
+RECENT CHANGES (November 2025)
+------------------------------
+
+1. Chroot-aware database paths:
+   - Database location respects --root option
+   - New helpers: get_db_dir_path(), get_db_file_path()
+   - Database: {chroot}/var/lib/balikar/installed.json
+   - Example: --root=/mnt/lfs → /mnt/lfs/var/lib/balikar/installed.json
+
+2. Updated function signatures:
+   All functions now accept chroot_path parameter:
+   - load_installed_db(const char *chroot_path)
+   - save_installed_db(json_t *root, const char *chroot_path)
+   - add_installed_package(..., const char *chroot_path)
+   - is_package_installed(const char *pkg_name, const char *chroot_path)
+   - get_installed_packages(const char *chroot_path)
+   - erase_package(const char *pkg_name, const char *chroot_path)
+
+3. Improved directory creation:
+   - Uses mkdir -p for recursive creation
+   - Ensures parent directories exist
+   - System call: mkdir -p '{chroot}/var/lib/balikar'
+
+4. Workflow diagram update:
+   Database location is now chroot-aware:
+   /var/lib/balikar/installed.json → {chroot}/var/lib/balikar/installed.json
+
+5. Multiple chroot support:
+   Same installer can manage multiple chroots:
+   - Native system: --root=/
+   - LFS build: --root=/mnt/lfs
+   - Test environment: --root=/tmp/test_root
+   Each maintains independent database
+
 SEE ALSO
 --------
 doc/balikar/builder.txt   - Build phase
+doc/balikar/main.txt      - Main entry point (--root option)
 doc/manual.txt            - User manual
 doc/balikar/README.md     - Architecture
 

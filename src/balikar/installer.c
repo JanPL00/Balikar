@@ -5,30 +5,58 @@
 #include "includes/installer.h"
 
 
-// Path to installed packages database
-// Use /tmp for tests when running in test mode
-// For user installations, consider using $HOME/.local/share/balikar
-#ifdef UNIT_TESTS
-#define INSTALLED_DB_PATH "/tmp/balikar_test_db/installed.json"
-#define INSTALLED_DB_DIR "/tmp/balikar_test_db"
-#else
-#define INSTALLED_DB_PATH "/var/lib/balikar/installed.json"
-#define INSTALLED_DB_DIR "/var/lib/balikar"
-// Alternative for user installations: $HOME/.local/share/balikar/installed.json
-#endif
+/**
+ * Builds the database directory path for a given chroot.
+ * Creates path: {chroot}/var/lib/balikar
+ * 
+ * @param chroot_path Root directory (e.g., "/" or "/tmp/test_root")
+ * @param buffer Buffer to store the result
+ * @param buffer_size Size of the buffer
+ */
+static void get_db_dir_path(const char *chroot_path, char *buffer, size_t buffer_size) {
+    if (strcmp(chroot_path, "/") == 0) {
+        snprintf(buffer, buffer_size, "/var/lib/balikar");
+    } else {
+        snprintf(buffer, buffer_size, "%s/var/lib/balikar", chroot_path);
+    }
+}
+
+/**
+ * Builds the database file path for a given chroot.
+ * Creates path: {chroot}/var/lib/balikar/installed.json
+ * 
+ * @param chroot_path Root directory (e.g., "/" or "/tmp/test_root")
+ * @param buffer Buffer to store the result
+ * @param buffer_size Size of the buffer
+ */
+static void get_db_file_path(const char *chroot_path, char *buffer, size_t buffer_size) {
+    if (strcmp(chroot_path, "/") == 0) {
+        snprintf(buffer, buffer_size, "/var/lib/balikar/installed.json");
+    } else {
+        snprintf(buffer, buffer_size, "%s/var/lib/balikar/installed.json", chroot_path);
+    }
+}
 
 /**
  * Ensures the database directory exists.
- * Creates /var/lib/balikar if it doesn't exist.
+ * Creates {chroot}/var/lib/balikar if it doesn't exist.
+ * 
+ * @param chroot_path Root directory for the installation
  */
-static int ensure_db_dir(void) {
+static int ensure_db_dir(const char *chroot_path) {
+    char db_dir[PATH_MAX];
+    get_db_dir_path(chroot_path, db_dir, sizeof(db_dir));
+    
     struct stat st;
-    if (stat(INSTALLED_DB_DIR, &st) != 0) {
-        if (mkdir(INSTALLED_DB_DIR, 0755) != 0) {
-            log_error("Failed to create database directory: %s", INSTALLED_DB_DIR);
+    if (stat(db_dir, &st) != 0) {
+        // Create parent directories recursively
+        char mkdir_cmd[PATH_MAX + 20];
+        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", db_dir);
+        if (system(mkdir_cmd) != 0) {
+            log_error("Failed to create database directory: %s", db_dir);
             return -1;
         }
-        log_debug(1, "Created database directory: %s", INSTALLED_DB_DIR);
+        log_debug(1, "Created database directory: %s", db_dir);
     }
     return 0;
 }
@@ -37,15 +65,19 @@ static int ensure_db_dir(void) {
  * Loads the installed packages database.
  * Creates an empty database if it doesn't exist.
  * 
+ * @param chroot_path Root directory for the installation
  * @return JSON object containing packages, or NULL on error
  *         Caller must json_decref() the returned object
  */
-static json_t* load_installed_db(void) {
-    if (ensure_db_dir() != 0) {
+static json_t* load_installed_db(const char *chroot_path) {
+    if (ensure_db_dir(chroot_path) != 0) {
         return NULL;
     }
     
-    FILE *fp = fopen(INSTALLED_DB_PATH, "r");
+    char db_path[PATH_MAX];
+    get_db_file_path(chroot_path, db_path, sizeof(db_path));
+    
+    FILE *fp = fopen(db_path, "r");
     if (!fp) {
         // Database doesn't exist yet - create empty one
         log_debug(1, "Database doesn't exist, creating empty one");
@@ -70,19 +102,23 @@ static json_t* load_installed_db(void) {
  * Saves the installed packages database to disk.
  * 
  * @param root JSON object to save
+ * @param chroot_path Root directory for the installation
  * @return 0 on success, -1 on error
  */
-static int save_installed_db(json_t *root) {
-    if (ensure_db_dir() != 0) {
+static int save_installed_db(json_t *root, const char *chroot_path) {
+    if (ensure_db_dir(chroot_path) != 0) {
         return -1;
     }
     
-    if (json_dump_file(root, INSTALLED_DB_PATH, JSON_INDENT(2)) != 0) {
+    char db_path[PATH_MAX];
+    get_db_file_path(chroot_path, db_path, sizeof(db_path));
+    
+    if (json_dump_file(root, db_path, JSON_INDENT(2)) != 0) {
         log_error("Failed to save installed database");
         return -1;
     }
     
-    log_debug(1, "Saved installed database to %s", INSTALLED_DB_PATH);
+    log_debug(1, "Saved installed database to %s", db_path);
     return 0;
 }
 
@@ -350,10 +386,11 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
  * @param pkg_name Package name
  * @param pkg_version Package version
  * @param files JSON array of installed files
+ * @param chroot_path Root directory for the installation
  * @return 0 on success, -1 on error
  */
-static int add_installed_package(const char *pkg_name, const char *pkg_version, json_t *files) {
-    json_t *db = load_installed_db();
+static int add_installed_package(const char *pkg_name, const char *pkg_version, json_t *files, const char *chroot_path) {
+    json_t *db = load_installed_db(chroot_path);
     if (!db) {
         return -1;
     }
@@ -386,7 +423,7 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
     json_object_set_new(packages, pkg_key, pkg_entry);
     
     // Save database
-    int result = save_installed_db(db);
+    int result = save_installed_db(db, chroot_path);
     json_decref(db);
     
     if (result == 0) {
@@ -448,7 +485,7 @@ int install_package(const char *pkg_name, const char *pkg_version,
     }
     
     // Step 5: Update installed packages database
-    if (add_installed_package(pkg_name, pkg_version, files) != 0) {
+    if (add_installed_package(pkg_name, pkg_version, files, chroot_path) != 0) {
         log_error("Failed to update installed packages database");
         json_decref(files);
         return -1;
@@ -461,13 +498,17 @@ int install_package(const char *pkg_name, const char *pkg_version,
 
 /**
  * Checks if a package is installed.
+ * 
+ * @param pkg_name Package name to check
+ * @param chroot_path Root directory (defaults to "/" if NULL)
  */
-int is_package_installed(const char *pkg_name) {
+int is_package_installed(const char *pkg_name, const char *chroot_path) {
     if (!pkg_name) {
         return -1;
     }
     
-    json_t *db = load_installed_db();
+    const char *root = chroot_path ? chroot_path : "/";
+    json_t *db = load_installed_db(root);
     if (!db) {
         return -1;
     }
@@ -500,9 +541,12 @@ int is_package_installed(const char *pkg_name) {
 
 /**
  * Retrieves list of all installed packages.
+ * 
+ * @param chroot_path Root directory (defaults to "/" if NULL)
  */
-json_t* get_installed_packages(void) {
-    json_t *db = load_installed_db();
+json_t* get_installed_packages(const char *chroot_path) {
+    const char *root = chroot_path ? chroot_path : "/";
+    json_t *db = load_installed_db(root);
     if (!db) {
         return NULL;
     }
@@ -532,7 +576,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     log_info("Erasing package: %s", pkg_name);
     
     // Load database
-    json_t *db = load_installed_db();
+    json_t *db = load_installed_db(chroot_path);
     if (!db) {
         return -1;
     }
@@ -605,7 +649,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     json_object_del(packages, found_key);
     
     // Save database
-    int result = save_installed_db(db);
+    int result = save_installed_db(db, chroot_path);
     json_decref(db);
     
     if (result == 0) {
