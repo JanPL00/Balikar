@@ -127,23 +127,77 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
  * Resolve all dependencies for a package.
  * 
  * This is the main dependency resolution function that:
- * 1. Finds the target package solvable
- * 2. Recursively processes all makedeps (build-time dependencies)
- * 3. Adds the main package as a runtime install job
- * 4. Runs the solver to compute the installation transaction
- * 5. Handles any solver problems that arise
+ * 1. Loads already installed packages from target root (if any)
+ * 2. Finds the target package solvable
+ * 3. Recursively processes all makedeps (build-time dependencies)
+ * 4. Adds the main package as a runtime install job
+ * 5. Runs the solver to compute the installation transaction
+ * 6. Handles any solver problems that arise
  * 
  * @param solv The solver instance to use
  * @param pkg_name Name of the package to resolve dependencies for
  * @param pool The pool containing package information
  * @param repo The repository to search for packages
+ * @param root_path Target installation root (e.g., "/" or "/tmp/test_root") to check for installed packages
  * @return Queue with success indicator (1) on success, NULL on failure
  *         Caller must free the returned queue with queue_free() and solv_free()
  */
-Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo) {
+Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo, const char *root_path) {
     if (!solv || !pool || !repo || !pkg_name) {
         log_error("Invalid arguments in solve_dependencies.");
         return NULL;
+    }
+    
+    if (!root_path) {
+        root_path = "/";  // Default to system root
+    }
+
+    // Load list of installed packages from target root
+    // We'll skip packages that are already installed
+    Queue installed_names;
+    queue_init(&installed_names);
+    
+    char installed_db[512];
+    // Handle root path "/" specially to avoid double slash
+    if (strcmp(root_path, "/") == 0) {
+        snprintf(installed_db, sizeof(installed_db), "/var/lib/balikar/installed.json");
+    } else {
+        snprintf(installed_db, sizeof(installed_db), "%s/var/lib/balikar/installed.json", root_path);
+    }
+    
+    int installed_count = 0;
+    if (access(installed_db, F_OK) == 0) {
+        log_debug(1, "Loading installed packages from: %s", installed_db);
+        
+        // Parse installed.json
+        json_error_t error;
+        json_t *root = json_load_file(installed_db, 0, &error);
+        if (root) {
+            json_t *packages = json_object_get(root, "packages");
+            if (packages && json_is_object(packages)) {
+                const char *key;
+                json_t *pkg_obj;
+                
+                json_object_foreach(packages, key, pkg_obj) {
+                    const char *name = json_string_value(json_object_get(pkg_obj, "name"));
+                    
+                    if (name) {
+                        // Store package name ID in queue
+                        Id name_id = pool_str2id(pool, name, 1);
+                        queue_push(&installed_names, name_id);
+                        installed_count++;
+                        log_debug(2, "Found installed package: %s", name);
+                    }
+                }
+                
+                log_info("Found %d installed packages in %s", installed_count, root_path);
+            }
+            json_decref(root);
+        } else {
+            log_debug(1, "Could not parse installed.json: %s", error.text);
+        }
+    } else {
+        log_debug(1, "No installed packages database at: %s", installed_db);
     }
 
     // Allocate result queue to return success status
@@ -173,13 +227,32 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     
     log_debug(1, "Found solvable %d for package '%s'.", main_p, pkg_name);
 
-    // First, recursively process all makedeps (build-time dependencies)
-    // This ensures build dependencies are resolved before runtime dependencies
-    add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
+    // Check if main package is already installed
+    int already_installed = 0;
+    for (int i = 0; i < installed_names.count; i++) {
+        if (installed_names.elements[i] == name_id) {
+            already_installed = 1;
+            log_info("Package '%s' is already installed in %s - skipping", pkg_name, root_path);
+            break;
+        }
+    }
 
-    // Then add runtime dependencies: Add main package as SOLVER_INSTALL
-    // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME
-    queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
+    if (!already_installed) {
+        // First, recursively process all makedeps (build-time dependencies)
+        // This ensures build dependencies are resolved before runtime dependencies
+        // TODO: Pass installed_names to skip already installed makedeps
+        add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
+
+        // Then add runtime dependencies: Add main package as SOLVER_INSTALL
+        // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME
+        queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
+    } else {
+        // Package already installed, just set success
+        queue_push(result, 1);
+        queue_free(&installed_names);
+        queue_free(&job);
+        return result;
+    }
 
     // Run the solver to compute the installation transaction
     int problem_count = solver_solve(solv, &job);
@@ -205,6 +278,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     queue_push(result, 1);
 
 cleanup:
+    queue_free(&installed_names);
     queue_free(&job);
     if (result->count == 0) {
         queue_free(result);

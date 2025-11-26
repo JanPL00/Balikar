@@ -362,12 +362,12 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         return;
     }
     
-    log_info("Trying to download .build script for %s-%s from repository", pkg_name, version);
+    log_info("Trying to download build.sh script for %s-%s from repository", pkg_name, version);
     
     char build_path[2048];
-    snprintf(build_path, sizeof(build_path), "%s/.build", extras_subdir);
+    snprintf(build_path, sizeof(build_path), "%s/build.sh", extras_subdir);
     
-    // Skip if .build script already cached
+    // Skip if build.sh script already cached
     if (access(build_path, F_OK) == 0) {
         log_info("Build script already cached: %s", build_path);
         return;
@@ -433,20 +433,20 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         }
     }
     
-    // Extract .build from archive
+    // Extract build.sh from archive
     char extract_cmd[4096];
     snprintf(extract_cmd, sizeof(extract_cmd), 
-             "tar -xjf \"%s\" -C \"%s\" --strip-components=1 \"*/.build\" 2>/dev/null || "
-             "tar -xjf \"%s\" -C \"%s\" --wildcards \"*/.build\" --strip-components=1 2>/dev/null",
+             "tar -xjf \"%s\" -C \"%s\" --strip-components=1 \"*/build.sh\" 2>/dev/null || "
+             "tar -xjf \"%s\" -C \"%s\" --wildcards \"*/build.sh\" --strip-components=1 2>/dev/null",
              temp_archive, extras_subdir, temp_archive, extras_subdir);
     
-    log_info("Extracting .build from archive to %s", extras_subdir);
+    log_info("Extracting build.sh from archive to %s", extras_subdir);
     int extract_result = system(extract_cmd);
     if (extract_result == 0) {
         chmod(build_path, 0755);
-        log_info("Extracted .build script from repository archive");
+        log_info("Extracted build.sh script from repository archive");
     } else {
-        log_warn("Failed to extract .build from repository archive (exit code: %d)", extract_result);
+        log_warn("Failed to extract build.sh from repository archive (exit code: %d)", extract_result);
     }
     
     // Remove temporary archive
@@ -475,14 +475,14 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", extras_subdir);
     system(cmd);
     
-    // Automatically try to download .build script from repository
+    // Automatically try to download build.sh script from repository
     log_info("download_extras called: pkg=%s, version=%s, repo_base_url=%s", 
              pkg_name, version ? version : "NULL", repo_base_url ? repo_base_url : "NULL");
     if (version && repo_base_url) {
-        log_info("Attempting to download .build script from repository...");
+        log_info("Attempting to download build.sh script from repository...");
         try_download_build_script(pkg_name, version, extras_subdir, repo_base_url);
     } else {
-        log_warn("Skipping .build download: version=%s, repo_base_url=%s", 
+        log_warn("Skipping build.sh download: version=%s, repo_base_url=%s", 
                  version ? "OK" : "NULL", repo_base_url ? "OK" : "NULL");
     }
 
@@ -570,16 +570,12 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repo
         source_count = json_array_size(source_array);
     }
     
-    // Create repository structure: output_dir/<letter>/<pkg_name>/<pkg_name>-<version>/
-    char pkg_dir[2048];
-    char first_letter = pkg_name[0];
-    snprintf(pkg_dir, sizeof(pkg_dir), "%s/%c/%s/%s-%s", 
-             output_dir, first_letter, pkg_name, pkg_name, version);
-    
+    // Ensure the output directory exists
     char cmd[2048];
-    snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", pkg_dir);
+    char first_letter = pkg_name[0];
+    snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", output_dir);
     if (system(cmd) != 0) {
-        log_error("Failed to create package directory: %s", pkg_dir);
+        log_error("Failed to create output directory: %s", output_dir);
         if (source_array) json_decref(source_array);
         return -1;
     }
@@ -611,7 +607,7 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repo
     }
     
     char output_path[2048];
-    snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", pkg_dir, pkg_name, version, ext);
+    snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", output_dir, pkg_name, version, ext);
     
     // Check if file already exists
     if (access(output_path, F_OK) == 0) {
@@ -651,29 +647,23 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repo
                 const char *search_paths[] = {
                     source_url,  // Absolute or relative path as-is
                     NULL,        // Repository structure path (filled below)
-                    "/home/placeja5/Balikar/balikar-repository",
-                    "./repo",
-                    "../balikar-repository"
                 };
                 
                 char repo_structure_path[2048];
-                snprintf(repo_structure_path, sizeof(repo_structure_path), 
-                        "/home/placeja5/Balikar/balikar-repository/%c/%s/%s-%s/%s",
-                        first_letter, pkg_name, pkg_name, version, source_url);
-                search_paths[1] = repo_structure_path;
-                
+                if (repo_path && repo_path[0] == '/') {
+                    snprintf(repo_structure_path, sizeof(repo_structure_path), 
+                            "%s/%c/%s/%s-%s/%s",
+                            repo_path, first_letter, pkg_name, pkg_name, version, source_url);
+                    search_paths[1] = repo_structure_path;
+                }
+
                 for (size_t j = 0; j < sizeof(search_paths) / sizeof(search_paths[0]); j++) {
                     if (!search_paths[j]) continue;
                     
                     if (access(search_paths[j], F_OK) == 0) {
                         strncpy(local_path, search_paths[j], sizeof(local_path) - 1);
                         found_local = 1;
-                        log_info("Found local source in %s: %s", 
-                                j == 0 ? "current path" : 
-                                j == 1 ? "/home/placeja5/Balikar/balikar-repository" :
-                                j == 2 ? "/home/placeja5/Balikar/balikar-repository" :
-                                j == 3 ? "./repo" : "../balikar-repository",
-                                source_url);
+                        log_info("Found local source: %s", local_path);
                         break;
                     }
                 }
@@ -740,4 +730,86 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repo
     
     log_info("Package saved to: %s", output_path);
     return 0;
+}
+
+/**
+ * Download file from URL to specified path.
+ * Simple direct download without complex source logic - used by download command.
+ * Supports both HTTP/HTTPS URLs and local file paths.
+ * @param url Source URL or local file path
+ * @param output_path Destination file path
+ * @return 0 on success, -1 on error
+ */
+int download_url_to_file(const char *url, const char *output_path) {
+    if (!url || !output_path) {
+        log_error("Invalid arguments to download_url_to_file");
+        return -1;
+    }
+    
+    // Check if file already exists
+    if (access(output_path, F_OK) == 0) {
+        log_info("File already exists: %s", output_path);
+        return 0;
+    }
+    
+    // Determine if URL is remote or local
+    int is_remote = (strncmp(url, "http://", 7) == 0 || 
+                    strncmp(url, "https://", 8) == 0 ||
+                    strncmp(url, "ftp://", 6) == 0);
+    
+    if (is_remote) {
+        // Remote download via CURL
+        FILE *fp = fopen(output_path, "wb");
+        if (!fp) {
+            log_error("Cannot write to %s", output_path);
+            return -1;
+        }
+        
+        CURL *curl = curl_easy_init();
+        if (!curl) {
+            fclose(fp);
+            log_error("Failed to initialize CURL");
+            return -1;
+        }
+        
+        log_info("Downloading from: %s", url);
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
+        curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+        curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
+        curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L);
+        curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
+        curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
+        curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
+        
+        CURLcode res = curl_easy_perform(curl);
+        curl_easy_cleanup(curl);
+        fclose(fp);
+        
+        if (res != CURLE_OK) {
+            log_error("Download failed: %s", curl_easy_strerror(res));
+            remove(output_path);
+            return -1;
+        }
+        
+        log_info("Successfully downloaded to: %s", output_path);
+        return 0;
+    } else {
+        // Local file copy
+        if (access(url, F_OK) != 0) {
+            log_error("Local file not found: %s", url);
+            return -1;
+        }
+        
+        char cp_cmd[4096];
+        snprintf(cp_cmd, sizeof(cp_cmd), "cp \"%s\" \"%s\"", url, output_path);
+        if (system(cp_cmd) != 0) {
+            log_error("Failed to copy local file: %s", url);
+            return -1;
+        }
+        
+        log_info("Copied local file to: %s", output_path);
+        return 0;
+    }
 }

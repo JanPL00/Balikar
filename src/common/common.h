@@ -67,7 +67,7 @@
 // ========================================
 // 4. GLOBAL MACROS AND CONSTANTS
 // ========================================
-#define STAGING_DIR "$P"                // Staging directory for LFS/LLD (DESTDIR=$P)
+#define STAGING_DIR "/tmp/balikar_staging"  // Default staging directory for DESTDIR
 #define CHROOT_PATH "/tmp/pm-chroot"    // Default chroot for installation (CLI-overridable)
 #define MAX_RECURSION_DEPTH 10          // Recursion limit for mkdeps (prevents cycles)
 #define REPO_METADATA "repodata.json"   // Name of aggregated file for Conda-like repos

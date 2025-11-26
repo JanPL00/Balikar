@@ -15,6 +15,13 @@
 #include <ctype.h>
 
 /**
+ * Forward declarations
+ */
+static int install_dependency_recursive(Solvable *dep_solvable, Pool *pool, Repo *repo, 
+                                       const char *target_root, const char *repo_path,
+                                       const char *staging_dir);
+
+/**
  * CLI configuration structure.
  * Holds all command-line arguments and options parsed from user input.
  * Controls program behavior including debug level, staging, paths, and commands.
@@ -22,7 +29,6 @@
 typedef struct {
     int debug_level;         // Verbosity level for debugging output
     int dry_run;             // If 1, simulate actions without executing them
-    int no_staging;          // If 1, disable staging directory usage
     int no_deps;             // If 1, download without dependencies
     char *staging_dir;       // Custom staging directory path
     char *root_path;         // Target root for installation (default /)
@@ -48,7 +54,6 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         {"help", no_argument, 0, 'h'},
         {"debug", no_argument, 0, 'd'},
         {"dry-run", no_argument, 0, 'D'},
-        {"no-staging", no_argument, 0, 'S'},
         {"no-deps", no_argument, 0, 'N'},
         {"staging-dir", required_argument, 0, 's'},
         {"root", required_argument, 0, 'R'},
@@ -72,9 +77,6 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
                 break;
             case 'D':  // Dry-run - simulate without executing
                 cfg->dry_run = 1;
-                break;
-            case 'S':  // No-staging - disable staging directory
-                cfg->no_staging = 1;
                 break;
             case 'N':  // No-deps - download without dependencies
                 cfg->no_deps = 1;
@@ -125,6 +127,128 @@ static void parse_args(int argc, char **argv, cli_config_t *cfg) {
         init_repo_config();
         cfg->repo_path = strdup(get_primary_repo_url());
     }
+}
+
+/**
+ * Recursively install a dependency and all its transitive dependencies.
+ * 
+ * @param dep_solvable The solvable to install
+ * @param pool The package pool
+ * @param repo The repository
+ * @param target_root Installation target root
+ * @param repo_path Repository base path for downloads
+ * @param staging_dir Staging directory for builds
+ * @return 0 on success, non-zero on error
+ */
+static int install_dependency_recursive(Solvable *dep_solvable, Pool *pool, Repo *repo,
+                                       const char *target_root, const char *repo_path,
+                                       const char *staging_dir) {
+    Id dep_id = dep_solvable - pool->solvables;
+    const char *dep_name = pool_id2str(pool, dep_solvable->name);
+    const char *dep_version = pool_id2str(pool, dep_solvable->evr);
+    
+    // Skip if already installed
+    if (is_package_installed(dep_name, target_root)) {
+        log_info("Dependency %s already installed, skipping", dep_name);
+        return 0;
+    }
+    
+    // First, recursively install dependencies of this dependency
+    if (dep_solvable->requires) {
+        for (Id *req_id = pool->solvables[dep_id].repo->idarraydata + dep_solvable->requires; *req_id; req_id++) {
+            if (*req_id == SOLVABLE_PREREQMARKER) continue;
+            
+            // Find provider
+            Id *providers = pool_whatprovides_ptr(pool, *req_id);
+            if (!providers || !*providers) continue;
+            
+            // Use first provider from our repo
+            Id provider_id = 0;
+            for (Id *pp = providers; *pp; pp++) {
+                Solvable *provider_s = pool_id2solvable(pool, *pp);
+                if (provider_s->repo == repo) {
+                    provider_id = *pp;
+                    break;
+                }
+            }
+            
+            if (provider_id == 0) continue;
+            
+            Solvable *transitive_dep = pool_id2solvable(pool, provider_id);
+            const char *trans_name = pool_id2str(pool, transitive_dep->name);
+            
+            // Skip if already installed
+            if (is_package_installed(trans_name, target_root)) {
+                continue;
+            }
+            
+            log_info("Installing transitive dependency: %s", trans_name);
+            
+            // Recursive call
+            int rc = install_dependency_recursive(transitive_dep, pool, repo, target_root, repo_path, staging_dir);
+            if (rc != 0) {
+                return rc;
+            }
+        }
+    }
+    
+    // Now install this dependency
+    log_info("Installing dependency: %s-%s", dep_name, dep_version);
+    
+    Repodata *data_dep = repo_id2repodata(repo, 1);
+    const char *source_url_dep = get_custom_source(data_dep, dep_id, pool);
+    
+    if (!source_url_dep) {
+        log_error("No source URL for dependency: %s", dep_name);
+        return ERR_DOWNLOAD_FAIL;
+    }
+    
+    log_info("Downloading %s from %s", dep_name, source_url_dep);
+    FILE *fp_dep = download_package(dep_solvable, source_url_dep, pool, data_dep, repo_path);
+    if (!fp_dep) {
+        log_error("Download failed for dependency: %s", dep_name);
+        return ERR_DOWNLOAD_FAIL;
+    }
+    
+    // Download extras
+    json_t *extras_dep = get_custom_extras(data_dep, dep_id, pool);
+    download_extras(extras_dep, dep_name, dep_version, repo_path, NULL);
+    if (extras_dep) json_decref(extras_dep);
+    
+    // Build dependency
+    log_info("Building %s...", dep_name);
+    
+    // Create dummy transaction for commit_element
+    Solver *dummy_solv = solver_create(pool);
+    Queue dummy_job;
+    queue_init(&dummy_job);
+    queue_push2(&dummy_job, SOLVER_INSTALL | SOLVER_SOLVABLE, dep_id);
+    solver_solve(dummy_solv, &dummy_job);
+    Transaction *dummy_trans = solver_create_transaction(dummy_solv);
+    
+    int build_rc = commit_element(dummy_trans, data_dep, dep_id, fp_dep, pool);
+    
+    transaction_free(dummy_trans);
+    queue_free(&dummy_job);
+    solver_free(dummy_solv);
+    
+    if (build_rc != 0) {
+        log_error("Build failed for dependency: %s", dep_name);
+        return ERR_BUILD_FAIL;
+    }
+    
+    log_info("Successfully built %s", dep_name);
+    
+    // Install dependency
+    log_info("Installing %s to %s...", dep_name, target_root);
+    
+    if (install_package(dep_name, dep_version, staging_dir, target_root) != 0) {
+        log_error("Installation failed for dependency: %s", dep_name);
+        return ERR_BUILD_FAIL;
+    }
+    
+    log_info("Successfully installed dependency: %s", dep_name);
+    return 0;
 }
 
 /**
@@ -287,7 +411,6 @@ int main(int argc, char **argv) {
     // Apply configuration settings from CLI arguments
     // These affect how builds are performed
     if (cfg.staging_dir) set_staging_dir(cfg.staging_dir);
-    if (cfg.no_staging) set_staging_enabled(0);
     if (cfg.build_tmp_dir) set_build_tmp_dir(cfg.build_tmp_dir);
     
     log_info("Balikar Package Manager - Command: %s", cfg.command);
@@ -382,6 +505,94 @@ int main(int argc, char **argv) {
             
             log_info("Detected package: %s, version: %s", pkg_name, pkg_version);
             
+            // Try to find package in repository to resolve dependencies
+            Id pkg_id = 0;
+            Solvable *pkg_solvable = NULL;
+            Id p;
+            Solvable *s;
+            FOR_REPO_SOLVABLES(repo, p, s) {
+                const char *name = pool_id2str(pool, s->name);
+                if (strcmp(name, pkg_name) == 0) {
+                    pkg_id = p;
+                    pkg_solvable = s;
+                    log_info("Found %s in repository, will resolve dependencies", pkg_name);
+                    break;
+                }
+            }
+            
+            // Install dependencies if package found in repo
+            if (pkg_id != 0) {
+                log_info("Checking dependencies for %s...", pkg_name);
+                
+                // Determine target root
+                const char *target_root = cfg.root_path ? cfg.root_path : "/";
+                
+                // Get dependencies directly from solvable
+                Queue deps_queue;
+                queue_init(&deps_queue);
+                
+                // Get REQUIRES dependencies
+                Id marker = -1;
+                for (Id *dep_id = pkg_solvable->repo->idarraydata + pkg_solvable->requires; *dep_id; dep_id++) {
+                    if (*dep_id == SOLVABLE_PREREQMARKER) {
+                        marker = *dep_id;
+                        continue;
+                    }
+                    queue_push(&deps_queue, *dep_id);
+                }
+                
+                if (deps_queue.count > 0) {
+                    log_info("Found %d dependencies, resolving recursively...", deps_queue.count);
+                    
+                    const char *staging = cfg.staging_dir ? cfg.staging_dir : STAGING_DIR;
+                    
+                    // Process each dependency recursively
+                    for (int i = 0; i < deps_queue.count; i++) {
+                        Id dep_id = deps_queue.elements[i];
+                        const char *dep_str = pool_dep2str(pool, dep_id);
+                        
+                        // Find provider for this dependency using whatprovides
+                        Id *providers = pool_whatprovides_ptr(pool, dep_id);
+                        if (!providers || !*providers) {
+                            log_warn("No provider found for dependency: %s", dep_str);
+                            continue;
+                        }
+                        
+                        // Use first provider from our repo
+                        Id provider_id = 0;
+                        for (Id *pp = providers; *pp; pp++) {
+                            Solvable *provider_s = pool_id2solvable(pool, *pp);
+                            if (provider_s->repo == repo) {
+                                provider_id = *pp;
+                                break;
+                            }
+                        }
+                        
+                        if (provider_id == 0) {
+                            log_warn("No provider in repository for dependency: %s", dep_str);
+                            continue;
+                        }
+                        
+                        Solvable *s_dep = pool_id2solvable(pool, provider_id);
+                        
+                        // Recursively install this dependency and all its transitive dependencies
+                        int rc = install_dependency_recursive(s_dep, pool, repo, target_root, cfg.repo_path, staging);
+                        if (rc != 0) {
+                            log_error("Failed to install dependency tree for: %s", dep_str);
+                            queue_free(&deps_queue);
+                            exit_code = rc;
+                            goto cleanup;
+                        }
+                    }
+                }
+                
+                queue_free(&deps_queue);
+                log_info("All dependencies installed successfully");
+            } else {
+                log_warn("Package %s not found in repository, cannot resolve dependencies", pkg_name);
+                log_warn("Build may fail if dependencies are missing");
+            }
+            
             if (!cfg.dry_run) {
                 // Open local package file
                 FILE *local_fp = fopen(cfg.local_package, "rb");
@@ -391,7 +602,7 @@ int main(int argc, char **argv) {
                     goto cleanup;
                 }
                 
-                // Build package from local file (simplified workflow without metadata)
+                // Build package from local file
                 log_info("Building %s from local package...", pkg_name);
                 
                 // Create temporary build directory
@@ -471,14 +682,19 @@ int main(int argc, char **argv) {
                 
                 log_info("Source directory: %s", source_dir);
                 
-                // Download extra files (including .build script) from repository
-                log_info("Attempting to download .build script and extras from repository...");
+                // Download extra files (including build.sh script) from repository
+                log_info("Attempting to download build.sh script and extras from repository...");
                 download_extras(NULL, pkg_name, pkg_version, cfg.repo_path, source_dir);
                 
                 // Set up build environment
                 const char *staging = cfg.staging_dir ? cfg.staging_dir : STAGING_DIR;
                 setenv("DESTDIR", staging, 1);
-                setenv("P", staging, 1);  // P is alias for DESTDIR used in .build scripts
+                setenv("P", staging, 1);  // P is alias for DESTDIR used in build.sh scripts
+                
+                // Set ROOT to point to installed dependencies (chroot with previous packages)
+                if (cfg.root) {
+                    setenv("ROOT", cfg.root, 1);
+                }
                 
                 long nproc = sysconf(_SC_NPROCESSORS_ONLN);
                 if (nproc < 1) nproc = 1;
@@ -486,21 +702,21 @@ int main(int argc, char **argv) {
                 snprintf(makeflags, sizeof(makeflags), "-j%ld", nproc);
                 setenv("MAKEFLAGS", makeflags, 1);
                 
-                // Copy .build script from cache to source directory if it exists
+                // Copy build.sh script from cache to source directory if it exists
                 char build_cache[1024];
                 char *cache_dir = get_cache_dir();
-                snprintf(build_cache, sizeof(build_cache), "%s/extras/%s/.build", cache_dir, pkg_name);
+                snprintf(build_cache, sizeof(build_cache), "%s/extras/%s/build.sh", cache_dir, pkg_name);
                 free(cache_dir);
                 
                 if (access(build_cache, F_OK) == 0) {
                     char build_dest[1024];
-                    snprintf(build_dest, sizeof(build_dest), "%s/.build", source_dir);
+                    snprintf(build_dest, sizeof(build_dest), "%s/build.sh", source_dir);
                     
                     char cp_cmd[2048];
                     snprintf(cp_cmd, sizeof(cp_cmd), "cp '%s' '%s' && chmod +x '%s'", 
                              build_cache, build_dest, build_dest);
                     if (system(cp_cmd) == 0) {
-                        log_info("Copied .build script to source directory");
+                        log_info("Copied build.sh script to source directory");
                     }
                 }
                 
@@ -512,12 +728,12 @@ int main(int argc, char **argv) {
                 }
                 
                 // Build the package
-                int have_build = access(".build", X_OK) == 0;
+                int have_build = access("build.sh", X_OK) == 0;
                 const char *build_cmd = have_build ? 
-                    "bash -e .build > build.log 2>&1" : 
+                    "bash -e build.sh > build.log 2>&1" : 
                     "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make install >/dev/null 2>&1";
                 
-                log_info("Running build: %s", have_build ? ".build script" : "configure+make");
+                log_info("Running build: %s", have_build ? "build.sh script" : "configure+make");
                 
                 int build_rc = system(build_cmd);
                 if (build_rc != 0) {
@@ -586,7 +802,9 @@ int main(int argc, char **argv) {
         
         // Step 2: Solve dependencies
         // Determines all packages needed to satisfy requirements
-        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo);
+        // Pass root_path so solver can check for already installed packages
+        const char *target_root = cfg.root_path ? cfg.root_path : "/";
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, target_root);
         if (!solution) {
             log_error("Dependency resolution failed for %s.", cfg.package_name);
             solver_free(solv);
@@ -637,6 +855,12 @@ int main(int argc, char **argv) {
                 if (type == SOLVER_TRANSACTION_INSTALL || type == SOLVER_TRANSACTION_MULTIINSTALL) {
                     Solvable *s = pool_id2solvable(pool, p);
                     const char *pkg_name = pool_id2str(pool, s->name);
+                    
+                    // Skip if package is already installed in target root
+                    if (is_package_installed(pkg_name, target_root)) {
+                        log_info("Skipping %s - already installed in %s", pkg_name, target_root);
+                        continue;
+                    }
                     
                     // Get source download URL from repository metadata
                     Repodata *data = repo_id2repodata(repo, 1);  // First repodata
@@ -730,7 +954,8 @@ int main(int argc, char **argv) {
             goto cleanup;
         }
         
-        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo);
+        const char *target_root = cfg.root_path ? cfg.root_path : "/";
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, target_root);
         if (!solution) {
             log_error("Dependency resolution failed.");
             solver_free(solv);
@@ -848,27 +1073,85 @@ int main(int argc, char **argv) {
             const char *version = pool_id2str(pool, s->evr);
             log_info("Found package: %s-%s", pkg_name, version);
             
-            // Get source URL
+            // Get source URL from sources array for downloading source tarball
+            // Try sources in order until we find an absolute URL (skip relative ones)
             Repodata *data = repo_id2repodata(repo, 1);
-            const char *source_url = get_custom_source(data, p, pool);
+            const char *download_url = NULL;
+            static char full_url[4096];
             
-            if (!source_url) {
-                log_error("No source URL for %s.", pkg_name);
+            json_t *source_array = get_custom_source_array(data, p, pool);
+            
+            if (source_array && json_is_array(source_array)) {
+                size_t source_count = json_array_size(source_array);
+                for (size_t i = 0; i < source_count; i++) {
+                    json_t *source_obj = json_array_get(source_array, i);
+                    if (!source_obj || !json_is_object(source_obj)) continue;
+                    
+                    json_t *url_json = json_object_get(source_obj, "url");
+                    if (!url_json || !json_is_string(url_json)) continue;
+                    
+                    const char *source_url = json_string_value(url_json);
+                    
+                    // Check if URL is absolute (has scheme) - prefer absolute URLs
+                    int is_absolute = (strncmp(source_url, "http://", 7) == 0 ||
+                                     strncmp(source_url, "https://", 8) == 0 ||
+                                     strncmp(source_url, "ftp://", 6) == 0 ||
+                                     strncmp(source_url, "file://", 7) == 0);
+                    
+                    if (is_absolute) {
+                        download_url = source_url;
+                        break;  // Use first absolute URL
+                    }
+                }
+            }
+            
+            if (!download_url) {
+                // Fallback to location field if sources not available
+                const char *location = solvable_get_location(s, NULL);
+                if (location) {
+                    snprintf(full_url, sizeof(full_url), "%s/%s", cfg.repo_path, location);
+                    download_url = full_url;
+                }
+            }
+            
+            if (!download_url) {
+                log_error("No download URL for %s.", pkg_name);
+                if (source_array) json_decref(source_array);
                 free(output_directory);
                 exit_code = 1;
                 goto cleanup;
             }
             
-            log_info("Downloading %s to: %s", pkg_name, output_directory);
-            int rc = download_package_to_directory(s, source_url, pool, data, cfg.repo_path, output_directory);
+            // Detect file extension from URL
+            const char *ext = ".tar.bz2";  // default
+            const char *last_dot = strrchr(download_url, '.');
+            if (last_dot) {
+                const char *last_slash = strrchr(download_url, '/');
+                const char *filename = last_slash ? last_slash + 1 : download_url;
+                
+                if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
+                else if (strstr(filename, ".tar.gz")) ext = ".tar.gz";
+                else if (strstr(filename, ".tar.bz2")) ext = ".tar.bz2";
+                else if (strstr(filename, ".tgz")) ext = ".tgz";
+                else ext = last_dot;
+            }
+            
+            // Create output path
+            char output_path[2048];
+            snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", output_directory, pkg_name, version, ext);
+            
+            log_info("Downloading %s from: %s", pkg_name, download_url);
+            int rc = download_url_to_file(download_url, output_path);
             if (rc != 0) {
                 log_error("Download failed for %s.", pkg_name);
+                if (source_array) json_decref(source_array);
                 free(output_directory);
                 exit_code = ERR_DOWNLOAD_FAIL;
                 goto cleanup;
             }
             
-            log_info("Successfully downloaded %s to %s", pkg_name, output_directory);
+            log_info("Successfully downloaded %s to %s", pkg_name, output_path);
+            if (source_array) json_decref(source_array);
             free(output_directory);
             goto cleanup;
         }
@@ -883,7 +1166,8 @@ int main(int argc, char **argv) {
         }
         
         // Step 2: Solve dependencies
-        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo);
+        // For download command, use system root (downloads are independent of target root)
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, "/");
         if (!solution) {
             log_error("Dependency resolution failed for %s.", cfg.package_name);
             solver_free(solv);
@@ -937,18 +1221,78 @@ int main(int argc, char **argv) {
                 Solvable *s = pool_id2solvable(pool, p);
                 const char *pkg_name = pool_id2str(pool, s->name);
                 
-                // Get source download URL from repository metadata
-                Repodata *data = repo_id2repodata(repo, 1);  // First repodata
-                const char *source_url = get_custom_source(data, p, pool);
+                // Get source URL from sources array for downloading source tarball
+                // Try sources in order until we find an absolute URL (skip relative ones)
+                Repodata *data = repo_id2repodata(repo, 1);
+                const char *download_url = NULL;
+                json_t *source_array = NULL;
+                static char full_url_buf[4096];
                 
-                if (!source_url) {
-                    log_warn("No source URL for %s, skipping.", pkg_name);
+                source_array = get_custom_source_array(data, p, pool);
+                
+                if (source_array && json_is_array(source_array)) {
+                    size_t source_count = json_array_size(source_array);
+                    for (size_t i = 0; i < source_count; i++) {
+                        json_t *source_obj = json_array_get(source_array, i);
+                        if (!source_obj || !json_is_object(source_obj)) continue;
+                        
+                        json_t *url_json = json_object_get(source_obj, "url");
+                        if (!url_json || !json_is_string(url_json)) continue;
+                        
+                        const char *source_url = json_string_value(url_json);
+                        
+                        // Check if URL is absolute (has scheme) - prefer absolute URLs
+                        int is_absolute = (strncmp(source_url, "http://", 7) == 0 ||
+                                         strncmp(source_url, "https://", 8) == 0 ||
+                                         strncmp(source_url, "ftp://", 6) == 0 ||
+                                         strncmp(source_url, "file://", 7) == 0);
+                        
+                        if (is_absolute) {
+                            download_url = source_url;
+                            break;  // Use first absolute URL
+                        }
+                    }
+                }
+                
+                if (!download_url) {
+                    // Fallback to location field if sources not available
+                    const char *location = solvable_get_location(s, NULL);
+                    if (location) {
+                        snprintf(full_url_buf, sizeof(full_url_buf), "%s/%s", cfg.repo_path, location);
+                        download_url = full_url_buf;
+                    }
+                }
+                
+                if (!download_url) {
+                    log_warn("No download URL for %s, skipping.", pkg_name);
+                    if (source_array) json_decref(source_array);
                     continue;
                 }
                 
+                // Detect file extension from URL
+                const char *version = pool_id2str(pool, s->evr);
+                const char *ext = ".tar.bz2";  // default
+                const char *last_dot = strrchr(download_url, '.');
+                if (last_dot) {
+                    const char *last_slash = strrchr(download_url, '/');
+                    const char *filename = last_slash ? last_slash + 1 : download_url;
+                    
+                    if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
+                    else if (strstr(filename, ".tar.gz")) ext = ".tar.gz";
+                    else if (strstr(filename, ".tar.bz2")) ext = ".tar.bz2";
+                    else if (strstr(filename, ".tgz")) ext = ".tgz";
+                    else ext = last_dot;
+                }
+                
+                // Create output path
+                char output_path[2048];
+                snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", output_directory, pkg_name, version, ext);
+                
                 // Download package to output directory
-                log_info("Downloading %s from %s", pkg_name, source_url);
-                int rc = download_package_to_directory(s, source_url, pool, data, cfg.repo_path, output_directory);
+                log_info("Downloading %s from %s", pkg_name, download_url);
+                int rc = download_url_to_file(download_url, output_path);
+                if (source_array) json_decref(source_array);
+                
                 if (rc != 0) {
                     log_error("Download failed for %s.", pkg_name);
                     exit_code = ERR_DOWNLOAD_FAIL;

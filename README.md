@@ -126,3 +126,6 @@ Includes 11 packages from Linux From Scratch 12.4:
 - **[Downloader](doc/balikar/downloader.txt)** - Package downloading and verification
 - **[Manual](doc/manual.txt)** - General documentation
 
+
+# TODO
+- split download command for downloading source tar.xz files (fetch-source) a balikar files ve formatu tar.bz2 (download)

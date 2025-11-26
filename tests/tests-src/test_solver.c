@@ -298,7 +298,7 @@ START_TEST(test_solve_dependencies_simple_package) {
     Solver* solver = create_solver(fixture.pool);
     ck_assert_ptr_ne(solver, NULL);
     
-    Queue* result = solve_dependencies(solver, "simple-app", fixture.pool, fixture.repo);
+    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo, "/");
     // Result may be NULL if package not found, check solver was called
     if (result) {
         ck_assert_int_ge(result->count, 0);
@@ -332,7 +332,7 @@ START_TEST(test_solve_dependencies_with_runtime_deps) {
     ck_assert_ptr_ne(fixture.repo, NULL);
     
     Solver* solver = create_solver(fixture.pool);
-    Queue* result = solve_dependencies(solver, "app-with-deps", fixture.pool, fixture.repo);
+    Queue* result = solve_dependencies(solver, "app-with-deps", fixture.pool, fixture.repo, "/");
     
     if (result) {
         // Should include packages
@@ -373,7 +373,7 @@ START_TEST(test_solve_dependencies_with_mkdeps) {
     ck_assert_ptr_ne(fixture.repo, NULL);
     
     Solver* solver = create_solver(fixture.pool);
-    Queue* result = solve_dependencies(solver, "complex-app", fixture.pool, fixture.repo);
+    Queue* result = solve_dependencies(solver, "complex-app", fixture.pool, fixture.repo, "/");
     
     if (result) {
         // Should include packages
@@ -400,7 +400,7 @@ START_TEST(test_solve_dependencies_nonexistent_package) {
     fixture.repo = load_repository(fixture.pool, fixture.repo_path);
     
     Solver* solver = create_solver(fixture.pool);
-    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo);
+    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo, "/");
     
     // Should return NULL for nonexistent package
     ck_assert_ptr_eq(result, NULL);
@@ -423,19 +423,19 @@ START_TEST(test_solve_dependencies_invalid_args) {
     Solver* solver = create_solver(fixture.pool);
     
     // Test NULL solver
-    Queue* result = solve_dependencies(NULL, "test-pkg", fixture.pool, fixture.repo);
+    Queue* result = solve_dependencies(NULL, "test-pkg", fixture.pool, fixture.repo, "/");
     ck_assert_ptr_eq(result, NULL);
     
     // Test NULL pkg_name
-    result = solve_dependencies(solver, NULL, fixture.pool, fixture.repo);
+    result = solve_dependencies(solver, NULL, fixture.pool, fixture.repo, "/");
     ck_assert_ptr_eq(result, NULL);
     
     // Test NULL pool
-    result = solve_dependencies(solver, "test-pkg", NULL, fixture.repo);
+    result = solve_dependencies(solver, "test-pkg", NULL, fixture.repo, "/");
     ck_assert_ptr_eq(result, NULL);
     
     // Test NULL repo
-    result = solve_dependencies(solver, "test-pkg", fixture.pool, NULL);
+    result = solve_dependencies(solver, "test-pkg", fixture.pool, NULL, "/");
     ck_assert_ptr_eq(result, NULL);
     
     solver_free(solver);

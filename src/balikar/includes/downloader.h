@@ -28,4 +28,9 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
 int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repodata *data, 
                                   const char *repo_path, const char *output_dir);
 
+// Download a file from URL to specified path (simple direct download).
+// Used by download command for straightforward URL->file downloads.
+// Returns 0 on success, -1 on error.
+int download_url_to_file(const char *url, const char *output_path);
+
 #endif

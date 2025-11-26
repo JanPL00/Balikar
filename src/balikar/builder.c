@@ -63,8 +63,8 @@ static int detect_compression(FILE *fp) {
 }
 
 /**
- * Recursively searches for build script (.build) or build system files.
- * Looks for .build, Makefile, or configure files within directory tree.
+ * Recursively searches for build script (build.sh) or build system files.
+ * Looks for build.sh, Makefile, or configure files within directory tree.
  * @param dir Directory to search in
  * @param depth Current recursion depth (limited to 3 levels)
  * @return Allocated path to directory containing build files, or NULL if not found
@@ -73,9 +73,9 @@ static char *find_build_or_source(const char *dir, int depth) {
 	// Limit recursion depth to avoid excessive searching
 	if (depth > 3) return NULL;
 	
-	// First priority: check for .build script in current directory
+	// First priority: check for build.sh script in current directory
 	char build_path[MAX_PATH_LEN];
-	snprintf(build_path, sizeof(build_path), "%s/.build", dir);
+	snprintf(build_path, sizeof(build_path), "%s/build.sh", dir);
 	if (access(build_path, F_OK) == 0) {
 		return strdup(dir);
 	}
@@ -155,7 +155,7 @@ char *find_source_path(const char *tmp_dir) {
 /**
  * Applies extra files (patches, custom build scripts) to the source directory.
  * Copies files from cache/extras/<pkg_name>/ to the build directory.
- * .build scripts are copied to source_dir, other files to parent directory.
+ * build.sh scripts are copied to source_dir, other files to parent directory.
  * @param extras JSON array of extra file names to apply
  * @param pkg_name Package name (used to locate extras directory)
  * @param source_dir Source directory where extras should be applied
@@ -177,17 +177,14 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 	
 	struct dirent *ent;
 	while ((ent = readdir(d)) != NULL) {
-		// Special handling for .build script (always copy if present)
-		if (ent->d_name[0] == '.') {
-			if (strcmp(ent->d_name, ".build") != 0) continue;
-		}
-		
+		if (ent->d_name[0] == '.') continue;
+
 		// Check if file should be applied:
-		// 1. Always copy .build script
+		// 1. Always copy build.sh script
 		// 2. Copy file if listed in extras JSON array
 		int found = 0;
-		if (strcmp(ent->d_name, ".build") == 0) {
-			found = 1;  // .build always copied
+		if (strcmp(ent->d_name, "build.sh") == 0) {
+			found = 1;  // build.sh always copied
 		} else {
 			// Check if filename is in the extras list
 			size_t i; json_t *item;
@@ -204,10 +201,10 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 		snprintf(extra_file, sizeof(extra_file), "%s/%s", patch_root, ent->d_name);
 		
 		// Determine destination:
-		// - .build script goes to source_dir (where it will be executed)
+		// - build.sh script goes to source_dir (where it will be executed)
 		// - Other files (patches, configs) go to parent directory
 		char dest_path[4096];
-		if (strcmp(ent->d_name, ".build") == 0) {
+		if (strcmp(ent->d_name, "build.sh") == 0) {
 			snprintf(dest_path, sizeof(dest_path), "%s/%s", source_dir, ent->d_name);
 		} else {
 			snprintf(dest_path, sizeof(dest_path), "%s/%s", parent_dir, ent->d_name);
@@ -215,12 +212,22 @@ void apply_extras(json_t *extras, const char *pkg_name, const char *source_dir) 
 		
 		char cmd[8192];
 		snprintf(cmd, sizeof(cmd), "cp -a '%s' '%s'", extra_file, dest_path);
+		log_debug(1, "Copying from '%s' to '%s'", extra_file, dest_path);
+		log_debug(1, "Running: %s", cmd);
 		int rc = system(cmd);
+		log_debug(1, "Copy command returned: %d", rc);
 		if (rc == 0) {
 			log_info("Copied extra file: %s -> %s", ent->d_name, 
-			         strcmp(ent->d_name, ".build") == 0 ? source_dir : parent_dir);
+			         strcmp(ent->d_name, "build.sh") == 0 ? source_dir : parent_dir);
+			// Verify file was actually copied
+			struct stat st;
+			if (stat(dest_path, &st) == 0) {
+				log_debug(1, "Verified copy: %s (size: %ld)", dest_path, st.st_size);
+			} else {
+				log_warn("Copy reported success but file doesn't exist: %s", dest_path);
+			}
 		} else {
-			log_warn("Copy failed: %s", ent->d_name);
+			log_warn("Copy failed (%d): %s", rc, ent->d_name);
 		}
 	}
 	closedir(d);
@@ -391,14 +398,19 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 
 	// Configure build environment
 	// Set DESTDIR for staging installation if enabled
+	// Also create the staging directory if it doesn't exist
 	if (g_staging_enabled) {
 		const char *destdir = g_staging_dir ? g_staging_dir : STAGING_DIR;
+		
+		// Create staging directory if it doesn't exist
+		char mkdir_cmd[512];
+		snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", destdir);
+		system(mkdir_cmd);
+		
 		setenv("DESTDIR", destdir, 1);
-		setenv("P", destdir, 1);  // P is alias for DESTDIR used in .build scripts
 		log_debug(1, "DESTDIR set to: %s", destdir);
 	} else {
 		unsetenv("DESTDIR");
-		unsetenv("P");
 	}
 	
 	// Set MAKEFLAGS for parallel compilation
@@ -421,11 +433,43 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 	}
 	
 	// Determine build strategy:
-	// 1. If .build script exists, use it (preferred)
+	// 1. If build.sh script exists, use it (preferred)
 	// 2. Otherwise use standard configure+make (fallback)
-	int have_build = access(".build", X_OK) == 0;
-	const char *build_cmd = have_build ? "bash -e .build > build.log 2>&1" : "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make install >/dev/null 2>&1";
-	log_info("Running build: %s", have_build ? ".build" : "fallback configure+make");
+	log_debug(1, "Checking for build.sh in directory: %s", source_dir);
+	char build_fullpath[4096];
+	snprintf(build_fullpath, sizeof(build_fullpath), "%s/build.sh", source_dir);
+	log_debug(1, "Full build.sh path would be: %s", build_fullpath);
+	
+	struct stat build_st;
+	int have_build = access("build.sh", X_OK) == 0;
+	if (stat("build.sh", &build_st) == 0) {
+		log_debug(1, "build.sh exists: size=%ld, executable=%d", build_st.st_size, have_build);
+	} else {
+		log_debug(1, "build.sh does NOT exist in %s (errno=%d)", source_dir, errno);
+	}
+	
+	// Prepare build command with DESTDIR explicitly set in the command string
+	// This ensures DESTDIR is available even if setenv() doesn't propagate correctly
+	char build_cmd[2048];
+	const char *destdir = g_staging_enabled ? (g_staging_dir ? g_staging_dir : STAGING_DIR) : "";
+	
+	if (have_build) {
+		if (g_staging_enabled) {
+			snprintf(build_cmd, sizeof(build_cmd), "DESTDIR='%s' bash -e build.sh > build.log 2>&1", destdir);
+		} else {
+			snprintf(build_cmd, sizeof(build_cmd), "bash -e build.sh > build.log 2>&1");
+		}
+	} else {
+		// Fallback: standard configure+make+install with DESTDIR
+		if (g_staging_enabled) {
+			snprintf(build_cmd, sizeof(build_cmd), "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make DESTDIR='%s' install >/dev/null 2>&1", destdir);
+		} else {
+			snprintf(build_cmd, sizeof(build_cmd), "./configure --prefix=/usr >/dev/null 2>&1 && make >/dev/null 2>&1 && make install >/dev/null 2>&1");
+		}
+	}
+	
+	log_info("Running build: %s", have_build ? "build.sh" : "fallback configure+make");
+	log_debug(1, "Build command: %s", build_cmd);
 	
 	// Execute build command
 	int rc = system(build_cmd);

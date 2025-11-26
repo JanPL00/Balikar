@@ -260,14 +260,24 @@ static int execute_install_script(const char *staging_dir, const char *chroot_pa
 int validate_chroot(const char *chroot_path) {
     struct stat st;
     
-    // Check if chroot path exists
+    // Check if chroot path exists, create if it doesn't
     if (stat(chroot_path, &st) != 0) {
-        log_error("Chroot path does not exist: %s", chroot_path);
-        return 0;
+        log_info("Creating root directory: %s", chroot_path);
+        char mkdir_cmd[PATH_MAX + 32];
+        snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", chroot_path);
+        if (system(mkdir_cmd) != 0) {
+            log_error("Failed to create root directory: %s", chroot_path);
+            return 0;
+        }
+        // Verify it was created
+        if (stat(chroot_path, &st) != 0) {
+            log_error("Root path still does not exist after creation: %s", chroot_path);
+            return 0;
+        }
     }
     
     if (!S_ISDIR(st.st_mode)) {
-        log_error("Chroot path is not a directory: %s", chroot_path);
+        log_error("Root path is not a directory: %s", chroot_path);
         return 0;
     }
     
@@ -347,7 +357,12 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
     // Execute merge: cp -a staging/* chroot/
     // -a = archive mode (preserve permissions, timestamps, symlinks, recursive)
     char cmd[PATH_MAX * 2 + 50];
-    snprintf(cmd, sizeof(cmd), "cp -a '%s'/* '%s'/ 2>&1", staging_dir, chroot_path);
+    // Handle root path "/" specially to avoid double slash
+    if (strcmp(chroot_path, "/") == 0) {
+        snprintf(cmd, sizeof(cmd), "cp -a '%s'/* / 2>&1", staging_dir);
+    } else {
+        snprintf(cmd, sizeof(cmd), "cp -a '%s'/* '%s'/ 2>&1", staging_dir, chroot_path);
+    }
     
     log_debug(2, "Executing: %s", cmd);
     

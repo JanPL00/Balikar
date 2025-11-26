@@ -35,7 +35,7 @@ typedef struct {
 Klíčové funkce
 ----
 static void parse_args(int argc, char **argv, cli_config_t *cfg);
-- Parsuje CLI argumenty pomocí getopt_long; podporované long options: --help, --debug, --dry-run, --no-staging, --no-deps,
+- Parsuje CLI argumenty pomocí getopt_long; podporované long options: --help, --debug, --dry-run, --no-deps,
   --staging-dir, --root, --build-tmp-dir, --repo, --local-package, --output-dir; krátké: -h, -d (debug lze opakovat);
   zpracovává command (první pozitional arg) a package_name (druhý pozitional arg); nastavuje výchozí repo_path z repos.conf;
   volá print_usage při chybě nebo -h.
@@ -110,9 +110,6 @@ Globální options
 
 --dry-run
 - Simulační režim: zobrazí plán, přeskočí download a build; užitečné pro preview změn
-
---no-staging
-- Vypne staging režim (set_staging_enabled(0)); instalace proběhne přímo bez DESTDIR=$P mezikroku
 
 --staging-dir=PATH
 - Nastaví vlastní staging adresář (výchozí: /tmp/balikar_staging); volá set_staging_dir(PATH)
@@ -259,9 +256,9 @@ typedef struct {
 Key functions
 ----
 static void parse_args(int argc, char **argv, cli_config_t *cfg);
-- Parses CLI arguments using getopt_long; supported long options: --help, --debug, --dry-run, --no-staging,
-  --staging-dir, --chroot-path, --build-tmp-dir, --repo, --local-package; short: -h, -d (debug can be repeated);
-  processes command (first positional arg) and package_name (second positional arg); sets default repo_path="./repo";
+- Parses CLI arguments using getopt_long; supported long options: --help, --debug, --dry-run, --no-deps,
+  --staging-dir, --root, --build-tmp-dir, --repo, --local-package, --output-dir; short: -h, -d (debug can be repeated);
+  processes command (first positional arg) and package_name (second positional arg); sets default repo_path from repos.conf;
   calls print_usage on error or -h.
 
 int main(int argc, char **argv);
@@ -320,9 +317,6 @@ Global options
 
 --dry-run
 - Simulation mode: shows plan, skips download and build; useful for previewing changes
-
---no-staging
-- Disables staging mode (set_staging_enabled(0)); installation proceeds directly without DESTDIR=$P intermediate step
 
 --staging-dir=PATH
 - Sets custom staging directory (default: $P from system_helpers); calls set_staging_dir(PATH)
