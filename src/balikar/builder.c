@@ -326,6 +326,76 @@ static int extract_archive(FILE *fp, const char *tmp_dir) {
 	int status = pclose(tar);
 	if (status != 0) return -1;
 	
+	// Check if this is a balikar package with nested source archive
+	// Look for index.json in first subdirectory
+	DIR *d = opendir(tmp_dir);
+	if (d) {
+		struct dirent *ent;
+		char first_subdir[2048] = {0};
+		
+		// Find first subdirectory
+		while ((ent = readdir(d)) != NULL) {
+			if (ent->d_name[0] == '.') continue;
+			
+			char test_path[2048];
+			snprintf(test_path, sizeof(test_path), "%s/%s", tmp_dir, ent->d_name);
+			
+			struct stat st;
+			if (stat(test_path, &st) == 0 && S_ISDIR(st.st_mode)) {
+				strncpy(first_subdir, test_path, sizeof(first_subdir) - 1);
+				break;
+			}
+		}
+		closedir(d);
+		
+		// Check for index.json
+		if (first_subdir[0]) {
+			char index_json_path[2560];
+			snprintf(index_json_path, sizeof(index_json_path), "%s/index.json", first_subdir);
+			
+			if (access(index_json_path, F_OK) == 0) {
+				log_debug(1, "Found index.json, checking for nested source archive");
+				
+				// Load index.json
+				json_error_t error;
+				json_t *index_root = json_load_file(index_json_path, 0, &error);
+				if (index_root) {
+					json_t *source_array = json_object_get(index_root, "source");
+					if (source_array && json_is_array(source_array) && json_array_size(source_array) > 0) {
+						json_t *first_source = json_array_get(source_array, 0);
+						json_t *url_obj = json_object_get(first_source, "url");
+						
+						if (url_obj && json_is_string(url_obj)) {
+							const char *source_file = json_string_value(url_obj);
+							
+							// Check if it's a relative path (no scheme)
+							if (strstr(source_file, "://") == NULL) {
+								char nested_tar_path[2560];
+								snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/%s", first_subdir, source_file);
+								
+								if (access(nested_tar_path, F_OK) == 0) {
+									log_info("Found nested source archive: %s, extracting...", source_file);
+									
+									// Extract nested tar to separate directory
+									char extract_cmd[4096];
+									snprintf(extract_cmd, sizeof(extract_cmd), "tar -xf '%s' -C '%s' 2>/dev/null", nested_tar_path, first_subdir);
+									
+									int extract_status = system(extract_cmd);
+									if (extract_status == 0) {
+										log_debug(1, "Nested source archive extracted successfully");
+									} else {
+										log_warn("Failed to extract nested source archive (status=%d)", extract_status);
+									}
+								}
+							}
+						}
+					}
+					json_decref(index_root);
+				}
+			}
+		}
+	}
+	
 	return 0;
 }
 

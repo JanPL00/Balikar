@@ -96,4 +96,4 @@ ls /tmp/test_root/usr/bin/gzip  # M�lo by existovat
 
 kdyz dam balikar download --no-deps a --output-dir tak to stáhne celou strukturu od g a ne jenom ten gzip
 
-problém s balikar install --local-package=/path/to/bash.tar.xz --root=/tmp/test_root
+problém s balikar install --local-package=/path/to/bash.tar.xz --root=/tmp/test_root, resp. s instalací nezávislostí
