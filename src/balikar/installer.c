@@ -404,7 +404,8 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
  * @param chroot_path Root directory for the installation
  * @return 0 on success, -1 on error
  */
-static int add_installed_package(const char *pkg_name, const char *pkg_version, json_t *files, const char *chroot_path) {
+static int add_installed_package(const char *pkg_name, const char *pkg_version, json_t *files, 
+                                 const char *chroot_path, const char *install_reason) {
     json_t *db = load_installed_db(chroot_path);
     if (!db) {
         return -1;
@@ -428,6 +429,9 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
     char timestamp[64];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", tm_info);
     json_object_set_new(pkg_entry, "install_date", json_string(timestamp));
+    
+    // Add install reason (manual or dependency)
+    json_object_set_new(pkg_entry, "install_reason", json_string(install_reason ? install_reason : "manual"));
     
     // Add file manifest
     json_object_set_new(pkg_entry, "files", json_deep_copy(files));
@@ -454,6 +458,15 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
  */
 int install_package(const char *pkg_name, const char *pkg_version,
                     const char *staging_dir, const char *chroot_path) {
+    return install_package_with_reason(pkg_name, pkg_version, staging_dir, chroot_path, "manual");
+}
+
+/**
+ * Install package with specified install reason.
+ */
+int install_package_with_reason(const char *pkg_name, const char *pkg_version,
+                                const char *staging_dir, const char *chroot_path,
+                                const char *install_reason) {
     if (!pkg_name || !pkg_version || !staging_dir || !chroot_path) {
         log_error("Invalid arguments to install_package");
         return -1;
@@ -500,7 +513,7 @@ int install_package(const char *pkg_name, const char *pkg_version,
     }
     
     // Step 5: Update installed packages database
-    if (add_installed_package(pkg_name, pkg_version, files, chroot_path) != 0) {
+    if (add_installed_package(pkg_name, pkg_version, files, chroot_path, install_reason) != 0) {
         log_error("Failed to update installed packages database");
         json_decref(files);
         return -1;
@@ -669,6 +682,243 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     
     if (result == 0) {
         log_info("Successfully erased package: %s", pkg_name);
+    }
+    
+    return result;
+}
+
+/**
+ * Find reverse dependencies - packages that depend on given package.
+ */
+json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
+                                  Pool *pool, Repo *repo) {
+    if (!pkg_name || !chroot_path || !pool || !repo) {
+        return NULL;
+    }
+    
+    json_t *result = json_array();
+    json_t *db = load_installed_db(chroot_path);
+    if (!db) {
+        return result;  // Return empty array
+    }
+    
+    json_t *packages = json_object_get(db, "packages");
+    if (!packages) {
+        json_decref(db);
+        return result;
+    }
+    
+    // Get the solvable ID for pkg_name
+    Id pkg_id = 0;
+    for (Id p = 1; p < pool->nsolvables; p++) {
+        Solvable *s = pool_id2solvable(pool, p);
+        if (!s->name) continue;
+        const char *name = pool_id2str(pool, s->name);
+        if (strcmp(name, pkg_name) == 0) {
+            pkg_id = p;
+            break;
+        }
+    }
+    
+    if (pkg_id == 0) {
+        json_decref(db);
+        return result;
+    }
+    
+    // Check each installed package to see if it depends on pkg_name
+    const char *key;
+    json_t *value;
+    json_object_foreach(packages, key, value) {
+        json_t *name_obj = json_object_get(value, "name");
+        if (!name_obj) continue;
+        
+        const char *installed_pkg = json_string_value(name_obj);
+        if (!installed_pkg || strcmp(installed_pkg, pkg_name) == 0) continue;
+        
+        // Find solvable for this installed package
+        for (Id p = 1; p < pool->nsolvables; p++) {
+            Solvable *s = pool_id2solvable(pool, p);
+            if (!s->name) continue;
+            const char *name = pool_id2str(pool, s->name);
+            if (strcmp(name, installed_pkg) != 0) continue;
+            
+            // Check if this package requires pkg_name
+            if (s->requires) {
+                Id *reqp = s->repo->idarraydata + s->requires;
+                while (*reqp) {
+                    Id req = *reqp++;
+                    // Check if this requirement can be satisfied by pkg_name
+                    Id *pp = pool_whatprovides_ptr(pool, req);
+                    while (*pp) {
+                        if (*pp == pkg_id) {
+                            // This package depends on pkg_name
+                            json_array_append_new(result, json_string(installed_pkg));
+                            goto next_package;
+                        }
+                        pp++;
+                    }
+                }
+            }
+            break;
+        }
+        next_package:;
+    }
+    
+    json_decref(db);
+    return result;
+}
+
+/**
+ * Find orphaned packages - dependencies no longer needed.
+ */
+json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo) {
+    if (!chroot_path || !pool || !repo) {
+        return NULL;
+    }
+    
+    json_t *result = json_array();
+    json_t *db = load_installed_db(chroot_path);
+    if (!db) {
+        return result;
+    }
+    
+    json_t *packages = json_object_get(db, "packages");
+    if (!packages) {
+        json_decref(db);
+        return result;
+    }
+    
+    // Iterate through all installed packages
+    const char *key;
+    json_t *value;
+    json_object_foreach(packages, key, value) {
+        json_t *name_obj = json_object_get(value, "name");
+        json_t *reason_obj = json_object_get(value, "install_reason");
+        
+        if (!name_obj) continue;
+        const char *pkg_name = json_string_value(name_obj);
+        
+        // Only check packages installed as dependencies
+        const char *reason = reason_obj ? json_string_value(reason_obj) : "manual";
+        if (strcmp(reason, "dependency") != 0) continue;
+        
+        // Check if any installed package depends on this one
+        json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo);
+        if (json_array_size(reverse_deps) == 0) {
+            // No packages depend on this - it's orphaned
+            json_array_append_new(result, json_string(pkg_name));
+        }
+        json_decref(reverse_deps);
+    }
+    
+    json_decref(db);
+    return result;
+}
+
+/**
+ * Remove all orphaned packages.
+ */
+int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry_run) {
+    if (!chroot_path || !pool || !repo) {
+        return -1;
+    }
+    
+    json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo);
+    if (!orphaned) {
+        return -1;
+    }
+    
+    size_t count = json_array_size(orphaned);
+    if (count == 0) {
+        log_info("No orphaned packages to remove.");
+        json_decref(orphaned);
+        return 0;
+    }
+    
+    log_info("Found %zu orphaned package(s):", count);
+    for (size_t i = 0; i < count; i++) {
+        const char *pkg = json_string_value(json_array_get(orphaned, i));
+        log_info("  - %s", pkg);
+    }
+    
+    if (dry_run) {
+        log_info("DRY-RUN: Would remove %zu orphaned package(s)", count);
+        json_decref(orphaned);
+        return 0;
+    }
+    
+    if (!user_confirm("Remove these packages?", 1)) {
+        log_info("Autoremove cancelled.");
+        json_decref(orphaned);
+        return 0;
+    }
+    
+    int removed = 0;
+    for (size_t i = 0; i < count; i++) {
+        const char *pkg = json_string_value(json_array_get(orphaned, i));
+        log_info("Removing orphaned package: %s", pkg);
+        if (erase_package(pkg, chroot_path) == 0) {
+            removed++;
+        }
+    }
+    
+    json_decref(orphaned);
+    log_info("Removed %d orphaned package(s)", removed);
+    return removed;
+}
+
+/**
+ * Erase package with dependency checks and orphan detection.
+ */
+int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
+                               Pool *pool, Repo *repo, int show_orphans) {
+    if (!pkg_name || !chroot_path) {
+        return -1;
+    }
+    
+    // Check for reverse dependencies if pool/repo available
+    if (pool && repo) {
+        json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo);
+        if (reverse_deps) {
+            size_t dep_count = json_array_size(reverse_deps);
+            if (dep_count > 0) {
+                log_warn("Package '%s' is required by the following installed packages:", pkg_name);
+                for (size_t i = 0; i < dep_count; i++) {
+                    const char *dep = json_string_value(json_array_get(reverse_deps, i));
+                    log_warn("  - %s", dep);
+                }
+                log_warn("Removing '%s' may break these packages.", pkg_name);
+                
+                if (!user_confirm("Continue with removal?", 0)) {
+                    log_info("Removal cancelled.");
+                    json_decref(reverse_deps);
+                    return -1;
+                }
+            }
+            json_decref(reverse_deps);
+        }
+    }
+    
+    // Perform removal
+    int result = erase_package(pkg_name, chroot_path);
+    
+    // Show orphaned packages after removal
+    if (result == 0 && show_orphans && pool && repo) {
+        json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo);
+        if (orphaned) {
+            size_t count = json_array_size(orphaned);
+            if (count > 0) {
+                log_info("");
+                log_info("The following packages were installed as dependencies and are no longer required:");
+                for (size_t i = 0; i < count; i++) {
+                    const char *pkg = json_string_value(json_array_get(orphaned, i));
+                    log_info("  %s", pkg);
+                }
+                log_info("Use 'balikar autoremove%s' to remove them.",
+                         strcmp(chroot_path, "/") != 0 ? " --root=<path>" : "");
+            }
+            json_decref(orphaned);
+        }
     }
     
     return result;

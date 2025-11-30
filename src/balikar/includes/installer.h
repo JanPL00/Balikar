@@ -29,6 +29,20 @@ int install_package(const char *pkg_name, const char *pkg_version,
                     const char *staging_dir, const char *chroot_path);
 
 /**
+ * Installs a package with specified install reason (manual or dependency).
+ * 
+ * @param pkg_name Package name for tracking
+ * @param pkg_version Package version string
+ * @param staging_dir Path to staging directory
+ * @param chroot_path Path to chroot environment
+ * @param install_reason "manual" or "dependency"
+ * @return 0 on success, -1 on error
+ */
+int install_package_with_reason(const char *pkg_name, const char *pkg_version,
+                                const char *staging_dir, const char *chroot_path,
+                                const char *install_reason);
+
+/**
  * Checks if a package is already installed.
  * Queries the installed packages database ({chroot}/var/lib/balikar/installed.json).
  * 
@@ -63,6 +77,19 @@ json_t* get_installed_packages(const char *chroot_path);
 int erase_package(const char *pkg_name, const char *chroot_path);
 
 /**
+ * Removes package with dependency checking and orphan detection.
+ * 
+ * @param pkg_name Package name to erase
+ * @param chroot_path Path to chroot environment
+ * @param pool Solver pool (can be NULL to skip dependency checks)
+ * @param repo Repository (can be NULL to skip dependency checks)
+ * @param show_orphans If true, show orphaned packages after removal
+ * @return 0 on success, -1 on error
+ */
+int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
+                               Pool *pool, Repo *repo, int show_orphans);
+
+/**
  * Validates chroot environment structure.
  * Checks for basic directories like /usr, /lib, /bin.
  * 
@@ -70,5 +97,41 @@ int erase_package(const char *pkg_name, const char *chroot_path);
  * @return 1 if valid, 0 if suspicious/invalid
  */
 int validate_chroot(const char *chroot_path);
+
+/**
+ * Finds packages that depend on the given package.
+ * Returns array of package names that have pkg_name in their dependencies.
+ * 
+ * @param pkg_name Package name to check
+ * @param chroot_path Root directory
+ * @param pool Solver pool with dependency information
+ * @param repo Repository with installed packages
+ * @return JSON array of dependent package names, or NULL if none/error
+ */
+json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
+                                  Pool *pool, Repo *repo);
+
+/**
+ * Finds orphaned packages (dependencies no longer needed).
+ * Returns packages with install_reason="dependency" that are not required by any installed package.
+ * 
+ * @param chroot_path Root directory
+ * @param pool Solver pool with dependency information
+ * @param repo Repository with installed packages
+ * @return JSON array of orphaned package names, or NULL if none/error
+ */
+json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo);
+
+/**
+ * Removes all orphaned packages from the system.
+ * Removes packages with install_reason="dependency" that are no longer needed.
+ * 
+ * @param chroot_path Root directory
+ * @param pool Solver pool with dependency information
+ * @param repo Repository with installed packages
+ * @param dry_run If true, only show what would be removed
+ * @return Number of packages removed, or -1 on error
+ */
+int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry_run);
 
 #endif // INSTALLER_H

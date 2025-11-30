@@ -20,6 +20,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  build <pkg>           Build from source (with mkdeps)\n");
     fprintf(stderr, "  resolve <pkg>         Resolve dependencies only (dry-run)\n");
     fprintf(stderr, "  remove <pkg>          Remove installed package\n");
+    fprintf(stderr, "  autoremove            Remove orphaned dependencies\n");
     fprintf(stderr, "  repo list             List configured repositories\n");
     fprintf(stderr, "  repo add <name> <url> Add new repository\n");
     fprintf(stderr, "  repo remove <name>    Remove repository\n");

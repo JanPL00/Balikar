@@ -625,7 +625,8 @@ int main(int argc, char **argv) {
                     const char *root_display = strcmp(target_root, "/") == 0 ? "system root (/)" : target_root;
                     log_info("Installing %s to %s...", pkg_name, root_display);
                     
-                    if (install_package(pkg_name, pkg_version, staging, target_root) != 0) {
+                    // Local package is always installed manually
+                    if (install_package_with_reason(pkg_name, pkg_version, staging, target_root, "manual") != 0) {
                         log_error("Installation failed for %s.", pkg_name);
                         exit_code = ERR_BUILD_FAIL;
                         goto cleanup;
@@ -771,8 +772,11 @@ int main(int argc, char **argv) {
                         const char *root_display = strcmp(target_root, "/") == 0 ? "system root (/)" : target_root;
                         log_info("Installing %s to %s...", pkg_name, root_display);
                         
+                        // Determine install reason: manual if it's the requested package, dependency otherwise
+                        const char *install_reason = strcmp(pkg_name, cfg.package_name) == 0 ? "manual" : "dependency";
+                        
                         // Call installer to merge staging → target root
-                        if (install_package(pkg_name, version, staging, target_root) != 0) {
+                        if (install_package_with_reason(pkg_name, version, staging, target_root, install_reason) != 0) {
                             log_error("Installation failed for %s.", pkg_name);
                             exit_code = ERR_BUILD_FAIL;
                             break;
@@ -846,15 +850,29 @@ int main(int argc, char **argv) {
         // Determine target root where package is installed
         const char *target_root = cfg.root_path ? cfg.root_path : "/";
         
-        // Use erase_package from installer module
+        // Use erase_package_with_checks for dependency checking and orphan detection
         if (!cfg.dry_run) {
-            if (erase_package(cfg.package_name, target_root) != 0) {
+            if (erase_package_with_checks(cfg.package_name, target_root, pool, repo, 1) != 0) {
                 log_error("Failed to remove package '%s'.", cfg.package_name);
                 exit_code = 1;
                 goto cleanup;
             }
         } else {
             log_info("DRY-RUN: Would remove package '%s' from %s", cfg.package_name, target_root);
+        }
+        
+    }
+    // Command: autoremove - remove orphaned dependencies
+    // Removes packages installed as dependencies that are no longer needed
+    else if (strcmp(cfg.command, "autoremove") == 0) {
+        const char *target_root = cfg.root_path ? cfg.root_path : "/";
+        
+        log_info("Searching for orphaned packages in %s...", target_root);
+        
+        if (autoremove_packages(target_root, pool, repo, cfg.dry_run) < 0) {
+            log_error("Autoremove failed.");
+            exit_code = 1;
+            goto cleanup;
         }
         
     } 
