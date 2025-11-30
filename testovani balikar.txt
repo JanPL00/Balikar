@@ -42,17 +42,25 @@ balikar install --local-package=/path/to/pkg.tar.bz2 --root=/tmp/test_root
 balikar install --local-package=/path/to/bash.tar.xz --root=/tmp/test_root
 
 --C--ODINSTALACE
-# C1: Odstran�n� z /
+# C1: Odstranění z /
 balikar remove gzip
 
-# C2: Odstran�n� z chroot
+# C2: Odstranění z chroot
 balikar remove --root=/tmp/test_root gzip
+# Očekávané: Úspěšné odstranění, zobrazí osiřelé závislosti
 
-# C3: Odstran�n� se z�vislostmi (m�lo by varovat)
+# C3: Odstranění se závislostmi (mělo by varovat)
 balikar remove --root=/tmp/test_root bash
+# Očekávané: Zobrazí osiřelé: readline (pokud nic jiného readline nepotřebuje)
 
-# C4: Odstran�n� neexistuj�c�ho
+# C4: Odstranění neexistujícího
 balikar remove --root=/tmp/test_root nonexistent
+# Očekávané: [ERROR] Package not installed: nonexistent
+
+# C5: Pokus o odstranění balíčku s reverse dependencies
+balikar remove --root=/tmp/test_root glibc
+# Očekávané: [WARN] Package 'glibc' is required by: bash, ncurses, readline
+#            Continue with removal? [n]: (default NE)
 
 --D--EDGE_CASES
 # D1: Reinstalace (stejn� bal��ek dvakr�t)
@@ -80,8 +88,8 @@ balikar remove --root=/tmp/root1 gzip  # Nem�lo ovlivnit root2
 --E--BUILD_VS_INSTALL
 # E1: Build (pouze staging)
 balikar build --staging-dir=/tmp/staging_test gzip
-ls /tmp/staging_test/usr/bin/gzip  # M�lo by existovat
-ls /usr/bin/gzip  # NEM�LO by b�t instalovan�
+ls /tmp/staging_test/usr/bin/gzip  # Mělo by existovat
+ls /usr/bin/gzip  # NEMĚLO by být instalováno
 
 # E2: Build + manual inspect + remove staging
 balikar build --staging-dir=/tmp/staging_test gzip
@@ -90,7 +98,49 @@ rm -rf /tmp/staging_test
 
 # E3: Install (build + merge)
 balikar install --root=/tmp/test_root gzip
-ls /tmp/test_root/usr/bin/gzip  # M�lo by existovat
+ls /tmp/test_root/usr/bin/gzip  # Mělo by existovat
+
+--F--AUTOREMOVE
+# F1: Základní autoremove
+balikar install --root=/tmp/test_root bash
+balikar remove --root=/tmp/test_root bash
+# Očekávané: Zobrazí osiřelé: readline
+balikar autoremove --root=/tmp/test_root
+# Očekávané: Odstraní readline
+balikar autoremove --root=/tmp/test_root
+# Očekávané: Odstraní ncurses
+balikar autoremove --root=/tmp/test_root
+# Očekávané: Odstraní glibc
+balikar autoremove --root=/tmp/test_root
+# Očekávané: No orphaned packages to remove.
+
+# F2: Autoremove dry-run
+balikar install --root=/tmp/test_root bash
+balikar remove --root=/tmp/test_root bash
+balikar autoremove --dry-run --root=/tmp/test_root
+# Očekávané: Zobrazí co by se odstranilo, nic neodstraní
+
+# F3: Autoremove bez --root (nativní systém)
+balikar install gzip
+balikar remove gzip
+balikar autoremove
+# Očekávané: Funguje stejně jako s --root=/
+
+# F4: Více manuálních balíčků se sdílenou závislostí
+balikar install --root=/tmp/test_root gcc
+balikar install --root=/tmp/test_root bash
+balikar remove --root=/tmp/test_root bash
+balikar autoremove --root=/tmp/test_root
+# Očekávané: readline je osiřelý, ale glibc NE (gcc ho potřebuje)
+
+# F5: Kontrola install_reason v databázi
+balikar install --root=/tmp/test_root bash
+cat /tmp/test_root/var/lib/balikar/installed.json | grep -E '"name"|"install_reason"'
+# Očekávané:
+#   "name": "bash", "install_reason": "manual"
+#   "name": "glibc", "install_reason": "dependency"
+#   "name": "ncurses", "install_reason": "dependency"
+#   "name": "readline", "install_reason": "dependency"
 
 
 

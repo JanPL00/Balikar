@@ -243,6 +243,8 @@ Balikar používá **libsolv** (knihovna z openSUSE) pro dependency resolution:
 - **[solver.c](solver.txt)** - Dependency resolution, libsolv integration
 - **[downloader.c](downloader.txt)** - Package downloading, verification
 - **[builder.c](builder.txt)** - Package building, installation
+- **[installer.c](installer.txt)** - Package installation, tracking, removal
+- **[dependency_tracking.txt](dependency_tracking.txt)** - Install reason tracking, autoremove
 
 ### Common Modules
 

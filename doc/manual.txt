@@ -116,9 +116,43 @@ clean-cache
 
 remove <pkg>
     Odinstalování balíčku z target root.
-    Načte tracking soubor /var/lib/balikar/installed/<pkg>.list a odstraní soubory.
+    Načte tracking database /var/lib/balikar/installed.json a odstraní soubory.
+    Kontroluje reverse dependencies a varuje, pokud jiné balíčky potřebují
+    odstraňovaný balíček. Po odstranění zobrazí seznam osiřelých závislostí.
+    
     Příklad:
       balikar remove old_package --root=/mnt/lfs
+      balikar remove glibc  # Varuje pokud ho potřebují jiné balíčky
+      
+    Po odstranění:
+      [INFO] The following packages were installed as dependencies and are no longer required:
+      [INFO]   readline
+      [INFO]   ncurses
+      [INFO] Use 'balikar autoremove' to remove them.
+
+autoremove
+    Odstraní osiřelé závislosti - balíčky instalované automaticky jako
+    závislosti, které už nejsou potřeba žádným manuálně nainstalovaným balíčkem.
+    
+    Systém sleduje install_reason pro každý balíček:
+    - "manual": instalováno uživatelem přímo (balikar install <pkg>)
+    - "dependency": automaticky instalováno jako závislost
+    
+    Autoremove najde všechny balíčky s install_reason="dependency",
+    které už nejsou potřeba žádným nainstalovaným balíčkem, a nabídne
+    jejich odstranění.
+    
+    Příklady:
+      balikar autoremove                    # Vyčistí osiřelé balíčky v /
+      balikar autoremove --root=/mnt/lfs   # Vyčistí v chroot prostředí
+      balikar autoremove --dry-run         # Pouze zobrazí co by se odstranilo
+      
+    Output:
+      [INFO] Found 3 orphaned package(s):
+      [INFO]   - readline
+      [INFO]   - ncurses  
+      [INFO]   - glibc
+      Remove these packages? [y]:
 
 GLOBÁLNÍ OPTIONS
 ----------------
@@ -420,6 +454,34 @@ SOUBORY
     Stažené patches a doplňkové soubory z "extras" pole v metadata.
     Vymazání: balikar clean-cache --pkg=<pkg>
 
+/var/lib/balikar/installed.json
+    Database nainstalovaných balíčků v root (/) nebo chroot.
+    Struktura:
+    {
+      "packages": {
+        "bash-5.3": {
+          "name": "bash",
+          "version": "5.3",
+          "install_date": "2025-11-30T18:30:00Z",
+          "install_reason": "manual",
+          "files": ["/usr/bin/bash", ...]
+        },
+        "glibc-2.42": {
+          "name": "glibc",
+          "version": "2.42",
+          "install_date": "2025-11-30T18:29:00Z",
+          "install_reason": "dependency",
+          "files": ["/usr/lib/libc.so.6", ...]
+        }
+      }
+    }
+    
+    install_reason pole:
+    - "manual": balíček instalován přímo uživatelem
+    - "dependency": balíček instalován automaticky jako závislost
+    
+    Pro chroot: /mnt/lfs/var/lib/balikar/installed.json
+
 /tmp/balikar_build_<pkg>_XXXXXX
     Dočasný build dir (vyčistí se automaticky po buildu).
     Obsahuje:
@@ -555,6 +617,75 @@ POKROČILÉ POUŽITÍ
    # Force re-download při příštím buildu
    $ balikar clean-cache --pkg=zlib
    $ balikar build mypackage  # Stáhne zlib znovu
+
+8. SPRÁVA NAINSTALOVANÝCH BALÍČKŮ
+   
+   Odstranění balíčku s kontrolou závislostí:
+   $ balikar remove bash --root=/mnt/lfs
+   [INFO] Removing package: bash
+   [INFO] Erasing package: bash
+   [INFO] Removed 162 files (0 failed)
+   [INFO] Successfully erased package: bash
+   [INFO]
+   [INFO] The following packages were installed as dependencies and are no longer required:
+   [INFO]   readline
+   [INFO] Use 'balikar autoremove --root=<path>' to remove them.
+   
+   Pokus o odstranění balíčku s reverse dependencies:
+   $ balikar remove glibc --root=/mnt/lfs
+   [INFO] Removing package: glibc
+   [WARN] Package 'glibc' is required by the following installed packages:
+   [WARN]   - ncurses
+   [WARN]   - readline
+   [WARN]   - bash
+   [WARN] Removing 'glibc' may break these packages.
+   Continue with removal? [n]: n
+   [INFO] Removal cancelled.
+   
+   Odstranění osiřelých závislostí:
+   $ balikar autoremove --root=/mnt/lfs
+   [INFO] Searching for orphaned packages in /mnt/lfs...
+   [INFO] Found 2 orphaned package(s):
+   [INFO]   - readline
+   [INFO]   - ncurses
+   Remove these packages? [y]: y
+   [INFO] Removing orphaned package: readline
+   [INFO] Erasing package: readline
+   [INFO] Removed 38 files (0 failed)
+   [INFO] Successfully erased package: readline
+   [INFO] Removing orphaned package: ncurses
+   [INFO] Erasing package: ncurses
+   [INFO] Removed 4082 files (0 failed)
+   [INFO] Successfully erased package: ncurses
+   [INFO] Removed 2 orphaned package(s)
+   
+   # Zjistit co je nainstalováno
+   $ cat /mnt/lfs/var/lib/balikar/installed.json | grep '"name"'
+   
+   # Dry-run autoremove
+   $ balikar autoremove --dry-run --root=/mnt/lfs
+   [INFO] DRY-RUN: Would remove 2 orphaned package(s)
+
+9. INSTALACE S TRACKOVÁNÍN DŮVODU
+   
+   Automatické sledování install_reason:
+   $ balikar install bash --root=/mnt/lfs
+   # bash bude označen jako "manual"
+   # jeho závislosti (glibc, ncurses, readline) jako "dependency"
+   
+   Kontrola install_reason:
+   $ cat /mnt/lfs/var/lib/balikar/installed.json | grep -A1 '"name"'
+   "name": "bash",
+   "install_reason": "manual",
+   --
+   "name": "glibc",
+   "install_reason": "dependency",
+   
+   Workflow autoremove:
+   1. Najde všechny balíčky s install_reason="dependency"
+   2. Pro každý zkontroluje, zda ho potřebuje nějaký nainstalovaný balíček
+   3. Pokud ne, označí ho jako osiřelý
+   4. Nabídne odstranění všech osiřelých najednou
 
 TROUBLESHOOTING
 ---------------
