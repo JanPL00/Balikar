@@ -20,9 +20,15 @@ if(NOT CONDA_PREFIX)
 endif()
 message(STATUS "Using CONDA_PREFIX: ${CONDA_PREFIX}")  # Debug: Ověř v outputu
 
-# LibSolv z Conda
+# LibSolv z Conda nebo system
 set(LibSolv_INCLUDE_DIRS "\( {CONDA_PREFIX}/include" " \){CONDA_PREFIX}/include/solv")
-set(LibSolv_LIBRARIES "${CONDA_PREFIX}/lib/libsolv.so" "${CONDA_PREFIX}/lib/libsolvext.so")
+
+# Detect library directory (handles both /usr/lib and /usr/lib/x86_64-linux-gnu)
+if(EXISTS "${CONDA_PREFIX}/lib/x86_64-linux-gnu/libsolv.so")
+    set(LibSolv_LIBRARIES "${CONDA_PREFIX}/lib/x86_64-linux-gnu/libsolv.so" "${CONDA_PREFIX}/lib/x86_64-linux-gnu/libsolvext.so")
+else()
+    set(LibSolv_LIBRARIES "${CONDA_PREFIX}/lib/libsolv.so" "${CONDA_PREFIX}/lib/libsolvext.so")
+endif()
 
 # NOVÉ: Explicitní -I flags pro Conda (nahrazuje CMAKE_C_FLAGS pro lepší expanzi)
 add_compile_options(

@@ -82,7 +82,7 @@ static json_t* load_installed_db(const char *chroot_path) {
         // Database doesn't exist yet - create empty one
         log_debug(1, "Database doesn't exist, creating empty one");
         json_t *root = json_object();
-        json_object_set_new(root, "packages", json_object());
+        json_object_set_new(root, "packages", json_array());
         return root;
     }
     
@@ -412,10 +412,21 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
     }
     
     json_t *packages = json_object_get(db, "packages");
-    if (!packages) {
-        log_error("Invalid database format: missing 'packages' key");
+    if (!packages || !json_is_array(packages)) {
+        log_error("Invalid database format: missing or invalid 'packages' array");
         json_decref(db);
         return -1;
+    }
+    
+    // Remove existing entry if present (update case)
+    size_t index;
+    json_t *value;
+    json_array_foreach(packages, index, value) {
+        json_t *name_obj = json_object_get(value, "name");
+        if (name_obj && strcmp(json_string_value(name_obj), pkg_name) == 0) {
+            json_array_remove(packages, index);
+            break;
+        }
     }
     
     // Create package entry
@@ -428,7 +439,7 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
     struct tm *tm_info = gmtime(&now);
     char timestamp[64];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", tm_info);
-    json_object_set_new(pkg_entry, "install_date", json_string(timestamp));
+    json_object_set_new(pkg_entry, "installed_at", json_string(timestamp));
     
     // Add install reason (manual or dependency)
     json_object_set_new(pkg_entry, "install_reason", json_string(install_reason ? install_reason : "manual"));
@@ -436,17 +447,15 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
     // Add file manifest
     json_object_set_new(pkg_entry, "files", json_deep_copy(files));
     
-    // Add/update package in database
-    char pkg_key[256];
-    snprintf(pkg_key, sizeof(pkg_key), "%s-%s", pkg_name, pkg_version);
-    json_object_set_new(packages, pkg_key, pkg_entry);
+    // Add package to database array
+    json_array_append_new(packages, pkg_entry);
     
     // Save database
     int result = save_installed_db(db, chroot_path);
     json_decref(db);
     
     if (result == 0) {
-        log_debug(1, "Added package to database: %s", pkg_key);
+        log_debug(1, "Added package to database: %s-%s", pkg_name, pkg_version);
     }
     
     return result;
@@ -610,24 +619,29 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     }
     
     json_t *packages = json_object_get(db, "packages");
-    if (!packages) {
+    if (!packages || !json_is_array(packages)) {
+        log_error("Invalid database format");
         json_decref(db);
         return -1;
     }
     
-    // Find package entry
-    const char *key;
-    json_t *value;
-    const char *found_key = NULL;
+    // Find package entry in array
+    size_t pkg_index = 0;
     json_t *found_pkg = NULL;
+    size_t index;
+    json_t *value;
     
-    json_object_foreach(packages, key, value) {
+    log_debug(1, "Searching for package '%s' in installed.json (array size: %zu)", pkg_name, json_array_size(packages));
+    
+    json_array_foreach(packages, index, value) {
         json_t *name_obj = json_object_get(value, "name");
         if (name_obj) {
             const char *name = json_string_value(name_obj);
+            log_debug(2, "Checking package at index %zu: %s", index, name ? name : "(null)");
             if (name && strcmp(name, pkg_name) == 0) {
-                found_key = key;
+                pkg_index = index;
                 found_pkg = value;
+                log_debug(1, "Found package '%s' at index %zu", pkg_name, index);
                 break;
             }
         }
@@ -673,8 +687,8 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     
     log_info("Removed %zu files (%zu failed)", removed, failed);
     
-    // Remove package from database
-    json_object_del(packages, found_key);
+    // Remove package from database array
+    json_array_remove(packages, pkg_index);
     
     // Save database
     int result = save_installed_db(db, chroot_path);
@@ -703,7 +717,7 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
     }
     
     json_t *packages = json_object_get(db, "packages");
-    if (!packages) {
+    if (!packages || !json_is_array(packages)) {
         json_decref(db);
         return result;
     }
@@ -726,9 +740,9 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
     }
     
     // Check each installed package to see if it depends on pkg_name
-    const char *key;
+    size_t index;
     json_t *value;
-    json_object_foreach(packages, key, value) {
+    json_array_foreach(packages, index, value) {
         json_t *name_obj = json_object_get(value, "name");
         if (!name_obj) continue;
         
@@ -783,15 +797,15 @@ json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo) 
     }
     
     json_t *packages = json_object_get(db, "packages");
-    if (!packages) {
+    if (!packages || !json_is_array(packages)) {
         json_decref(db);
         return result;
     }
     
     // Iterate through all installed packages
-    const char *key;
+    size_t index;
     json_t *value;
-    json_object_foreach(packages, key, value) {
+    json_array_foreach(packages, index, value) {
         json_t *name_obj = json_object_get(value, "name");
         json_t *reason_obj = json_object_get(value, "install_reason");
         
