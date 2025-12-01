@@ -8,7 +8,7 @@ Komplexní dokumentace o všech souborech, které Balikar package manager čte, 
 
 1. [Konfigurační Soubory](#1-konfigurační-soubory)
 2. [Metadata Balíčků](#2-metadata-balíčků)
-3. [Cache, Dočasné Soubory a Staging](#3-cache-dočasné-soubory-a-staging)
+3. [Cache a Dočasné Soubory](#3-cache-dočasné-soubory-a-staging)
 4. [Databáze a Tracking](#4-databáze-a-tracking)
 5. [Matice Operací](#5-matice-operací)
 6. [CLI Příklady](#6-cli-příklady)
