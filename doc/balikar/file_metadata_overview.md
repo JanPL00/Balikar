@@ -8,7 +8,7 @@ Komplexní dokumentace o všech souborech, které Balikar package manager čte, 
 
 1. [Konfigurační Soubory](#1-konfigurační-soubory)
 2. [Metadata Balíčků](#2-metadata-balíčků)
-3. [Cache a Dočasné Soubory](#3-cache-dočasné-soubory-a-staging)
+3. [Cache, Dočasné Soubory a Staging](#3-cache-a-dočasné-soubory)
 4. [Databáze a Tracking](#4-databáze-a-tracking)
 5. [Matice Operací](#5-matice-operací)
 6. [CLI Příklady](#6-cli-příklady)
@@ -102,8 +102,11 @@ if (!repo_list) {
 
 #### `repodata.json`
 **Umístění:** 
-- Lokální repozitáře: `<repo_path>/repodata.json` (např. `./repo/repodata.json`)
-- Remote repozitáře: Cache v `/var/cache/balikar/downloads/repodata.json`
+- **Lokální repozitáře:** `<repo_path>/repodata.json` (např. `./repo/repodata.json`)
+  - Vytváří se PŘÍMO v lokálním repozitáři
+  - NIKOLIV v cache - zůstává v repo pro sdílení a verzování
+- **Remote repozitáře:** Cache v `/var/cache/balikar/downloads/repodata.json`
+  - Stahuje se z remote URL a cachuje lokálně
 
 **Typ:** Agregovaná metadata všech balíčků v repozitáři  
 **Formát:** JSON  
@@ -278,7 +281,7 @@ if (check_index_newer_than_repodata(repo_path, repodata_st.st_mtime)) {
 ├── gzip-1.14.tar.xz          # Stažený zdrojový tarball
 ├── bash-5.3.tar.gz           # Další balíčky
 ├── glibc-2.40.tar.xz
-├── repodata.json             # Cache metadat z remote repozitářů
+├── repodata.json             # Cache metadat z remote repozitářů (POUZE)
 └── extras/                   # Patches a doplňkové soubory
     ├── gzip/
     │   └── gzip-fixes.patch
@@ -286,6 +289,11 @@ if (check_index_newer_than_repodata(repo_path, repodata_st.st_mtime)) {
         ├── glibc-fhs-1.patch
         └── tzdata.tar.gz
 ```
+
+**Poznámka k repodata.json v cache:**
+- Soubor `repodata.json` v cache je POUZE pro remote repozitáře
+- Pro lokální repozitáře (url=./repo) se `repodata.json` vytváří PŘÍMO v repozitáři
+- Důvod: Lokální repo může být verzováno v git a sdíleno mezi vývojáři
 
 **Workflow stahování s cache:**
 ```c
@@ -821,6 +829,9 @@ system(cleanup_cmd);
 3. Read: $P/ → seznam souborů
 4. Write: /target_root/ → merge staging
 5. Read: .install/install.sh → post-install (volitelné)
+   - Spouští se s právy balikaru (pokud balikar běží se sudo, pak i install.sh)
+   - Environment: DESTDIR=/target_root, CHROOT=/target_root
+   - Použití: ldconfig, systemctl, locale-gen, vlastní konfigurace
 6. Write: /target_root/var/lib/balikar/installed.json → tracking
 7. Optional: Delete $P/ → cleanup staging
 ```
@@ -853,7 +864,6 @@ system(cleanup_cmd);
 - `~/.config/balikar/repos.conf`
 - `/etc/balikar/repos.conf`
 - `<repo>/repodata.json`
-- `<repo>/<letter>/<name>/<name-version>/index.json`
 - `/var/cache/balikar/downloads/*`
 - `{root}/var/lib/balikar/installed.json`
 - Staging `$P/` - persistentní až do:
@@ -863,8 +873,8 @@ system(cleanup_cmd);
 
 #### Dočasné Soubory (automaticky mazány)
 - `/tmp/balikar_build_<pkg>_XXXXXX/` - Po každém buildu
-- `build.log` - S build directory
-- Build artifacts (*.o, compiled binaries před install) - S build directory
+- `build.log` - V build directory
+- Build artifacts (*.o, compiled binaries před install) - V build directory
 
 ---
 
@@ -970,6 +980,14 @@ system(cleanup_cmd);
 
 ## 7. CLI Příklady
 
+**Poznámka k oprávněním:**
+- Příkazy jako `build`, `resolve`, `repos`, `repo-update`, `download` NEVYŽADUJÍ sudo
+- Příkazy `install`, `remove`, `autoremove` vyžadují sudo pro merge do systému (`/`)
+- Pro instalaci do chroot (`--root=/mnt/lfs`) je sudo potřeba jen pokud nemáte práva zápisu
+- Post-install skripty (`.install/install.sh`) se spouští s právy balikaru (tedy sudo pokud byl balikar spuštěn se sudo)
+
+---
+
 ### Rozdíly Mezi Klíčovými Příkazy
 
 #### `balikar resolve <pkg>` vs `balikar build <pkg>` vs `balikar install <pkg>`
@@ -1062,18 +1080,20 @@ balikar build gzip
 # Výsledky zůstávají v $P/ pro verifikaci
 
 # 6. Instalace (full workflow)
-balikar install gzip
+# POZNÁMKA: Pro instalace do systému (/) je potřeba sudo
+sudo balikar install gzip
 # Build → Staging $P/ → Merge do /usr/
 # Tracking: /var/lib/balikar/installed.json
+# Post-install: Spustí .install/install.sh (pokud existuje) s sudo právy
 
 # 7. Kontrola instalace
 cat /var/lib/balikar/installed.json | jq '.packages[] | select(.name=="gzip")'
 
-# 8. Odstranění
-balikar remove gzip
+# 8. Odstranění (vyžaduje sudo pro odstranění ze systému)
+sudo balikar remove gzip
 
-# 9. Autoremove osiřelých závislostí
-balikar autoremove
+# 9. Autoremove osiřelých závislostí (vyžaduje sudo)
+sudo balikar autoremove
 ```
 
 ### Pokročilé Použití
@@ -1081,14 +1101,14 @@ balikar autoremove
 # Build do vlastního staging
 balikar --staging-dir=/mnt/lfs/stage build gcc
 
-# Instalace do chroot
-balikar install glibc --root=/mnt/lfs
+# Instalace do chroot (sudo potřeba pro merge do /mnt/lfs)
+sudo balikar install glibc --root=/mnt/lfs
 
 # Build do izolovaného tmp
 balikar --build-tmp-dir=/var/tmp/isolated build glibc
 
-# Přímá instalace bez staging
-balikar --no-staging build hello
+# Přímá instalace bez staging (NEBEZPEČNÉ! Pouze v disposable VM)
+sudo balikar --no-staging build hello
 
 # Vyčištění cache
 balikar clean-cache
@@ -1106,7 +1126,7 @@ balikar download --output-dir=/sources --no-deps gcc
 Tento dokument poskytuje kompletní přehled všech souborů, které Balikar vytváří, čte a upravuje během svého provozu:
 
 - **Konfigurace:** `repos.conf` (uživatelská a systémová)
-- **Metadata:** `repodata.json`, `index.json`
+- **Metadata:** `repodata.json`,
 - **Cache:** `/var/cache/balikar/downloads/`
 - **Databáze:** `installed.json` (chroot-aware)
 - **Balíčky:** `.tar.{bz2,gz,xz}`, `.build`, `.install/install.sh`
