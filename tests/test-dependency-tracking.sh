@@ -20,10 +20,10 @@ echo -e "${BLUE}   Dependency Tracking Test (Simplified - No Build)${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-step() { echo -e "\n${YELLOW}▶ $1${NC}\n"; }
-success() { echo -e "${GREEN}✓ $1${NC}"; }
-error() { echo -e "${RED}✗ $1${NC}"; }
-info() { echo -e "${BLUE}ℹ $1${NC}"; }
+step() { echo -e "\n${YELLOW}$1${NC}\n"; }
+success() { echo -e "${GREEN}$1${NC}"; }
+error() { echo -e "${RED}$1${NC}"; }
+info() { echo -e "${BLUE}$1${NC}"; }
 
 # Cleanup
 step "Příprava: Vytváření mock installed.json s předinstalovanými balíčky"
@@ -203,5 +203,5 @@ if [ -f "$TEST_ROOT/var/lib/balikar/installed.json" ]; then
 fi
 
 echo ""
-echo -e "${GREEN}✓ Dependency tracking testy dokončeny!${NC}"
+echo -e "${GREEN}Dependency tracking testy dokončeny!${NC}"
 echo ""

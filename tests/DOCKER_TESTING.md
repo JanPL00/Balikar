@@ -54,13 +54,13 @@ Po zkompilování můžete spustit automatizovanou testovací sadu:
 ```
 
 Tento skript otestuje:
-- ✓ Základní funkčnost (help, version)
-- ✓ Instalaci balíčků s `install_reason` tracking
-- ✓ Detekci osiřelých závislostí po odstranění
-- ✓ Autoremove funkčnost (iterativní)
-- ✓ Varování před odstraněním sdílených závislostí
-- ✓ Sdílené závislosti mezi více balíčky
-- ✓ Dry-run režim
+- Základní funkčnost (help, version)
+- Instalaci balíčků s `install_reason` tracking
+- Detekci osiřelých závislostí po odstranění
+- Autoremove funkčnost (iterativní)
+- Varování před odstraněním sdílených závislostí
+- Sdílené závislosti mezi více balíčky
+- Dry-run režim
 
 Test logy jsou uloženy v `/tmp/test*.log`.
 
@@ -121,10 +121,10 @@ cd /balikar/tests
 ./test-dependency-tracking.sh
 
 # Očekávaný výstup:
-# ✓ TEST 1 PASSED: install_reason check
-# ✓ TEST 2 PASSED: orphaned package detection after remove
-# ✓ TEST 3 PASSED: autoremove functionality
-# ✓ TEST 4 PASSED: reverse dependency check
+# TEST 1 PASSED: install_reason check
+# TEST 2 PASSED: orphaned package detection after remove
+# TEST 3 PASSED: autoremove functionality
+# TEST 4 PASSED: reverse dependency check
 # ALL TESTS PASSED
 ```
 
@@ -140,7 +140,7 @@ cd /balikar/tests
 
 ## Známé Problémy
 
-### ❌ gzip Build Failure
+### gzip Build Failure
 **Problem**: gzip 1.14 nelze zkompilovat v Ubuntu 24.04 kvůli gnulib konfliktům:
 - gnulib generuje makra pro typy (`#define gid_t int`)
 - Systémové hlavičky používají typedefs (`typedef __gid_t gid_t;`)
@@ -150,9 +150,9 @@ cd /balikar/tests
 
 **Status**: gzip není vhodný pro testování v tomto prostředí. **Použijte hello balíček**.
 
-### ✅ Fungující Balíčky pro Testování
-- **hello**: GNU Hello 2.12.1 - ideální pro dependency tracking testy ✓
-- **glibc**: GNU C Library 2.40 - builduje se úspěšně ✓
+### Fungující Balíčky pro Testování
+- **hello**: GNU Hello 2.12.1 - ideální pro dependency tracking testy
+- **glibc**: GNU C Library 2.40 - builduje se úspěšně
 
 ## Výhody Docker Testování
 
@@ -178,7 +178,7 @@ docker ps -a | grep balikar-test | awk '{print $1}' | xargs docker rm
 
 ## Troubleshooting
 
-### ⚠️ installed.json má object místo array
+### installed.json má object místo array
 **Problém**: Starší verze používaly `{"packages": {...}}` místo `{"packages": [...]}`
 
 **Důsledky**: 
@@ -234,27 +234,27 @@ rm -rf /test_root /tmp/balikar_build_* /var/cache/balikar/*
 
 ## Testovací Výsledky
 
-### ✅ Úspěšně Otestováno
+### Úspěšně Otestováno
 1. **Mock testy** (test-dependency-tracking.sh):
-   - ✓ install_reason tracking
-   - ✓ Orphaned package detection
-   - ✓ Autoremove functionality
-   - ✓ Reverse dependency checks
+   - install_reason tracking
+   - Orphaned package detection
+   - Autoremove functionality
+   - Reverse dependency checks
 
 2. **Real package test** (hello + glibc):
-   - ✓ hello instalace s install_reason="manual"
-   - ✓ glibc instalace s install_reason="dependency"
-   - ✓ Remove hello detekuje orphaned glibc
-   - ✓ Autoremove odstraní 1442 glibc souborů
+   - hello instalace s install_reason="manual"
+   - glibc instalace s install_reason="dependency"
+   - Remove hello detekuje orphaned glibc
+   - Autoremove odstraní 1442 glibc souborů
 
 3. **Database format**:
-   - ✓ Array format v installed.json
-   - ✓ Všechny operace (add, remove, find) fungují správně
+   - Array format v installed.json
+   - Všechny operace (add, remove, find) fungují správně
 
-### 📊 Statistiky
+### Statistiky
 - **Mock testy**: 4/4 passing (100%)
 - **Real testy**: 3/3 scenarios successful (100%)
-- **Dependency tracking**: PLNĚ FUNKČNÍ ✅
+- **Dependency tracking**: PLNĚ FUNKČNÍ
 
 ## See Also
 

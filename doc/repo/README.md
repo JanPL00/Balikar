@@ -108,9 +108,9 @@ Parser → Načte source[] → Downloader → Zkouší source[0].url
 - Automatický fallback bez zásahu uživatele
 
 **Doporučení:**
-1. ✅ Vždy uvádějte SHA256 hash
-2. ✅ Používejte HTTPS pro remote URL
-3. ✅ Stahujte pouze z důvěryhodných zdrojů (GNU FTP, GitHub releases)
+1. Vždy uvádějte SHA256 hash
+2. Používejte HTTPS pro remote URL
+3. Stahujte pouze z důvěryhodných zdrojů (GNU FTP, GitHub releases)
 
 ---
 

@@ -21,22 +21,22 @@ echo ""
 
 # Funkce pro zobrazení kroku
 step() {
-    echo -e "\n${YELLOW}▶ $1${NC}\n"
+    echo -e "\n${YELLOW}$1${NC}\n"
 }
 
 # Funkce pro úspěch
 success() {
-    echo -e "${GREEN}✓ $1${NC}"
+    echo -e "${GREEN}$1${NC}"
 }
 
 # Funkce pro chybu
 error() {
-    echo -e "${RED}✗ $1${NC}"
+    echo -e "${RED}$1${NC}"
 }
 
 # Funkce pro info
 info() {
-    echo -e "${BLUE}ℹ $1${NC}"
+    echo -e "${BLUE}$1${NC}"
 }
 
 # Kontrola, zda balikar existuje
@@ -212,7 +212,7 @@ else
 fi
 
 echo ""
-echo -e "${GREEN}✓ Všechny testy dokončeny!${NC}"
+echo -e "${GREEN}Všechny testy dokončeny!${NC}"
 echo ""
 echo "Pro ruční testování:"
 echo "  $BALIKAR --help"

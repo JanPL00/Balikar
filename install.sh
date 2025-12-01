@@ -29,12 +29,12 @@ if [ "$SYSTEM_INSTALL" = true ]; then
     echo "Creating package database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
     chmod 755 "$DB_DIR"
-    echo "✓ Database directory created: $DB_DIR"
+    echo "Database directory created: $DB_DIR"
 else
     DB_DIR="$HOME/.local/share/balikar"
     echo "Creating package database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
-    echo "✓ Database directory created: $DB_DIR"
+    echo "Database directory created: $DB_DIR"
 fi
 
 # Copy configuration file
@@ -44,7 +44,7 @@ else
     echo "Installing default configuration..."
     cp repos.conf "$CONFIG_DIR/repos.conf"
     chmod 644 "$CONFIG_DIR/repos.conf"
-    echo "✓ Configuration installed: $CONFIG_DIR/repos.conf"
+    echo "Configuration installed: $CONFIG_DIR/repos.conf"
 fi
 
 # Build balikar
@@ -80,7 +80,7 @@ if [ "$SYSTEM_INSTALL" = false ]; then
                 echo "# Added by Balikar installer" >> "$RC_FILE"
                 echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
                 PATH_ADDED=true
-                echo "✓ Added to $RC_FILE"
+                echo "Added to $RC_FILE"
             fi
         elif [ -n "$ZSH_VERSION" ]; then
             # Zsh
@@ -90,7 +90,7 @@ if [ "$SYSTEM_INSTALL" = false ]; then
                 echo "# Added by Balikar installer" >> "$RC_FILE"
                 echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
                 PATH_ADDED=true
-                echo "✓ Added to $RC_FILE"
+                echo "Added to $RC_FILE"
             fi
         else
             # Generic shell
@@ -100,19 +100,19 @@ if [ "$SYSTEM_INSTALL" = false ]; then
                 echo "# Added by Balikar installer" >> "$RC_FILE"
                 echo "export PATH=\"\$HOME/.local/bin:\$PATH\"" >> "$RC_FILE"
                 PATH_ADDED=true
-                echo "✓ Added to $RC_FILE"
+                echo "Added to $RC_FILE"
             fi
         fi
         
         if [ "$PATH_ADDED" = true ]; then
             echo ""
-            echo "⚠️  Restart your shell or run:"
+            echo "WARNING: Restart your shell or run:"
             echo "    source $RC_FILE"
         else
-            echo "✓ PATH already configured"
+            echo "PATH already configured"
         fi
     else
-        echo "✓ $HOME/.local/bin already in PATH"
+        echo "$HOME/.local/bin already in PATH"
     fi
     
     # Temporarily add to current session
