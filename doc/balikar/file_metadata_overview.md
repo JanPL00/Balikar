@@ -13,6 +13,7 @@ Komplexní dokumentace o všech souborech, které Balikar package manager čte, 
 5. [Balíčkové Soubory](#5-balíčkové-soubory)
 6. [Build Artefakty](#6-build-artefakty)
 7. [Matice Operací](#7-matice-operací)
+8. [Staging Workflow](#8-staging-workflow)
 
 ---
 
@@ -403,17 +404,28 @@ set_staging_dir("/mnt/lfs/stage");
 
 **CLI použití:**
 ```bash
-# Výchozí staging do $P
+# Build do staging (BEZ merge do systému)
 balikar build gzip
 # → DESTDIR=$P
+# → Výsledky zůstávají v $P/usr/bin/gzip
+# → Žádná instalace, staging zůstává pro kontrolu
 
-# Vlastní staging
-balikar --staging-dir=/mnt/lfs/stage build glibc
-# → DESTDIR=/mnt/lfs/stage
+# Install používá staging + merge (full workflow)
+balikar install glibc
+# → DESTDIR=$P
+# → Merge: $P/* → /usr/
+# → Cleanup staging po instalaci
 
-# Přímá instalace (bez staging)
+# Vlastní staging pro oba příkazy
+balikar --staging-dir=/mnt/lfs/stage build gcc
+# nebo
+balikar --staging-dir=/mnt/lfs/stage install glibc
+
+# Přímá instalace BEZ staging (RIZIKO!)
 balikar --no-staging build hello
-# → DESTDIR není nastaveno
+# DESTDIR není nastaveno
+# make install → přímo do /usr/ (NEBEZPEČNÉ!)
+# Pouze pro testování v izolované VM
 ```
 
 **Struktur staging:**
@@ -433,9 +445,21 @@ $P/  nebo /mnt/lfs/stage/
 ```
 
 **Workflow:**
-1. **Build fáze:** `make install` s `DESTDIR=$P`
-2. **Install fáze:** `cp -a $P/* /target_root/`
-3. **Cleanup:** Staging může být smazán
+
+**`balikar build` workflow (se stagingem):**
+1. `make install DESTDIR=$P` → soubory v `$P/usr/`
+2. Žádná instalace - staging zůstává
+3. Použití: Verifikace výsledků před instalací
+
+**`balikar install` workflow (se stagingem):**
+1. `make install DESTDIR=$P` → soubory v `$P/usr/`
+2. `cp -a $P/* /target_root/` → merge do systému
+3. `rm -rf $P/*` → cleanup staging
+
+**`balikar --no-staging build` workflow (NEBEZPEČNÉ):**
+1. `make install` BEZ DESTDIR → přímo do `/usr/`
+2. Žádná izolace, žádný rollback
+3. Pouze pro testování v disposable VM!
 
 **Relevantní funkce:**
 - `commit_element()` - Nastavení DESTDIR pro build
@@ -871,7 +895,7 @@ system(cleanup_cmd);
 | Operace | repos.conf | repodata.json | index.json | installed.json | Cache | Staging | Build tmp |
 |---------|------------|---------------|------------|----------------|-------|---------|-----------|
 | `balikar install` | - | - | - | ✓ | ✓ | ✓ | ✓ (temp) |
-| `balikar build` | - | - | - | - | ✓ | ✓ | ✓ (temp) |
+| `balikar build` | - | - | - | - | ✓ | - | ✓ (temp) |
 | `balikar resolve` | - | - | - | - | - | - | - |
 | `balikar repos` | - | ✓ (auto) | - | - | - | - | - |
 | `balikar repo-update` | - | ✓ | - | - | ✓ | - | - |
@@ -894,7 +918,7 @@ system(cleanup_cmd);
    → Vytvoří/upraví: ~/.config/balikar/repos.conf
 ```
 
-#### Build Process
+#### Build Process (pouze build, bez instalace)
 ```
 1. CLI: balikar build gzip
 2. Read: repos.conf → zjistit primary repo
@@ -902,9 +926,10 @@ system(cleanup_cmd);
 4. Read: Cache → kontrola existence
 5. Write: Cache → stažení tar.xz
 6. Write: /tmp/balikar_build_gzip_XYZ/ → extrakce
-7. Read: .build → spuštění build
-8. Write: $P/ → DESTDIR staging
-9. Delete: /tmp/balikar_build_gzip_XYZ/ → cleanup
+7. Read: .build → spuštění build s DESTDIR=$P
+8. Write: $P/ → výsledky buildu (např. $P/usr/bin/gzip)
+9. Delete: /tmp/balikar_build_gzip_XYZ/ → cleanup build tmp
+10. ŽÁDNÁ INSTALACE - staging zůstává v $P/ pro kontrolu
 ```
 
 #### Install Process
@@ -949,7 +974,10 @@ system(cleanup_cmd);
 - `<repo>/<letter>/<name>/<name-version>/index.json`
 - `/var/cache/balikar/downloads/*`
 - `{root}/var/lib/balikar/installed.json`
-- Staging `$P/` (až do instalace nebo manuálního smazání)
+- Staging `$P/` - persistentní až do:
+  - Instalace (`balikar install` → cleanup po merge)
+  - Manuálního smazání (`rm -rf $P/*`)
+  - Pro `balikar build` - zůstává pro kontrolu
 
 #### Dočasné Soubory (automaticky mazány)
 - `/tmp/balikar_build_<pkg>_XXXXXX/` - Po každém buildu
@@ -1058,37 +1086,219 @@ system(cleanup_cmd);
 
 ---
 
+## 8. Staging Workflow
+
+### Proč Staging?
+
+Balikar používá **staging adresář** (`$P/` nebo vlastní) jako bezpečnostní vrstvu mezi buildem a systémem:
+
+**Výhody stagingu:**
+- **Izolace:** Build nikdy neinstaluje přímo do `/usr/` (bezpečné)
+- **Verifikace:** Možnost kontroly výsledků před instalací do systému
+- **Rollback:** Jednoduchý cleanup - stačí smazat obsah staging
+- **LFS pattern:** Standardní postup při budování Linux From Scratch
+
+### Staging u Různých Příkazů
+
+#### `balikar build <pkg>` - Build se stagingem, BEZ instalace
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Download → Extract → Build                              │
+│                         ↓                                 │
+│                    DESTDIR=$P                             │
+│                         ↓                                 │
+│              make install DESTDIR=$P                      │
+│                         ↓                                 │
+│        $P/usr/bin/gzip, $P/usr/lib/...                    │
+│                         ↓                                 │
+│                   KONEC WORKFLOW                          │
+│              (staging zůstává pro kontrolu)               │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Použití:**
+- Testování buildu bez instalace
+- Verifikace výsledků: `ls $P/usr/bin/`
+- Debug buildů před nasazením
+
+#### `balikar install <pkg>` - Full workflow se stagingem
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Download → Extract → Build                              │
+│                         ↓                                 │
+│                    DESTDIR=$P                             │
+│                         ↓                                 │
+│              make install DESTDIR=$P                      │
+│                         ↓                                 │
+│        $P/usr/bin/gzip, $P/usr/lib/...                    │
+│                         ↓                                 │
+│                  MERGE DO SYSTÉMU                         │
+│                  cp -a $P/* /                             │
+│                         ↓                                 │
+│            /usr/bin/gzip, /usr/lib/...                    │
+│                         ↓                                 │
+│              TRACKING + CLEANUP                           │
+│    installed.json updated, rm -rf $P/*                    │
+└──────────────────────────────────────────────────────────┘
+```
+
+**Použití:**
+- Plná instalace balíčku do systému
+- Automatický tracking do databáze
+- Cleanup staging po úspěchu
+
+### Přímá Instalace (--no-staging)
+
+**VAROVÁNÍ:** Nebezpečné! Pouze pro testování v izolovaném prostředí.
+
+```bash
+balikar --no-staging build hello
+# DESTDIR není nastaveno
+# make install → přímo do /usr/ (NEBEZPEČNÉ!)
+```
+
+**Kdy se hodí:**
+- Disposable VM pro testování
+- Chroot prostředí kde není riziko poškození hostu
+- Debug problémů s DESTDIR
+
+**Proč se vyhýbat:**
+- Žádná izolace - může poškodit systém
+- Nemožný rollback
+- Při chybě buildu zůstávají částečné soubory v `/usr/`
+
+### Vlastní Staging Adresář
+
+```bash
+# LFS build - staging na vlastním filesystému
+balikar --staging-dir=/mnt/lfs/stage build gcc
+# Výsledky v: /mnt/lfs/stage/usr/bin/gcc
+
+# Btrfs snapshot pro rollback
+balikar --staging-dir=/btrfs/stage build glibc
+btrfs subvolume snapshot /btrfs/stage /btrfs/stage-backup
+
+# Tmpfs pro rychlý build
+balikar --staging-dir=/tmp/fast-stage build hello
+```
+
+### Shrnutí
+
+| Příkaz | Staging | Merge | Tracking | Cleanup | Použití |
+|--------|---------|-------|----------|---------|----------|
+| `build` | ✓ | - | - | - | Test buildu |
+| `install` | ✓ | ✓ | ✓ | ✓ | Instalace |
+| `--no-staging build` | - | - | - | - | Debug (riziko!) |
+
+---
+
 ## 9. CLI Příklady
+
+### Rozdíly Mezi Klíčovými Příkazy
+
+#### `balikar resolve <pkg>` vs `balikar build <pkg>` vs `balikar install <pkg>`
+
+**`balikar resolve gzip`**
+- **DRY-RUN** - žádné změny v systému
+- Zobrazí dependency tree
+- Použití: Zjistit co by se muselo nainstalovat
+```bash
+balikar resolve gcc
+# Output: gcc → binutils, glibc, zlib, ...
+# Žádné stahování, žádný build
+```
+
+**`balikar build gzip`**
+- Build **bez instalace do systému**
+- Stáhne → Build → Staging `$P/` → **Výsledky zůstávají v staging**
+- **POUŽÍVÁ staging** ale neprovádí merge
+- Použití: Testování buildu, verifikace výsledků před instalací
+```bash
+balikar build gzip
+# Stáhne gzip-1.14.tar.xz
+# Build v /tmp/balikar_build_gzip_XYZ/
+# Výsledky v $P/usr/bin/gzip
+# Pro kontrolu: ls $P/usr/bin/
+```
+
+**`balikar install gzip`**
+- **Full workflow**: Resolve → Download → Build → Staging → Install
+- Používá staging (`$P/`)
+- Merge do systému + tracking
+```bash
+balikar install gzip
+# Build → $P/usr/bin/gzip
+# Merge → /usr/bin/gzip
+# Tracking → /var/lib/balikar/installed.json
+```
+
+#### `balikar repos` vs `balikar repo-update`
+
+**`balikar repos`**
+- Zobrazí nakonfigurované repozitáře
+- **Smart refresh**: Auto-regeneruje repodata.json **pouze pokud** nějaký index.json je novější (mtime check)
+- Quick check stavu
+```bash
+balikar repos
+# Output: Enabled repositories:
+#         - ./repo (5 packages)
+# Pokud změny v index.json:
+# "Detected changes in index.json files – regenerating repodata.json..."
+```
+
+**`balikar repo-update`**
+- **Force refresh**: Vynuceně regeneruje repodata.json **bez ohledu** na timestampy
+- Stahuje fresh metadata z remote repozitářů
+- Po úpravách nebo pro jistotu
+```bash
+balikar repo-update
+# Output: Repository metadata updated successfully.
+#         Repository reloaded: 5 packages found.
+# Vždy regeneruje, ignoruje mtime
+```
+
+**Kdy použít co:**
+- `balikar repos` - Běžná kontrola (rychlé, smart)
+- `balikar repo-update` - Po manuálních změnách v repo (force)
+
+---
 
 ### Základní Workflow
 ```bash
 # 1. Nastavení repozitáře
 balikar repo add official https://raw.githubusercontent.com/user/repo/main 100
 
-# 2. Aktualizace metadat
+# 2. Aktualizace metadat (force refresh)
 balikar repo-update
 
-# 3. Zobrazení dostupných balíčků
+# 3. Zobrazení repozitářů (s auto-refresh pokud změny)
 balikar repos
 
-# 4. Build balíčku
+# 4. Analýza závislostí (dry-run)
+balikar resolve gzip
+# Zobrazí: dependency tree bez změn
+
+# 5. Build balíčku (bez instalace do systému)
 balikar build gzip
 # Vytvoří: /var/cache/balikar/downloads/gzip-1.14.tar.xz
 # Extrahuje do: /tmp/balikar_build_gzip_XYZ/
-# Build do: $P/
+# Build do staging: $P/usr/bin/gzip
+# Výsledky zůstávají v $P/ pro verifikaci
 
-# 5. Instalace
+# 6. Instalace (full workflow)
 balikar install gzip
-# Merge: $P/* → /usr/
+# Build → Staging $P/ → Merge do /usr/
 # Tracking: /var/lib/balikar/installed.json
 
-# 6. Kontrola instalace
+# 7. Kontrola instalace
 cat /var/lib/balikar/installed.json | jq '.packages[] | select(.name=="gzip")'
 
-# 7. Odstranění
+# 8. Odstranění
 balikar remove gzip
 
-# 8. Autoremove osiřelých závislostí
+# 9. Autoremove osiřelých závislostí
 balikar autoremove
 ```
 
@@ -1126,7 +1336,8 @@ Tento dokument poskytuje kompletní přehled všech souborů, které Balikar vyt
 - **Cache:** `/var/cache/balikar/downloads/`
 - **Databáze:** `installed.json` (chroot-aware)
 - **Balíčky:** `.tar.{bz2,gz,xz}`, `.build`, `.install/install.sh`
-- **Dočasné:** Build directories, staging
+- **Staging:** `$P/` - bezpečnostní vrstva mezi buildem a systémem
+- **Dočasné:** Build directories
 
 Dokumentace je synchronizována s aktuálním kódem a pokrývá všechny nuance včetně:
 - Multi-source fallback pro vysokou dostupnost
