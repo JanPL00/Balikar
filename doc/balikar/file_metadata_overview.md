@@ -136,11 +136,13 @@ if (!repo_list) {
       "source": [
         {
           "url": "https://ftp.gnu.org/gnu/gzip/gzip-1.14.tar.xz",
-          "sha256": "977c8c0c5ae6309191e7768e28ebc951..."
+          "sha256": "977c8c0c5ae6309191e7768e28ebc951...",
+          "comment": "Zdrojový tarball (ne balíček!)"
         },
         {
           "url": "https://mirror.example.com/gzip/gzip-1.14.tar.xz",
-          "sha256": "977c8c0c5ae6309191e7768e28ebc951..."
+          "sha256": "977c8c0c5ae6309191e7768e28ebc951...",
+          "comment": "Mirror URL"
         }
       ],
       "extras": [
@@ -231,8 +233,8 @@ if (check_index_newer_than_repodata(repo_path, repodata_st.st_mtime)) {
 - `arch` - Architektura (x86_64, noarch, ...)
 - `depends` - Runtime závislosti (pole stringů)
 - `makedeps` - Build-time závislosti (pole stringů)
-- `download_url` - URL k předkompilovanému balíčku (pro budoucí binární podporu)
-- `source` - **Array** zdrojových souborů s multi-mirror podporou
+- `download_url` - URL k předkompilovanému balíčku .tar.bz2 (pro budoucí binární podporu)
+- `source` - **Array** zdrojových souborů (.tar.gz, .tar.xz, atd.) s multi-mirror podporou
   - `url` - URL ke stažení zdrojového kódu
   - `sha256` - SHA256 checksum (volitelný, pro verifikaci)
 - `extras` - Patches a doplňkové soubory ke stažení
@@ -279,7 +281,7 @@ if (check_index_newer_than_repodata(repo_path, repodata_st.st_mtime)) {
 ```
 /var/cache/balikar/downloads/
 ├── gzip-1.14.tar.xz          # Stažený zdrojový tarball
-├── bash-5.3.tar.gz           # Další balíčky
+├── bash-5.3.tar.gz           # Další zdrojové tarball-y
 ├── glibc-2.40.tar.xz
 ├── repodata.json             # Cache metadat z remote repozitářů (POUZE)
 └── extras/                   # Patches a doplňkové soubory
@@ -813,8 +815,8 @@ system(cleanup_cmd);
 1. CLI: balikar build gzip
 2. Read: repos.conf → zjistit primary repo
 3. Read: repodata.json → načíst metadata
-4. Read: Cache → kontrola existence
-5. Write: Cache → stažení tar.xz
+4. Read: Cache → kontrola existence zdrojového tarballu
+5. Write: Cache → stažení zdrojového tarballu (.tar.xz/.tar.gz)
 6. Write: /tmp/balikar_build_gzip_XYZ/ → extrakce
 7. Read: .build → spuštění build s DESTDIR=$P
 8. Write: $P/ → výsledky buildu (např. $P/usr/bin/gzip)
@@ -922,12 +924,12 @@ system(cleanup_cmd);
 - Metadata: source[] pole (multi-source fallback)
 
 **Píše:**
-- `/var/cache/balikar/downloads/<name-version>.tar.xz` (stažené balíčky)
+- `/var/cache/balikar/downloads/<name-version>.tar.xz` (stažené zdrojové tarball-y)
 - `/var/cache/balikar/downloads/extras/<pkg>/` (patches)
 - `/var/cache/balikar/downloads/repodata.json` (remote metadata)
 
 **Operace:**
-- Stahování balíčků (HTTP/HTTPS přes libcurl)
+- Stahování zdrojových tarball-ů (HTTP/HTTPS přes libcurl)
 - Lokální kopírování (cp)
 - Multi-source fallback (postupné zkoušení URL)
 - Progress bar při stahování
@@ -1004,12 +1006,12 @@ balikar resolve gcc
 
 **`balikar build gzip`**
 - Build **bez instalace do systému**
-- Stáhne → Build → Staging `$P/` → **Výsledky zůstávají v staging**
+- Stáhne zdrojový tarball → Build → Staging `$P/` → **Výsledky zůstávají v staging**
 - **POUŽÍVÁ staging** ale neprovádí merge
 - Použití: Testování buildu, verifikace výsledků před instalací
 ```bash
 balikar build gzip
-# Stáhne gzip-1.14.tar.xz
+# Stáhne zdrojový tarball: gzip-1.14.tar.xz (podle source[] v index.json)
 # Build v /tmp/balikar_build_gzip_XYZ/
 # Výsledky v $P/usr/bin/gzip
 # Pro kontrolu: ls $P/usr/bin/
@@ -1074,7 +1076,7 @@ balikar resolve gzip
 
 # 5. Build balíčku (bez instalace do systému)
 balikar build gzip
-# Vytvoří: /var/cache/balikar/downloads/gzip-1.14.tar.xz
+# Stáhne zdrojový tarball: /var/cache/balikar/downloads/gzip-1.14.tar.xz
 # Extrahuje do: /tmp/balikar_build_gzip_XYZ/
 # Build do staging: $P/usr/bin/gzip
 # Výsledky zůstávají v $P/ pro verifikaci
@@ -1126,10 +1128,11 @@ balikar download --output-dir=/sources --no-deps gcc
 Tento dokument poskytuje kompletní přehled všech souborů, které Balikar vytváří, čte a upravuje během svého provozu:
 
 - **Konfigurace:** `repos.conf` (uživatelská a systémová)
-- **Metadata:** `repodata.json`,
-- **Cache:** `/var/cache/balikar/downloads/`
+- **Metadata:** `repodata.json`, `index.json`
+- **Cache:** `/var/cache/balikar/downloads/` (zdrojové tarball-y a extras)
 - **Databáze:** `installed.json` (chroot-aware)
-- **Balíčky:** `.tar.{bz2,gz,xz}`, `.build`, `.install/install.sh`
+- **Balíčky:** `.tar.bz2` (obsahují `.build`, `.install/install.sh` a metadata)
+- **Zdrojové soubory:** `.tar.{gz,xz}` (stahují se podle source[] v index.json)
 - **Staging:** `$P/` - bezpečnostní vrstva mezi buildem a systémem
 - **Dočasné:** Build directories
 
