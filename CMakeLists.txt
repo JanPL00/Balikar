@@ -54,7 +54,6 @@ add_executable(balikar
         src/balikar/parser.c
         src/utils/cli_helpers.c
         src/utils/string_helpers.c
-        src/utils/debug.c
         src/utils/print.c
         src/utils/system_helpers.c
         src/balikar/solver.c
@@ -95,7 +94,6 @@ set_target_properties(balikar PROPERTIES
 add_executable(tests
         src/utils/cli_helpers.c
         src/utils/system_helpers.c
-        src/utils/debug.c
         src/utils/print.c
         src/utils/string_helpers.c
         src/common/common.c

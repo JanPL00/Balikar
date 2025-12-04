@@ -18,7 +18,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth);
 // root_path: target installation root (default "/") to check for already installed packages
 Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo, const char *root_path);
 
-// Display solver problem proof information.
+// Display solver problem proof information (includes learnt rules and decision trace).
 void display_problem_proof(Solver *solv, int problem);
 
 #endif

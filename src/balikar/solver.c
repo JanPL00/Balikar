@@ -5,9 +5,6 @@
 
 #include "includes/solver.h"
 
-// Private helper for recursion (internal, not in .h)
-static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq);
-
 /**
  * Create a solver instance for the given pool.
  * 
@@ -289,45 +286,7 @@ cleanup:
 }
 
 /**
- * Display detailed proof information for a solver problem.
- * 
- * Shows learnt rules and decision traces that led to the problem.
- * Adapted from solv.c (doshowproof + showproof) to help diagnose
- * why the solver could not find a valid solution.
- * 
- * @param solv The solver instance containing the problem
- * @param problem The problem number to display (1-indexed)
- */
-void display_problem_proof(Solver *solv, int problem) {
-    if (!solv) {
-        log_error("Invalid solver in display_problem_proof.");
-        return;
-    }
-
-    Queue lq;
-    int i;
-
-    printf("\n");
-    queue_init(&lq);
-    
-    // Get learnt rules (rules the solver derived during conflict resolution)
-    solver_get_learnt(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
-
-    // Display each learnt rule
-    for (i = 0; i < lq.count; i++) {
-        printf("Learnt rule #%d:\n", i + 1);
-        internal_display_proof(solv, lq.elements[i], SOLVER_DECISIONLIST_LEARNTRULE, &lq);
-    }
-
-    // Display the full decision proof that led to this problem
-    printf("Proof:\n");
-    internal_display_proof(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
-
-    queue_free(&lq);
-}
-
-/**
- * Internal helper to display proof information recursively.
+ * Internal helper to display proof information for solver decisions.
  * 
  * Adapted from doshowproof in solv.c. Traverses the decision list
  * and displays the reasoning chain that led to each decision or conflict.
@@ -397,4 +356,42 @@ static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq) {
     queue_free(&qp);
     queue_free(&q);
     printf("\n");
+}
+
+/**
+ * Display detailed proof information for a solver problem.
+ * 
+ * Shows learnt rules and decision traces that led to the problem.
+ * Adapted from solv.c (doshowproof + showproof) to help diagnose
+ * why the solver could not find a valid solution.
+ * 
+ * @param solv The solver instance containing the problem
+ * @param problem The problem number to display (1-indexed)
+ */
+void display_problem_proof(Solver *solv, int problem) {
+    if (!solv) {
+        log_error("Invalid solver in display_problem_proof.");
+        return;
+    }
+
+    Queue lq;
+    int i;
+
+    printf("\n");
+    queue_init(&lq);
+    
+    // Get learnt rules (rules the solver derived during conflict resolution)
+    solver_get_learnt(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
+
+    // Display each learnt rule
+    for (i = 0; i < lq.count; i++) {
+        printf("Learnt rule #%d:\n", i + 1);
+        internal_display_proof(solv, lq.elements[i], SOLVER_DECISIONLIST_LEARNTRULE, &lq);
+    }
+
+    // Display the full decision proof that led to this problem
+    printf("Proof:\n");
+    internal_display_proof(solv, problem, SOLVER_DECISIONLIST_PROBLEM, &lq);
+
+    queue_free(&lq);
 }

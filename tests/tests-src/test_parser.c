@@ -1,5 +1,4 @@
 #include "../../src/balikar/includes/parser.h"
-    #include "../../src/utils/includes/debug.h"
     #include <check.h>
     #include <unistd.h>
     #include <stdlib.h>

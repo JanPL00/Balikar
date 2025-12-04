@@ -2,7 +2,6 @@
 // Focus: local file download, cache reuse (no hash verification)
 
 #include "../../src/balikar/includes/downloader.h"
-#include "../../src/utils/includes/debug.h"
 #include <check.h>
 #include <unistd.h>
 #include <stdlib.h>

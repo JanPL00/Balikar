@@ -59,7 +59,6 @@
 #include "../utils/includes/system_helpers.h"   // System helper functions
 #include "../utils/includes/string_helpers.h"      // String helper functions
 #include "../utils/includes/cli_helpers.h"      // CLI helper functions
-#include "../utils/includes/debug.h"      // Debug helper functions
 #include "../utils/includes/print.h"      // Print functions for logging
 
 
