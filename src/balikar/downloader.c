@@ -66,8 +66,13 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     fprintf(stderr, "] %3d%% (%.1fMB/%.1fMB)", percent, dl_mb, total_mb);
     fflush(stderr);
     
-    if (dlnow >= dltotal) {
+    // Only print newline once at 100%, not on every callback after completion
+    static int completed = 0;
+    if (dlnow >= dltotal && dltotal > 0 && !completed) {
         fprintf(stderr, "\n");  // New line after completion
+        completed = 1;
+    } else if (dlnow < dltotal) {
+        completed = 0;  // Reset for next download
     }
     
     return 0;
