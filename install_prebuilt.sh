@@ -12,8 +12,12 @@ echo "Checking system dependencies..."
 MISSING_DEPS=""
 MISSING_TOOLS=""
 
+# Check libraries (works for both root and non-root)
 for lib in libcurl.so.4 libjansson.so.4 libarchive.so.13; do
-    if ! ldconfig -p 2>/dev/null | grep -q "$lib"; then
+    # Try multiple methods to detect library
+    if ! (ldconfig -p 2>/dev/null | grep -q "$lib" || \
+          ls /lib/*/lib$lib 2>/dev/null | grep -q . || \
+          ls /usr/lib/*/lib$lib 2>/dev/null | grep -q .); then
         MISSING_DEPS="$MISSING_DEPS $lib"
     fi
 done
@@ -72,15 +76,26 @@ mkdir -p "$CONFIG_DIR"
 # Create database directory for installed packages tracking
 if [ "$SYSTEM_INSTALL" = true ]; then
     DB_DIR="/var/lib/balikar"
+    CACHE_DIR="/var/cache/balikar"
     echo "Creating package database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
     chmod 755 "$DB_DIR"
     echo "Database directory created: $DB_DIR"
+    
+    echo "Creating cache directory: $CACHE_DIR"
+    mkdir -p "$CACHE_DIR/downloads"
+    chmod 755 "$CACHE_DIR" "$CACHE_DIR/downloads"
+    echo "Cache directory created: $CACHE_DIR"
 else
     DB_DIR="$HOME/.local/share/balikar"
+    CACHE_DIR="$HOME/.cache/balikar"
     echo "Creating package database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
     echo "Database directory created: $DB_DIR"
+    
+    echo "Creating cache directory: $CACHE_DIR"
+    mkdir -p "$CACHE_DIR/downloads"
+    echo "Cache directory created: $CACHE_DIR"
 fi
 
 # Copy configuration file

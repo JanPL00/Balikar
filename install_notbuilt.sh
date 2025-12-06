@@ -27,15 +27,26 @@ mkdir -p "$CONFIG_DIR"
 # Create database directory for installed packages tracking
 if [ "$SYSTEM_INSTALL" = true ]; then
     DB_DIR="/var/lib/balikar"
+    CACHE_DIR="/var/cache/balikar"
     echo "Creating package database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
     chmod 755 "$DB_DIR"
     echo "Database directory created: $DB_DIR"
+    
+    echo "Creating cache directory: $CACHE_DIR"
+    mkdir -p "$CACHE_DIR/downloads"
+    chmod 755 "$CACHE_DIR" "$CACHE_DIR/downloads"
+    echo "Cache directory created: $CACHE_DIR"
 else
     DB_DIR="$HOME/.local/share/balikar"
+    CACHE_DIR="$HOME/.cache/balikar"
     echo "Creating package database directory: $DB_DIR"
     mkdir -p "$DB_DIR"
     echo "Database directory created: $DB_DIR"
+    
+    echo "Creating cache directory: $CACHE_DIR"
+    mkdir -p "$CACHE_DIR/downloads"
+    echo "Cache directory created: $CACHE_DIR"
 fi
 
 # Copy configuration file
