@@ -19,6 +19,20 @@ proj6_balikar/
 
 ### For Users: Installation
 
+#### Prerequisites
+
+Install required system libraries:
+
+**Debian/Ubuntu:**
+```bash
+sudo apt install libcurl4 libjansson4 libarchive13 patchelf
+```
+
+**Fedora/RHEL:**
+```bash
+sudo dnf install libcurl jansson libarchive patchelf
+```
+
 #### System-wide installation (requires sudo):
 ```bash
 git clone <your-repo-url>

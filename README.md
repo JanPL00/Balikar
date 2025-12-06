@@ -13,18 +13,28 @@ Source-based package manager inspired by Linux From Scratch (LFS), using libsolv
 
 ## Quick Start
 
-### Installation
+### Installation (Pre-built Binary)
 
-**Automated (recommended):**
+**Prerequisites - Install system libraries:**
+```bash
+# Debian/Ubuntu
+sudo apt install libcurl4 libjansson4 libarchive13 patchelf
+
+# Fedora/RHEL
+sudo dnf install libcurl jansson libarchive patchelf
+```
+
+**Install Balikar:**
 ```bash
 # Clone repository
 git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
 cd proj6_balikar
 
-# Run installation script
-./install.sh              # User installation (~/.local/bin)
-# OR
-sudo ./install.sh         # System-wide installation (/usr/local/bin)
+# System-wide installation (recommended)
+sudo sh install_prebuilt.sh
+
+# OR user installation
+sh install_prebuilt.sh
 ```
 
 **Manual:**

@@ -7,6 +7,39 @@ set -e
 echo "========= Balikar Package Manager - Pre-built Installation ========="
 echo ""
 
+# Check system dependencies
+echo "Checking system dependencies..."
+MISSING_DEPS=""
+MISSING_TOOLS=""
+
+for lib in libcurl.so.4 libjansson.so.4 libarchive.so.13; do
+    if ! ldconfig -p 2>/dev/null | grep -q "$lib"; then
+        MISSING_DEPS="$MISSING_DEPS $lib"
+    fi
+done
+
+# Check for patchelf (needed for RPATH manipulation)
+if ! command -v patchelf >/dev/null 2>&1; then
+    MISSING_TOOLS="$MISSING_TOOLS patchelf"
+fi
+
+if [ -n "$MISSING_DEPS" ] || [ -n "$MISSING_TOOLS" ]; then
+    echo "ERROR: Missing required dependencies:"
+    [ -n "$MISSING_DEPS" ] && echo "  Libraries:$MISSING_DEPS"
+    [ -n "$MISSING_TOOLS" ] && echo "  Tools:$MISSING_TOOLS"
+    echo ""
+    echo "Please install required packages:"
+    echo "  Debian/Ubuntu:"
+    echo "    sudo apt install libcurl4 libjansson4 libarchive13 patchelf"
+    echo ""
+    echo "  Fedora/RHEL:"
+    echo "    sudo dnf install libcurl jansson libarchive patchelf"
+    echo ""
+    exit 1
+fi
+echo "All system dependencies found."
+echo ""
+
 # Check if balikar binary exists
 if [ ! -f "balikar" ]; then
     echo "ERROR: Pre-built binary not found at ./balikar"
