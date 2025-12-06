@@ -70,8 +70,13 @@ for lib in lib/*.so*; do
 done
 cd ..
 
-# Copy main binary to root for git commit
+# Copy distribution to root for git commit
+echo ""
+echo "Copying to root for git commit..."
 cp -v dist/balikar ./balikar
+mkdir -p lib
+cp -v dist/lib/*.so* lib/
+echo "Copied lib/ directory with $(ls lib/ | wc -l) libraries"
 
 # Set RPATH for relative lib directory
 echo ""
@@ -86,14 +91,18 @@ echo "Distribution package created in: ./dist/"
 echo "  dist/balikar       - Main binary"
 echo "  dist/lib/          - Required libraries"
 echo ""
-echo "Binary for git commit: ./balikar"
+echo "Files for git commit:"
+echo "  ./balikar          - Main binary"
+echo "  ./lib/             - Bundled libraries"
 echo ""
 echo "Verify dependencies:"
 ldd ./balikar | head -10
 echo ""
 echo "To distribute:"
-echo "1. Commit ./balikar to git"
-echo "2. On target system, extract and run: sh install_prebuilt.sh"
+echo "1. Commit ./balikar and ./lib/ to git:"
+echo "   git add balikar lib/"
+echo "   git commit -m 'Update pre-built distribution'"
+echo "2. On target system: git clone, then sh install_prebuilt.sh"
 echo ""
 echo "To test locally:"
 echo "  cd dist && ./balikar --help"

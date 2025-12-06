@@ -60,12 +60,43 @@ else
     echo "Configuration installed: $CONFIG_DIR/repos.conf"
 fi
 
+# Install bundled libraries if present
+if [ -d "lib" ] && [ "$(ls -A lib 2>/dev/null)" ]; then
+    echo ""
+    echo "Installing bundled libraries..."
+    
+    if [ "$SYSTEM_INSTALL" = true ]; then
+        LIB_DIR="/usr/local/lib/balikar"
+    else
+        LIB_DIR="$HOME/.local/lib/balikar"
+    fi
+    
+    mkdir -p "$LIB_DIR"
+    cp -v lib/*.so* "$LIB_DIR/" 2>/dev/null || true
+    echo "Libraries installed to: $LIB_DIR"
+    ls -lh "$LIB_DIR/"
+else
+    echo ""
+    echo "Note: No bundled libraries found (lib/ directory missing)"
+    echo "Binary will use system libraries"
+fi
+
 # Install binary
 echo ""
 echo "Installing binary to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-cp -v balikar "$INSTALL_DIR/balikar"
-chmod 755 "$INSTALL_DIR/balikar"
+cp -v balikar "$INSTALL_DIR/"
+chmod +x "$INSTALL_DIR/balikar"
+
+# Set RPATH to find bundled libraries
+if command -v patchelf >/dev/null 2>&1; then
+    if [ "$SYSTEM_INSTALL" = true ]; then
+        patchelf --set-rpath '/usr/local/lib/balikar' "$INSTALL_DIR/balikar" 2>/dev/null || true
+    else
+        patchelf --set-rpath "$HOME/.local/lib/balikar" "$INSTALL_DIR/balikar" 2>/dev/null || true
+    fi
+fi
+
 echo "Binary successfully installed to: $INSTALL_DIR/balikar"
 ls -lh "$INSTALL_DIR/balikar"
 
