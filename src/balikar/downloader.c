@@ -441,9 +441,8 @@ static void try_download_build_script(const char *pkg_name, const char *version,
     // Extract build.sh from archive
     char extract_cmd[4096];
     snprintf(extract_cmd, sizeof(extract_cmd), 
-             "tar -xjf \"%s\" -C \"%s\" --strip-components=1 \"*/build.sh\" 2>/dev/null || "
-             "tar -xjf \"%s\" -C \"%s\" --wildcards \"*/build.sh\" --strip-components=1 2>/dev/null",
-             temp_archive, extras_subdir, temp_archive, extras_subdir);
+             "tar -xjf \"%s\" -C \"%s\" --wildcards --strip-components=1 \"*/build.sh\" 2>/dev/null",
+             temp_archive, extras_subdir);
     
     log_info("Extracting build.sh from archive to %s", extras_subdir);
     int extract_result = system(extract_cmd);
