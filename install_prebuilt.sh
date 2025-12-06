@@ -89,16 +89,42 @@ cp -v balikar "$INSTALL_DIR/"
 chmod +x "$INSTALL_DIR/balikar"
 
 # Set RPATH to find bundled libraries
-if command -v patchelf >/dev/null 2>&1; then
-    if [ "$SYSTEM_INSTALL" = true ]; then
-        patchelf --set-rpath '/usr/local/lib/balikar' "$INSTALL_DIR/balikar" 2>/dev/null || true
+# Use absolute path since binary is in /usr/local/bin and libs in /usr/local/lib/balikar
+if [ -d "lib" ] && [ "$(ls -A lib 2>/dev/null)" ]; then
+    if command -v patchelf >/dev/null 2>&1; then
+        echo "Setting RPATH with patchelf..."
+        if [ "$SYSTEM_INSTALL" = true ]; then
+            patchelf --set-rpath '/usr/local/lib/balikar' "$INSTALL_DIR/balikar"
+            echo "RPATH set to: /usr/local/lib/balikar"
+        else
+            patchelf --set-rpath "$HOME/.local/lib/balikar" "$INSTALL_DIR/balikar"
+            echo "RPATH set to: $HOME/.local/lib/balikar"
+        fi
     else
-        patchelf --set-rpath "$HOME/.local/lib/balikar" "$INSTALL_DIR/balikar" 2>/dev/null || true
+        echo "WARNING: patchelf not found, cannot update RPATH"
+        echo "Install patchelf: sudo apt install patchelf"
+        echo ""
+        echo "Alternative: Add library path to ld.so.conf"
+        if [ "$SYSTEM_INSTALL" = true ]; then
+            echo "  echo '/usr/local/lib/balikar' | sudo tee /etc/ld.so.conf.d/balikar.conf"
+            echo "  sudo ldconfig"
+        fi
     fi
 fi
 
 echo "Binary successfully installed to: $INSTALL_DIR/balikar"
 ls -lh "$INSTALL_DIR/balikar"
+
+# If patchelf failed and we have bundled libs, configure ld.so
+if [ -d "lib" ] && [ "$(ls -A lib 2>/dev/null)" ]; then
+    if ! command -v patchelf >/dev/null 2>&1 && [ "$SYSTEM_INSTALL" = true ]; then
+        echo ""
+        echo "Configuring dynamic linker for bundled libraries..."
+        echo "/usr/local/lib/balikar" > /etc/ld.so.conf.d/balikar.conf
+        ldconfig
+        echo "Added /usr/local/lib/balikar to ld.so.conf"
+    fi
+fi
 
 # Add to PATH if needed (user installation only)
 if [ "$SYSTEM_INSTALL" = false ]; then
