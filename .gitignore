@@ -6,8 +6,8 @@ cmake-build-*/
 .idea/
 .vscode/
 
-# Binary (in root only)
-/balikar
+# Binary - ALLOWED for distribution
+# /balikar is now tracked for pre-built releases
 
 # Temporary files
 *.tmp

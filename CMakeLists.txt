@@ -64,6 +64,11 @@ add_executable(balikar
         src/balikar/includes/installer.h
 )
 
+# Build binary to project root instead of build/
+set_target_properties(balikar PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
+)
+
 target_include_directories(balikar PRIVATE
         ${LibSolv_INCLUDE_DIRS}  # Conda první
         ${CURL_INCLUDE_DIRS}
@@ -81,11 +86,11 @@ target_link_libraries(balikar
         ${LibArchive_LIBRARIES}
 )
 
-# RPATH pro runtime
-set_target_properties(balikar PROPERTIES
-        INSTALL_RPATH "${CONDA_PREFIX}/lib"
-        BUILD_WITH_INSTALL_RPATH TRUE
-)
+# RPATH pro runtime (append to existing properties)
+set_property(TARGET balikar APPEND PROPERTY
+        INSTALL_RPATH "${CONDA_PREFIX}/lib")
+set_property(TARGET balikar PROPERTY
+        BUILD_WITH_INSTALL_RPATH TRUE)
 
 ## ========================================
 ## UNIT TESTS
