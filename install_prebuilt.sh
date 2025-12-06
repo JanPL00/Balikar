@@ -16,8 +16,11 @@ MISSING_TOOLS=""
 for lib in libcurl.so.4 libjansson.so.4 libarchive.so.13; do
     # Try multiple methods to detect library
     if ! (ldconfig -p 2>/dev/null | grep -q "$lib" || \
-          ls /lib/*/lib$lib 2>/dev/null | grep -q . || \
-          ls /usr/lib/*/lib$lib 2>/dev/null | grep -q .); then
+          find /lib /usr/lib -name "$lib" 2>/dev/null | grep -q . || \
+          test -f "/lib/$lib" || \
+          test -f "/usr/lib/$lib" || \
+          test -f "/lib/x86_64-linux-gnu/$lib" || \
+          test -f "/usr/lib/x86_64-linux-gnu/$lib"); then
         MISSING_DEPS="$MISSING_DEPS $lib"
     fi
 done
