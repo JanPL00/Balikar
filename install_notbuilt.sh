@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 # Installation script for Balikar Package Manager
 
 set -e
@@ -7,11 +7,12 @@ echo "========= Balikar Package Manager - Installation ========="
 echo ""
 
 # Check if running as root for system installation
-if [ "$EUID" -eq 0 ]; then
+# Use 'id -u' for POSIX compatibility (works in sh, bash, ash, etc.)
+if [ "$(id -u)" -eq 0 ]; then
     SYSTEM_INSTALL=true
     CONFIG_DIR="/etc/balikar"
     INSTALL_DIR="/usr/local/bin"
-    echo "Installing system-wide..."
+    echo "Installing system-wide (running as root)..."
 else
     SYSTEM_INSTALL=false
     CONFIG_DIR="$HOME/.config/balikar"

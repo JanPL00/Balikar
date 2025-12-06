@@ -1,10 +1,13 @@
-#!/bin/bash
+#!/bin/sh
 # Installation script for pre-built Balikar Package Manager
 # Use this script to install already built balikar binary
 
 set -e
 
 echo "========= Balikar Package Manager - Pre-built Installation ========="
+echo ""
+echo "Debug: Current UID: $(id -u)"
+echo "Debug: USER variable: ${USER:-not set}"
 echo ""
 
 # Check if balikar binary exists
@@ -19,11 +22,12 @@ if [ ! -f "balikar" ]; then
 fi
 
 # Check if running as root for system installation
-if [ "$EUID" -eq 0 ]; then
+# Use 'id -u' for POSIX compatibility (works in sh, bash, ash, etc.)
+if [ "$(id -u)" -eq 0 ]; then
     SYSTEM_INSTALL=true
     CONFIG_DIR="/etc/balikar"
     INSTALL_DIR="/usr/local/bin"
-    echo "Installing system-wide..."
+    echo "Installing system-wide (running as root)..."
 else
     SYSTEM_INSTALL=false
     CONFIG_DIR="$HOME/.config/balikar"
@@ -63,8 +67,10 @@ fi
 echo ""
 echo "Installing binary to $INSTALL_DIR"
 mkdir -p "$INSTALL_DIR"
-cp balikar "$INSTALL_DIR/balikar"
+cp -v balikar "$INSTALL_DIR/balikar"
 chmod 755 "$INSTALL_DIR/balikar"
+echo "Binary successfully installed to: $INSTALL_DIR/balikar"
+ls -lh "$INSTALL_DIR/balikar"
 
 # Add to PATH if needed (user installation only)
 if [ "$SYSTEM_INSTALL" = false ]; then
