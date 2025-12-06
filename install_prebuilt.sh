@@ -6,9 +6,6 @@ set -e
 
 echo "========= Balikar Package Manager - Pre-built Installation ========="
 echo ""
-echo "Debug: Current UID: $(id -u)"
-echo "Debug: USER variable: ${USER:-not set}"
-echo ""
 
 # Check if balikar binary exists
 if [ ! -f "balikar" ]; then

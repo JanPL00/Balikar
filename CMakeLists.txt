@@ -86,11 +86,13 @@ target_link_libraries(balikar
         ${LibArchive_LIBRARIES}
 )
 
-# RPATH pro runtime (append to existing properties)
-set_property(TARGET balikar APPEND PROPERTY
-        INSTALL_RPATH "${CONDA_PREFIX}/lib")
-set_property(TARGET balikar PROPERTY
-        BUILD_WITH_INSTALL_RPATH TRUE)
+# RPATH configuration for distribution
+# Use $ORIGIN for portable binary with bundled libraries
+set_target_properties(balikar PROPERTIES
+    INSTALL_RPATH "$ORIGIN:$ORIGIN/lib:$ORIGIN/../lib"
+    BUILD_WITH_INSTALL_RPATH TRUE
+    INSTALL_RPATH_USE_LINK_PATH FALSE
+)
 
 ## ========================================
 ## UNIT TESTS
