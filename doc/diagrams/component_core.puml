@@ -87,15 +87,19 @@ end note
 note right of IPkgDownloader
   **IPackageDownloader API:**
   • download_package()
+  • extract_and_check_embedded_source()
   • download_extras()
   • download_package_to_directory()
+  • download_url_to_file()
   • get_cache_dir()
 end note
 
 note right of IPkgBuilder
   **IPackageBuilder API:**
   • commit_element()
+  • extract_archive()
   • find_source_path()
+  • find_build_or_source()
   • apply_extras()
   • set_staging_enabled()
   • set_staging_dir()

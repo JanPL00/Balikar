@@ -31,10 +31,29 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
 
 
 
+static int extract_and_check_embedded_source(const char *repo_archive_path, const char *pkg_name, 
+                                              const char *version, char *output_path);
+- Nová funkce pro detekci embedded source v repository archivu:
+  Extrahuje repository archive (.tar.bz2) do dočasného adresáře, načte index.json, 
+  zkontroluje zda source[0].url je lokální soubor (neobsahuje "://"), pokud ano:
+  - Ověří existenci embedded source souboru v extrahovaném repository archivu
+  - Zkopíruje embedded source do cache (output_path)
+  - Vrací 1 při úspěchu (embedded source nalezen a zkopírován), 0 pokud nenalezen
+  Tato funkce řeší problém kdy packages mají source zabalený přímo v repository archivu
+  místo remote URL (např. gzip-1.14.tar.xz uvnitř gzip-1.14.tar.bz2).
+  Extrakce probíhá do /tmp/balikar_extract_<pkg>_<pid>/, cleanup po dokončení.
+
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
 - Hlavní funkce pro stažení balíčku: Alokuje cache_dir (CACHE_DIR macro -> get_cache_dir inline funkce),
   načte source[] pole z metadat (get_custom_source_array), vytvoří cache path ("<cache_dir>/<name>-<version><ext>"),
   zkontroluje cache existence (access) -> pokud OK, vrátí fopen(cache_path, "r");
+  
+  EMBEDDED SOURCE DETECTION (NOVÉ): Pro remote URL (obsahuje "://"):
+    - Nejprve stáhne repository archive (.tar.bz2) pokud není v cache
+    - Zavolá extract_and_check_embedded_source() pro detekci embedded source
+    - Pokud je embedded source nalezen → zkopíruje do cache a vrátí FILE pointer
+    - Pokud embedded source není nalezen → pokračuje na remote download
+    
   MULTI-SOURCE FALLBACK: iteruje přes všechny URL v source[] poli:
     - Pro každou URL (source[i].url) zkusí stáhnout/zkopírovat
     - Detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://")
@@ -48,6 +67,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
   cleanup: free(cache_dir); vrací fopen(cache_path, "rb") pro builder nebo NULL pokud všechny zdroje selhaly (log_error).
   
 NOVÉ: Automatický fallback na další URL při selhání stahování zajišťuje vysokou dostupnost balíčků.
+NOVÉ: Podpora embedded source souborů v repository archivech - eliminuje duplicitní remote downloads.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Stáhne extra soubory (patche) z JSON array extras (pole URL stringů);
@@ -106,10 +126,29 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
 
 
 
+static int extract_and_check_embedded_source(const char *repo_archive_path, const char *pkg_name, 
+                                              const char *version, char *output_path);
+- New function for detecting embedded source in repository archives:
+  Extracts repository archive (.tar.bz2) to temporary directory, loads index.json, 
+  checks if source[0].url is a local file (does not contain "://"), if yes:
+  - Verifies existence of embedded source file in extracted repository archive
+  - Copies embedded source to cache (output_path)
+  - Returns 1 on success (embedded source found and copied), 0 if not found
+  This function solves the problem where packages have source embedded directly in repository archive
+  instead of remote URL (e.g., gzip-1.14.tar.xz inside gzip-1.14.tar.bz2).
+  Extraction happens to /tmp/balikar_extract_<pkg>_<pid>/, cleanup after completion.
+
 FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
 - Main function for package download: Allocates cache_dir (CACHE_DIR macro -> get_cache_dir inline function),
   loads source[] array from metadata (get_custom_source_array), creates cache path ("<cache_dir>/<name>-<version><ext>"),
   checks cache existence (access) -> if OK, returns fopen(cache_path, "r");
+  
+  EMBEDDED SOURCE DETECTION (NEW): For remote URLs (contains "://"):
+    - First downloads repository archive (.tar.bz2) if not in cache
+    - Calls extract_and_check_embedded_source() to detect embedded source
+    - If embedded source found → copies to cache and returns FILE pointer
+    - If embedded source not found → continues to remote download
+    
   MULTI-SOURCE FALLBACK: iterates through all URLs in source[] array:
     - For each URL (source[i].url) attempts to download/copy
     - Detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://")
@@ -123,6 +162,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
   cleanup: free(cache_dir); returns fopen(cache_path, "rb") for builder or NULL if all sources failed (log_error).
   
 NEW: Automatic fallback to next URL on download failure ensures high package availability.
+NEW: Support for embedded source files in repository archives - eliminates duplicate remote downloads.
 
 void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
 - Downloads extra files (patches) from JSON array extras (array of URL strings);

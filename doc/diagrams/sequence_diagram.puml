@@ -92,14 +92,33 @@ loop For each package in transaction
         loop Try each URL in source[] array
             Downloader -> Downloader: Try source[i].url
             alt Remote URL
-                Downloader -> Downloader: curl download with progress bar
-                note right: [=====>     ] 45%
+                Downloader -> Cache: Check repository archive cached
+                alt Repository archive not cached
+                    Downloader -> Downloader: curl download repo archive
+                    note right: [=====>     ] 45%
+                    Downloader -> Cache: Save repo archive
+                end
+                
+                Downloader -> Downloader: extract_and_check_embedded_source()
+                Downloader -> Downloader: Extract repo archive to /tmp/
+                Downloader -> Downloader: Load index.json
+                Downloader -> Downloader: Check if source[0].url is local
+                
+                alt Embedded source found
+                    Downloader -> Downloader: Copy embedded source to cache
+                    note right: gzip-1.14.tar.xz from repo archive
+                    Downloader -> Cache: Save embedded source
+                    note right: Break loop - embedded source ready
+                else No embedded source
+                    Downloader -> Downloader: curl download from remote URL
+                    note right: Traditional remote download
+                    Downloader -> Cache: Save downloaded source
+                end
             else Local path
                 Downloader -> Downloader: cp to cache
             end
             
             alt Download success
-                Downloader -> Cache: Save package
                 note right: Break loop
             else Download failed
                 Downloader -> Downloader: Try next URL
@@ -111,7 +130,7 @@ loop For each package in transaction
         end
     end
     
-    Downloader --> Main: FILE* (package archive)
+    Downloader --> Main: FILE* (source archive)
     
     Main -> Parser: get_custom_extras(data, p, pool)
     Parser --> Main: extras[]
@@ -140,6 +159,14 @@ loop For each package in transaction
     Builder -> Builder: detect_compression(fp)
     Builder -> Builder: extract_archive(fp, build_dir)
     note right: Supports tar.gz, tar.xz, tar.bz2
+    
+    opt Repository archive with embedded source
+        Builder -> Builder: Check for index.json in extracted structure
+        alt Embedded source exists locally
+            Builder -> Builder: Extract embedded source to build_dir
+            note right: Avoids double-nesting
+        end
+    end
     
     Builder -> Builder: find_source_path(build_dir)
     note right: Recursive search for .build\n(depth=3)

@@ -413,53 +413,31 @@ static int extract_archive(FILE *fp, const char *tmp_dir) {
 						if (url_obj && json_is_string(url_obj)) {
 							const char *source_file = json_string_value(url_obj);
 							char nested_tar_path[2560];
-							int needs_download = 0;
 							
-							// Check if it's a remote URL (contains ://)
-							if (strstr(source_file, "://") != NULL) {
-								// It's a remote URL - need to download it
-								// Extract filename from URL
-								const char *last_slash = strrchr(source_file, '/');
-								const char *filename = last_slash ? last_slash + 1 : source_file;
-								snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/%s", first_subdir, filename);
-								
-								log_info("Downloading source data from: %s", source_file);
-								
-								// Download using downloader function
-								if (download_url_to_file(source_file, nested_tar_path) == 0) {
-									log_debug(1, "Source data downloaded successfully to: %s", nested_tar_path);
-								} else {
-									log_warn("Failed to download source data from: %s", source_file);
-									json_decref(index_root);
-									return 0;  // Continue without failing
-								}
-							} else {
-								// It's a relative path - check if file exists locally
+							// Check if source file is embedded locally (not a remote URL)
+							if (!strstr(source_file, "://")) {
+								// It's a local filename - check if file exists in extracted repo archive
 								snprintf(nested_tar_path, sizeof(nested_tar_path), "%s/%s", first_subdir, source_file);
 								
-								if (access(nested_tar_path, F_OK) != 0) {
-									log_debug(1, "Local source file not found: %s", source_file);
-									json_decref(index_root);
-									return 0;  // Continue without failing
-								}
-							}
-							
-							// Now extract the nested archive (whether downloaded or local)
-							if (access(nested_tar_path, F_OK) == 0) {
-								log_info("Extracting source data: %s", nested_tar_path);
-								
-								// Extract nested tar to PARENT directory (tmp_dir), not first_subdir
-								// This avoids double-nesting: openssl-3.4.0/openssl-3.4.0/
-								char extract_cmd[4096];
-								snprintf(extract_cmd, sizeof(extract_cmd), "tar -xf '%s' -C '%s' 2>/dev/null", nested_tar_path, tmp_dir);
-								
-								int extract_status = system(extract_cmd);
-								if (extract_status == 0) {
-									log_debug(1, "Source data extracted successfully to parent directory");
+								if (access(nested_tar_path, F_OK) == 0) {
+									log_info("Extracting embedded source: %s", source_file);
+									
+									// Extract nested tar to PARENT directory (tmp_dir), not first_subdir
+									// This avoids double-nesting: openssl-3.4.0/openssl-3.4.0/
+									char extract_cmd[4096];
+									snprintf(extract_cmd, sizeof(extract_cmd), "tar -xf '%s' -C '%s' 2>/dev/null", nested_tar_path, tmp_dir);
+									
+									int extract_status = system(extract_cmd);
+									if (extract_status == 0) {
+										log_debug(1, "Embedded source extracted successfully to build directory");
+									} else {
+										log_warn("Failed to extract embedded source (status=%d)", extract_status);
+									}
 								} else {
-									log_warn("Failed to extract source data (status=%d)", extract_status);
+									log_debug(1, "Embedded source file not found: %s (already extracted by downloader?)", source_file);
 								}
 							}
+							// Note: Remote URLs are now handled by downloader before build
 						}
 					}
 					json_decref(index_root);
