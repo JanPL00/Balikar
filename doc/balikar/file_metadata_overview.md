@@ -587,7 +587,7 @@ balikar --staging-dir=/tmp/fast-stage build hello
 
 ### 4.1 Installed Packages Database
 
-#### `{root}/var/lib/balikar/installed.json`
+#### `/var/lib/balikar/installed.json`
 **Umístění:** 
 - Native systém: `/var/lib/balikar/installed.json`
 - LFS chroot: `/mnt/lfs/var/lib/balikar/installed.json`

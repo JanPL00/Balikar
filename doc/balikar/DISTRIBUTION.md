@@ -25,12 +25,12 @@ Install required system libraries:
 
 **Debian/Ubuntu:**
 ```bash
-sudo apt install libcurl4 libjansson4 libarchive13 patchelf
+sudo apt install libcurl4 libjansson4 libarchive13 patchelf bzip2 xz gzip
 ```
 
 **Fedora/RHEL:**
 ```bash
-sudo dnf install libcurl jansson libarchive patchelf
+sudo dnf install libcurl jansson libarchive patchelf bzip2 xz gzip
 ```
 
 #### System-wide installation (requires sudo):

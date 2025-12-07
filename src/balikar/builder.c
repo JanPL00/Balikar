@@ -64,6 +64,7 @@ static int detect_compression(FILE *fp) {
 
 /**
  * Recursively searches for build script (build.sh) or build system files.
+ * Uses breadth-first search to prefer shallower directories.
  * Looks for build.sh, Makefile, or configure files within directory tree.
  * @param dir Directory to search in
  * @param depth Current recursion depth (limited to 3 levels)
@@ -85,27 +86,71 @@ static char *find_build_or_source(const char *dir, int depth) {
 	snprintf(make_path, sizeof(make_path), "%s/Makefile", dir);
 	char conf_path[MAX_PATH_LEN];
 	snprintf(conf_path, sizeof(conf_path), "%s/configure", dir);
-	if (access(make_path, F_OK) == 0 || access(conf_path, F_OK) == 0) {
+	char conf_upper[MAX_PATH_LEN];
+	snprintf(conf_upper, sizeof(conf_upper), "%s/Configure", dir);
+	char config_path[MAX_PATH_LEN];
+	snprintf(config_path, sizeof(config_path), "%s/config", dir);
+	if (access(make_path, F_OK) == 0 || access(conf_path, F_OK) == 0 || 
+	    access(conf_upper, F_OK) == 0 || access(config_path, F_OK) == 0) {
 		return strdup(dir);
 	}
 	
-	// Third priority: recursively search subdirectories
+	// Stop recursion at depth limit
+	if (depth >= 3) return NULL;
+	
+	// BFS: First check all immediate subdirectories for build files
+	// before recursing deeper. This ensures we find configure at
+	// openssl-3.4.0/ before descending into openssl-3.4.0/doc/life-cycles/
 	DIR *d = opendir(dir);
 	if (!d) return NULL;
+	
+	// Pass 1: Check each subdirectory (non-recursive)
 	struct dirent *ent;
-	char *result = NULL;
+	rewinddir(d);
 	while ((ent = readdir(d)) != NULL) {
-		// Skip hidden directories
 		if (ent->d_name[0] == '.') continue;
 		
 		char path[MAX_PATH_LEN];
 		snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
 		struct stat st;
 		
-		// Recursively check subdirectories
+		if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
+			// Check this subdirectory for build files (non-recursive)
+			char sub_build[MAX_PATH_LEN], sub_make[MAX_PATH_LEN], sub_conf[MAX_PATH_LEN];
+			char sub_conf_upper[MAX_PATH_LEN], sub_config[MAX_PATH_LEN];
+			snprintf(sub_build, sizeof(sub_build), "%s/build.sh", path);
+			snprintf(sub_make, sizeof(sub_make), "%s/Makefile", path);
+			snprintf(sub_conf, sizeof(sub_conf), "%s/configure", path);
+			snprintf(sub_conf_upper, sizeof(sub_conf_upper), "%s/Configure", path);
+			snprintf(sub_config, sizeof(sub_config), "%s/config", path);
+			
+			log_debug(1, "BFS Pass 1: Checking %s for build files", path);
+			
+			if (access(sub_build, F_OK) == 0 || 
+			    access(sub_make, F_OK) == 0 || 
+			    access(sub_conf, F_OK) == 0 ||
+			    access(sub_conf_upper, F_OK) == 0 ||
+			    access(sub_config, F_OK) == 0) {
+				log_debug(1, "BFS Pass 1: Found build files in %s", path);
+				closedir(d);
+				return strdup(path);
+			}
+		}
+	}
+	
+	// Pass 2: If no build files found at this level, recurse deeper
+	rewinddir(d);
+	char *result = NULL;
+	while ((ent = readdir(d)) != NULL) {
+		if (ent->d_name[0] == '.') continue;
+		
+		char path[MAX_PATH_LEN];
+		snprintf(path, sizeof(path), "%s/%s", dir, ent->d_name);
+		struct stat st;
+		
 		if (stat(path, &st) == 0 && S_ISDIR(st.st_mode)) {
 			result = find_build_or_source(path, depth + 1);
-			if (result) break;  // Stop on first match
+			if (result) break;
 		}
 	}
 	closedir(d);
@@ -403,13 +448,14 @@ static int extract_archive(FILE *fp, const char *tmp_dir) {
 							if (access(nested_tar_path, F_OK) == 0) {
 								log_info("Extracting source data: %s", nested_tar_path);
 								
-								// Extract nested tar to the same directory
+								// Extract nested tar to PARENT directory (tmp_dir), not first_subdir
+								// This avoids double-nesting: openssl-3.4.0/openssl-3.4.0/
 								char extract_cmd[4096];
-								snprintf(extract_cmd, sizeof(extract_cmd), "tar -xf '%s' -C '%s' 2>/dev/null", nested_tar_path, first_subdir);
+								snprintf(extract_cmd, sizeof(extract_cmd), "tar -xf '%s' -C '%s' 2>/dev/null", nested_tar_path, tmp_dir);
 								
 								int extract_status = system(extract_cmd);
 								if (extract_status == 0) {
-									log_debug(1, "Source data extracted successfully");
+									log_debug(1, "Source data extracted successfully to parent directory");
 								} else {
 									log_warn("Failed to extract source data (status=%d)", extract_status);
 								}

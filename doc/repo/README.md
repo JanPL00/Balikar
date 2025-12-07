@@ -107,10 +107,6 @@ Parser → Načte source[] → Downloader → Zkouší source[0].url
 - Více mirror URL zajišťuje dostupnost i při výpadku serveru
 - Automatický fallback bez zásahu uživatele
 
-**Doporučení:**
-1. Vždy uvádějte SHA256 hash
-2. Používejte HTTPS pro remote URL
-3. Stahujte pouze z důvěryhodných zdrojů (GNU FTP, GitHub releases)
 
 ---
 
@@ -268,8 +264,7 @@ myrepo/
   "license": "GPLv3+",
   "download_url": "https://raw.githubusercontent.com/YOUR-USERNAME/YOUR-REPO/main/b/bash/bash-5.3.tar.bz2",
   "source": [{
-    "url": "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz",
-    "sha256": "977c8c0c5ae6309191e7768e28ebc951..."
+    "url": "https://ftp.gnu.org/gnu/bash/bash-5.3.tar.gz"
   }],
   "extras": [],
   "mkdeps": [],

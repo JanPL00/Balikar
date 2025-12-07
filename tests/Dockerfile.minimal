@@ -1,0 +1,61 @@
+# Minimální Debian 12 pro testování instalace balíčků od nuly
+# Testuje instalaci glibc, zlib, openssl, libpcap, libssh2, nmap
+
+FROM debian:12-slim
+
+# Metadata
+LABEL description="Balikar Package Manager - Minimal Test Environment"
+LABEL version="1.0"
+
+# Prevent interactive prompts
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Instalace RUNTIME knihoven pro balikar + BUILD TOOLS pro kompilaci balíčků
+# Runtime: libcurl, libjansson, libarchive pro balikar binary
+# Build tools: gcc, make, python3 pro kompilaci glibc/openssl/nmap
+# NEINSTALOVAT dev knihovny: libcurl-dev, openssl-dev, atd. - ty se buildnou
+RUN apt-get update && apt-get install -y \
+    libcurl4 \
+    libjansson4 \
+    libarchive13 \
+    ca-certificates \
+    xz-utils \
+    bzip2 \
+    gzip \
+    tar \
+    patch \
+    gcc \
+    g++ \
+    make \
+    python3 \
+    perl \
+    linux-libc-dev \
+    bison \
+    gawk \
+    texinfo \
+    autoconf \
+    automake \
+    libtool \
+    gettext \
+    flex \
+    && rm -rf /var/lib/apt/lists/*
+
+# Vytvoření adresářové struktury pro balikar
+RUN mkdir -p /var/cache/balikar/downloads \
+    && mkdir -p /var/lib/balikar \
+    && mkdir -p /etc/balikar \
+    && mkdir -p /usr/local/bin
+
+# Konfigurační soubor pro balikar (GitHub repository)
+RUN echo "[default]" > /etc/balikar/repos.conf && \
+    echo "name = Balikar Repository" >> /etc/balikar/repos.conf && \
+    echo "url = https://raw.githubusercontent.com/JanPL00/balikar-repository/main" >> /etc/balikar/repos.conf
+
+# Environment pro testování
+ENV PATH=/usr/local/bin:$PATH
+
+# Nastavení pracovního adresáře
+WORKDIR /test
+
+# Výchozí příkaz
+CMD ["/bin/bash"]
