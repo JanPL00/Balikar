@@ -1,0 +1,27 @@
+# Build directories
+build/
+build-dist/
+dist/
+cmake-build-*/
+
+# IDE
+.idea/
+.vscode/
+
+# Binary - ALLOWED for distribution
+# /balikar is now tracked for pre-built releases
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# Repository packages (these belong in balikar-repository, not proj6_balikar)
+repo/**/*.tar.bz2
+repo/repodata.json
+
+# Structure exports
+structure_exports/
+
+# Implementation notes
+impl_builderu.txt

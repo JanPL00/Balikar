@@ -1,0 +1,316 @@
+@startuml Balikar Component Diagram
+
+title Balikar Package Manager - Component Diagram (UML 2.5 Standard)
+
+skinparam componentStyle rectangle
+skinparam component {
+    BackgroundColor<<executable>> LightBlue
+    BackgroundColor<<component>> LightYellow
+    BackgroundColor<<library>> LightGreen
+    BackgroundColor<<datastore>> LightGray
+    BorderColor Black
+    ArrowColor DarkBlue
+}
+
+skinparam interface {
+    BackgroundColor LightCyan
+    BorderColor DarkBlue
+}
+
+left to right direction
+
+' ==================== HLAVNÍ EXECUTABLE ====================
+component [Main CLI\n(main.c)] as main <<executable>>
+
+' ==================== CORE MODULY ====================
+package "Core Modules" {
+    component [Parser\n(parser.c)] as parser <<component>>
+    component [Solver\n(solver.c)] as solver <<component>>
+    component [Downloader\n(downloader.c)] as downloader <<component>>
+    component [Builder\n(builder.c)] as builder <<component>>
+    component [Installer\n(installer.c)] as installer <<component>>
+    component [Config\n(config.c)] as config <<component>>
+    component [Common\n(common.c)] as common <<component>>
+}
+
+' ==================== UTILITY MODULY ====================
+package "Utilities" {
+    component [CLI Helpers] as cli_helpers <<component>>
+    component [System Helpers] as sys_helpers <<component>>
+    component [Print] as print <<component>>
+    component [Debug] as debug <<component>>
+}
+
+' ==================== EXTERNÍ KNIHOVNY ====================
+package "External Libraries" {
+    component [libsolv] as libsolv <<library>>
+    component [jansson] as jansson <<library>>
+    component [libcurl] as libcurl <<library>>
+    component [libarchive] as libarchive <<library>>
+}
+
+' ==================== DATOVÁ ÚLOŽIŠTĚ ====================
+package "Data Storage" {
+    database "Repository" as repo <<datastore>>
+    database "Cache" as cache <<datastore>>
+    database "Staging" as staging <<datastore>>
+    database "Installed DB" as instdb <<datastore>>
+}
+
+' Note: Dependencies are now modeled through interface connections above
+' using UML lollipop (provided) and socket (required) notation
+
+' ==================== KNIHOVNÍ ZÁVISLOSTI ====================
+
+parser ..> libsolv
+parser ..> jansson
+solver ..> libsolv
+downloader ..> libcurl
+builder ..> libarchive
+installer ..> jansson
+
+' ==================== DATA FLOW ====================
+
+parser --> repo
+downloader --> cache
+builder --> staging
+installer --> staging
+installer --> instdb
+
+' ==================== PROVIDED INTERFACES (Lollipop notation) ====================
+
+' Provided interfaces (lollipop - circle symbol)
+interface "IRepositoryLoader" as IRepoLoader
+interface "IDependencyResolver" as IDepResolver
+interface "IPackageDownloader" as IPkgDownloader
+interface "IPackageBuilder" as IPkgBuilder
+interface "IPackageInstaller" as IPkgInstaller
+interface "IConfigManager" as IConfigMgr
+interface "ILogger" as ILogger
+interface "ICLIHelper" as ICLIHelper
+interface "IPrinter" as IPrinter
+interface "IDebugger" as IDebugger
+interface "ISystemHelper" as ISysHelper
+
+' Components provide interfaces (lollipop notation)
+parser -up- IRepoLoader
+solver -up- IDepResolver
+downloader -up- IPkgDownloader
+builder -up- IPkgBuilder
+installer -up- IPkgInstaller
+config -up- IConfigMgr
+common -up- ILogger
+cli_helpers -up- ICLIHelper
+print -up- IPrinter
+debug -up- IDebugger
+sys_helpers -up- ISysHelper
+
+' ==================== REQUIRED INTERFACES (Assembly connectors) ====================
+
+' Main requires all core interfaces
+main --( IRepoLoader
+main --( IDepResolver
+main --( IPkgDownloader
+main --( IPkgBuilder
+main --( IPkgInstaller
+main --( IConfigMgr
+main --( ICLIHelper
+
+' Core module dependencies
+builder --( IRepoLoader
+builder --( IPkgDownloader
+downloader --( IRepoLoader
+solver --( IRepoLoader
+
+' Logger dependencies (all core modules use common)
+parser --( ILogger
+solver --( ILogger
+downloader --( ILogger
+builder --( ILogger
+installer --( ILogger
+config --( ILogger
+
+' Utility dependencies
+parser --( ISysHelper
+builder --( IPrinter
+solver --( IPrinter
+
+' Interface operations (UML 2.5 format - simplified for PlantUML)
+note right of IRepoLoader
+    **IRepositoryLoader API:**
+    + load_repository()
+    + load_json()
+    + get_custom_source()
+    + get_custom_source_array()
+    + get_custom_mkdeps()
+    + get_custom_extras()
+    + get_custom_is_group()
+    + get_custom_no_package()
+    + parse_depends_to_solvable()
+    + generate_repodata()
+    + update_repository_metadata()
+    + add_package_tar_bz2()
+    + internalize_repo()
+end note
+
+note right of IDepResolver
+    **IDependencyResolver API:**
+    + create_solver()
+    + solve_dependencies()
+    + add_mkdeps_to_queue()
+    + display_problem_proof()
+end note
+
+note right of IPkgDownloader
+    **IPackageDownloader API:**
+    + download_package()
+    + extract_and_check_embedded_source()
+    + download_extras()
+    + download_package_to_directory()
+    + download_url_to_file()
+    + get_cache_dir()
+    
+    **New Features:**
+    • Embedded source detection
+    • Two-stage extraction architecture
+end note
+
+note right of IPkgBuilder
+    **IPackageBuilder API:**
+    + commit_element()
+    + extract_archive()
+    + find_source_path()
+    + find_build_or_source()
+    + apply_extras()
+    + set_staging_enabled()
+    + set_staging_dir()
+    + set_build_tmp_dir()
+    + run_with_chroot()
+    
+    **Enhanced Features:**
+    • BFS search for source directories
+    • Embedded source extraction
+    • Simplified logic (no remote downloads)
+end note
+
+note right of IPkgInstaller
+    **IPackageInstaller API (NEW):**
+    + install_package()
+    + is_package_installed()
+    + get_installed_packages()
+    + erase_package()
+    + validate_chroot()
+end note
+
+note right of IConfigMgr
+    **IConfigManager API:**
+    + init_repo_config()
+    + get_primary_repo_url()
+    + get_enabled_repos()
+    + add_repository()
+    + remove_repository()
+    + enable_repository()
+    + save_repo_config()
+    + list_repositories()
+    + free_repo_config()
+end note
+
+note left of ILogger
+    **ILogger API:**
+    + log_error()
+    + log_warn()
+    + log_info()
+    + log_debug()
+end note
+
+note left of ICLIHelper
+    **ICLIHelper API:**
+    + print_usage()
+    + user_confirm()
+end note
+
+note left of IPrinter
+    **IPrinter API:**
+    + display_transaction()
+    + print_disk_usage_changes()
+end note
+
+note left of IDebugger
+    **IDebugger API:**
+    + display_proof()
+    + display_problem_proof()
+end note
+
+note left of ISysHelper
+    **ISystemHelper API:**
+    + set_system_arch()
+    + get_pool_arch()
+end note
+
+' ==================== WORKFLOW NOTES ====================
+
+note top of main
+    **Entry Point**
+    Commands: build, install, resolve,
+    repos, download, clean-cache, repo
+    
+    **Main Workflow:**
+    1. Parse CLI arguments
+    2. Initialize pool and repo
+    3. Execute command
+    4. Cleanup resources
+end note
+
+note bottom of builder
+    **Build Phases:**
+    1. Extract archive to /tmp
+    2. Find source directory
+    3. Apply extras (.build, patches)
+    4. Set environment ($P, DESTDIR)
+    5. Execute .build script
+    6. Stage to $P/DESTDIR
+    7. Cleanup temp directory
+end note
+
+note bottom of solver
+    **Dependency Resolution:**
+    1. Create job queue
+    2. Add makedeps recursively
+    3. Add runtime depends
+    4. Solve with libsolv
+    5. Create transaction
+    6. Order by dependencies
+end note
+
+note bottom of downloader
+    **Multi-source Fallback:**
+    Tries all URLs in source[]
+    array until success.
+    Caches downloads in
+    /var/cache/balikar/
+end note
+
+note bottom of installer
+    **Installation Phases:**
+    1. Validate chroot structure
+    2. Collect file manifest
+    3. Merge staging to chroot (cp -a)
+    4. Execute .install/install.sh
+    5. Update installed.json database
+    
+    **Database Location:**
+    /var/lib/balikar/installed.json
+end note
+
+note right of config
+    **Configuration Files:**
+    - ~/.config/balikar/repos.conf (user)
+    - /etc/balikar/repos.conf (system)
+    - ./repos.conf (fallback)
+    
+    **Repository Priority:**
+    Higher priority = preferred
+    Disabled repos are skipped
+end note
+
+@enduml

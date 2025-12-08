@@ -1,0 +1,75 @@
+========================================
+                 CZECH
+========================================
+
+print
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: print.c
+
+Tento modul slouží k výpisu informací souvisejících s transakcemi a odhady diskového využití v rámci našeho package managera.
+Jeho hlavní smysl je poskytovat čitelný výstup pro uživatele, jako je shrnutí transakce (instalace, mazání balíčků) a odhad změn v diskovém prostoru,
+což pomáhá při rozhodování (např. potvrzení transakce před commitem).
+Modul je adaptován z částí solv.c, konkrétně z showdiskusagechanges (SUSE-specific) pro disk usage a z main části pro transakční výpis (~901-950).
+V našem projektu je rozšířen o adaptaci pro LFS/LLD workflow: odhad velikosti v staging directory ($P) a chrootu,
+aby se zabránilo překvapením při buildu/instalaci.
+
+
+Klíčové funkce
+----
+void print_disk_usage_changes(Transaction *trans);
+    - Vypočítá a vypíše změny v diskovém využití (kB a inody) pro specifikované cesty (např. "/", "/usr" v stagingu, "/sbin", "/etc").
+    - Používá libsolv API transaction_calc_duchanges pro odhad na základě transakce.
+      V našem kontextu je adaptováno pro LFS chroot a $P (staging dir), aby odhadovalo velikost po buildu/instalaci.
+    - Pokud transakce je nevalidní, zaloguje chybu.
+
+void display_transaction(Transaction *trans);
+    - Vypíše shrnutí transakce: Seřadí kroky přes transaction_order, pak pro každý krok vypíše typ operace (erase, install, multiinstall) a detaily balíčku (pomocí solvable_to_string pro čitelnost).
+    - Přidá celkový počet kroků. Adaptováno pro náš systém: Ignoruje RPM-specific, zaměřeno na source-based balíčky.
+
+
+Integrace v projektu
+----
+Modul se používá v solver.c (po vytvoření transakce) a installer.c (před commitem) pro výpis summary a DU změn, což integruje s naším workflow: Po solvingu deps (včetně mkdeps rekurze) a downloadu, aby uživatel viděl, co se stane před buildu/instalací do $P/chrootu.
+
+
+
+
+========================================
+                ENGLISH
+========================================
+
+print
+=============
+
+Description
+----
+Source file: print.c
+
+This module serves to print information related to transactions and disk usage estimates within our package manager.
+Its main purpose is to provide readable output for the user, such as transaction summary (installs, erases) and estimates of disk space changes,
+which aids in decision-making (e.g., confirming the transaction before commit).
+The module is adapted from parts of solv.c, specifically showdiskusagechanges (SUSE-specific) for disk usage and the main part for transaction printing (~901-950).
+In our project, it is extended for LFS/LLD workflow adaptation: estimating size in staging directory ($P) and chroot to avoid surprises during build/install.
+
+
+Key functions
+----
+void print_disk_usage_changes(Transaction *trans);
+    - Calculates and prints changes in disk usage (kB and inodes) for specified paths (e.g., "/", "/usr" in staging, "/sbin", "/etc").
+    - Uses libsolv API transaction_calc_duchanges for estimation based on the transaction.
+      In our context, it is adapted for LFS chroot and $P (staging dir) to estimate size after build/install.
+    - If the transaction is invalid, logs an error.
+
+void display_transaction(Transaction *trans);
+    - Prints a summary of the transaction: Orders steps via transaction_order,
+      then for each step prints the operation type (erase, install, multiinstall) and package details (using solvable_to_string for readability).
+    - Adds the total number of steps. Adapted for our system: Ignores RPM-specific, focused on source-based packages.
+
+
+Project integration
+----
+The module is used in solver.c (after transaction creation) and installer.c (before commit) for printing summaries and DU changes, integrating with our workflow: After deps solving (including mkdeps recursion) and download, so the user sees what will happen before building/installing into $P/chroot.

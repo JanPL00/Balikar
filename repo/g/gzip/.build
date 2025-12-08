@@ -1,7 +1,0 @@
-./configure --prefix=/usr
-
-make DESTDIR=$P install
-
-make check
-
-make install

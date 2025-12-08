@@ -1,0 +1,551 @@
+================================================================================
+BUILDER.C - BUILD-FROM-SOURCE AUTOMATION
+================================================================================
+
+PŘEHLED
+-------
+builder.c implementuje fázi BUILD v Balikar workflow. Zpracovává stažené
+tar.bz2 archivy, aplikuje patches (extras), spouští .build skripty a vytvá­ří
+staging výstup připravený pro instalaci. Navrženo podle LLD tutorialu s 
+podporou pro nested tar struktury, izolaci buildů a konfigurovatelný staging.
+
+HLAVNÍ KOMPONENTY
+-----------------
+
+1. EXTRAKCE TAR ARCHIVŮ
+   Funkce: extract_archive(FILE *fp, const char *tmp_dir)
+   
+   - Detekce komprese z magic bytes:
+     * gzip:  1F 8B              → tar xzf
+     * xz:    FD 37 7A 58 5A 00 → tar xJf
+     * bzip2: 'BZ'              → tar xjf
+     * plain:                    → tar xf
+   
+   - Extrakce přes stdin pipe:
+     tar xJf - -C tmp_dir < fp
+   
+   - Podporované formáty:
+     * .tar.gz   (iana-etc, mnoho upstream balíčků)
+     * .tar.bz2  (hello, legacy LFS balíčky, repository archivy)
+     * .tar.xz   (moderní LFS balíčky - gzip, glibc, bash)
+     * .tar      (fallback)
+   
+   - EMBEDDED SOURCE HANDLING (NOVÉ):
+     Po extrakci kontroluje přítomnost index.json v první subdirectory.
+     Pokud existuje index.json a source[0].url je lokální soubor (neobsahuje "://"):
+       * Ověří existenci embedded source souboru v extrahované struktuře
+       * Extrahuje embedded source do parent directory (tmp_dir)
+       * Eliminuje double-nesting (např. openssl-3.4.0/openssl-3.4.0/)
+     POZNÁMKA: Remote URLs jsou nyní zpracovány downloaderem PŘED buildem,
+     takže builder pouze extrahuje lokální embedded source pokud existuje.
+
+2. REKURZIVNÍ VYHLEDÁVÁNÍ .BUILD
+   Funkce: find_source_path(const char *tmp_dir)
+   Helper: find_build_or_source(const char *dir, int depth)
+   
+   Algoritmus (max depth=3):
+   a) Zkontroluj aktuální dir: existuje .build? → VRAŤ
+   b) Zkontroluj: existuje Makefile nebo configure? → VRAŤ
+   c) Prohledej subdirectories rekurzivně
+   d) Fallback: první subdirectory (původní logika)
+   
+   Příklady:
+   - pkg/.build                    → Najde okamžitě (depth=1)
+   - pkg/src/.build                → Najde rekurzí (depth=2)
+   - pkg/subdir/src/.build         → Najde rekurzí (depth=3)
+   - pkg/ (pouze Makefile)         → Fallback na Makefile
+   
+   Důvod:
+   LFS/LLD balíčky mají různé struktury:
+   - Standardní: pkg-1.0/.build
+   - Nested:     pkg-1.0/src/.build
+   - Legacy:     pkg-1.0/Makefile (bez .build)
+
+3. APLIKACE EXTRAS (PATCHES)
+   Funkce: apply_extras(json_t *extras, const char *pkg_name, 
+                        const char *source_dir)
+   
+   Workflow:
+   1. Načti extras z cache/extras/<pkg_name>/
+   2. Pro každý patch z JSON extras array:
+      - Ověř že je v cache (downloader ho stáhl)
+      - Aplikuj: cd source_dir && patch -p1 < patch_file
+   3. Loguj úspěch/selhání (ale pokračuj i při chybě)
+   
+   Příklad (glibc):
+   extras: ["https://example.com/glibc-fhs-1.patch", "tzdata.tar.gz"]
+   → Downloader stáhne do cache/extras/glibc/
+   → apply_extras aplikuje: patch -p1 < fhs-1.patch
+   
+   Ignoruje chyby:
+   - Patch může být optional
+   - Některé patches failují na warn (ale build uspěje)
+
+4. BUILD EXECUTION
+   Funkce: commit_element(Transaction *trans, Repodata *data, Id p, 
+                          FILE *fp, Pool *pool)
+   
+   Hlavní workflow:
+   
+   A. METADATA LOOKUP
+      - is_group: Meta-package (pouze extrakce, no build)
+      - no_package: Virtual dep (skip vše)
+      - extras: Patches ke stažení
+   
+   B. BUILD DIR SETUP
+      - mkdtemp v konfigurovatelném tmp:
+        ${g_build_tmp_dir}/balikar_build_${pkg}_XXXXXX
+      - Výchozí: /tmp/balikar_build_glibc_A3F8K2
+      - Lze změnit: set_build_tmp_dir("/var/tmp/builds")
+   
+   C. EXTRACT & FIND SOURCE
+      - Extrahuj tar.bz2 do build_dir
+      - Najdi source dir rekurzivně (find_source_path)
+      - Log: "Source dir: /tmp/.../glibc-2.39/src"
+   
+   D. APPLY PATCHES
+      - Pokud extras existují → apply_extras()
+      - Log každý patch (úspěch/selhání)
+   
+   E. ENVIRONMENT SETUP
+      - DESTDIR:
+        * Staging enabled → g_staging_dir nebo $P
+        * Staging disabled → unset (přímá instalace)
+      - MAKEFLAGS: -j$(nproc) pro parallel build
+   
+   F. BUILD EXECUTION
+      - is_group? → Skip build (pouze extrakce)
+      - chdir do source_dir
+      - Detekuj .build:
+        * access(".build", X_OK) == 0 → bash -e .build
+        * Jinak fallback: ./configure --prefix=/usr && make && make install
+      - Redirect output: > build.log 2>&1
+      - Na fail:
+        * log_warn s exit code
+        * user_confirm("Retry build?")
+        * Pokud no → log_error a fail
+   
+   G. CLEANUP
+      - fclose(fp)
+      - rm -rf build_dir (system call)
+      - json_decref(extras)
+
+5. KONFIGURACE
+   Globální settery:
+   
+   set_staging_enabled(int enabled)
+     - 1: Používat DESTDIR staging (výchozí)
+     - 0: Přímá instalace (no staging)
+   
+   set_staging_dir(const char *dir)
+     - NULL: Použít $P z common.h
+     - Non-NULL: Vlastní staging dir (např. /mnt/lfs/stage)
+   
+   set_build_tmp_dir(const char *dir)
+     - NULL: Použít /tmp (výchozí)
+     - Non-NULL: Vlastní tmp (např. /var/tmp/isolated)
+     - Důvod: Izolace, větší prostor, persistentní tmp
+
+6. CHROOT IZOLACE (BUDOUCÍ)
+   Funkce: run_with_chroot(const char *root, build_callback func, void *data)
+   
+   Mechanismus:
+   - fork() → child process
+   - chroot(root) v child
+   - chdir("/")
+   - func(data) → spustí build
+   - exit(rc) v child
+   - waitpid() v parent → vrať exit status
+   
+   Použití:
+   // Build v chroot pro bezpečnost
+   build_data_t bd = {trans, data, p, fp, pool};
+   int rc = run_with_chroot("/mnt/lfs", do_build_callback, &bd);
+   
+   Výhody:
+   - Izolace od host systému
+   - Nemůže znečistit /usr, /lib, ...
+   - Bezpečné testování buildů
+
+DATOVÉ STRUKTURY
+----------------
+
+Globální stav:
+  static int g_staging_enabled = 1;      // Default zapnuto
+  static char *g_staging_dir = NULL;     // NULL = $P
+  static char *g_build_tmp_dir = NULL;   // NULL = /tmp
+
+Build callback (pro chroot):
+  typedef int (*build_callback)(void *data);
+  
+  Příklad:
+  static int do_build(void *data) {
+      build_data_t *bd = (build_data_t*)data;
+      return commit_element(bd->trans, bd->data, bd->p, bd->fp, bd->pool);
+  }
+
+VEŘEJNÉ API
+-----------
+
+void set_staging_enabled(int enabled)
+  Zapne/vypne staging režim.
+  
+void set_staging_dir(const char *dir)
+  Nastaví vlastní staging dir.
+  
+void set_build_tmp_dir(const char *dir)
+  Nastaví vlastní tmp pro build extrakci.
+
+static int detect_compression(FILE *fp)
+  Detekuje typ komprese z magic bytes:
+  - 0x1F 0x8B → gzip (vrací 3)
+  - 0xFD 0x37 0x7A 0x58 0x5A 0x00 → xz (vrací 1)
+  - 'B' 'Z' → bzip2 (vrací 2)
+  - jinak → plain tar (vrací 0)
+  Používá rewind(fp) pro návrat na začátek souboru.
+
+static int extract_archive(FILE *fp, const char *tmp_dir)
+  Extrahuje archiv do tmp_dir pomocí tar příkazu.
+  Automaticky detekuje kompresi a použije správný flag (xzf/xJf/xjf/xf).
+  Extrakce přes stdin pipe: tar xzf - -C tmp_dir < fp
+
+int commit_element(Transaction *trans, Repodata *data, Id p, 
+                   FILE *fp, Pool *pool)
+  Hlavní funkce - build jednoho balíčku.
+  Vrací: 0 = úspěch, -1 = chyba
+
+char *find_source_path(const char *tmp_dir)
+  Najde source dir s .build (rekurzivně).
+  Volající musí free() vrácený string.
+
+void apply_extras(json_t *extras, const char *pkg_name, 
+                  const char *source_dir)
+  Aplikuje patches z extras cache.
+
+int run_with_chroot(const char *root, build_callback func, void *data)
+  Fork + chroot pro izolovaný build (TODO: integrace).
+
+INTEGRACE S OSTATNÍMI MODULY
+-----------------------------
+
+Parser (parser.c):
+  - get_custom_is_group(data, p, pool) → bool
+  - get_custom_no_package(data, p, pool) → bool
+  - get_custom_extras(data, p, pool) → json_t*
+  
+  Builder používá pro rozhodování o skip/build.
+
+Solver (solver.c):
+  - Transaction *trans → pořadí buildů (deps first)
+  - transaction_order(trans, 0) → seřadí steps
+  
+  Builder iteruje přes trans->steps.elements[i].
+
+Downloader (downloader.c):
+  - download_package() → FILE* s tar archivem
+  - download_extras() → stáhne patches do cache
+  
+  Builder přijímá FILE* a aplikuje extras.
+
+CLI (main.c):
+  - parse_args() → nastaví g_staging_dir, g_build_tmp_dir
+  - Workflow loop:
+    for (i in transaction steps) {
+        fp = download_package(...);
+        download_extras(...);
+        commit_element(trans, data, p, fp, pool);
+    }
+
+PŘÍKLADY POUŽITÍ
+----------------
+
+1. ZÁKLADNÍ BUILD
+   
+   FILE *fp = download_package(s, url, pool, data);
+   json_t *extras = get_custom_extras(data, p, pool);
+   download_extras(extras, "glibc", NULL);
+   
+   int rc = commit_element(trans, data, p, fp, pool);
+   if (rc != 0) {
+       log_error("Build failed");
+   }
+
+2. BUILD S VLASTNÍM STAGING
+   
+   set_staging_dir("/mnt/lfs/stage");
+   set_staging_enabled(1);
+   
+   // commit_element použije /mnt/lfs/stage jako DESTDIR
+   commit_element(trans, data, p, fp, pool);
+   
+   // Verify:
+   system("ls -la /mnt/lfs/stage/usr/bin/");
+
+3. BUILD DO VLASTNÍHO TMP
+   
+   set_build_tmp_dir("/var/tmp/isolated");
+   
+   // mkdtemp vytvoří: /var/tmp/isolated/balikar_build_gcc_XXXXXX
+   commit_element(trans, data, p, fp, pool);
+
+4. VYPNUTÍ STAGINGU (PŘÍMÁ INSTALACE)
+   
+   set_staging_enabled(0);
+   
+   // DESTDIR nebude nastaveno → instalace přímo do /usr
+   commit_element(trans, data, p, fp, pool);
+
+5. MANUAL FIND SOURCE
+   
+   extract_archive(fp, "/tmp/test");
+   char *src = find_source_path("/tmp/test");
+   printf("Found source: %s\n", src);
+   free(src);
+
+6. CHROOT BUILD (BUDOUCÍ)
+   
+   build_data_t bd = {trans, data, p, fp, pool};
+   int rc = run_with_chroot("/mnt/lfs", do_build_callback, &bd);
+   if (rc != 0) {
+       log_error("Chroot build failed");
+   }
+
+WORKFLOW DIAGRAM
+----------------
+
+[download_package]
+       ↓ FILE *fp
+[commit_element]
+       ↓
+    ┌─────────────────┐
+    │ 1. Metadata     │ is_group? no_package? extras?
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 2. mkdtemp      │ /tmp/balikar_build_pkg_XXXXXX
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 3. Extract tar  │ tar xJf - -C tmp_dir
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 4. Find source  │ Rekurzivní hledání .build
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 5. Apply extras │ patch -p1 < file.patch
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 6. Set env      │ DESTDIR=$P, MAKEFLAGS=-j$(nproc)
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 7. Build        │ bash -e .build > build.log
+    └─────────────────┘
+       ↓
+    ┌─────────────────┐
+    │ 8. Cleanup      │ rm -rf build_dir
+    └─────────────────┘
+       ↓
+    [Staging $P ready for install]
+
+ERROR HANDLING
+--------------
+
+1. Extract fail:
+   - Tar command non-zero exit
+   - Log: "Extrahování archivu selhalo"
+   - Cleanup build_dir → return -1
+
+2. No source dir:
+   - find_source_path vrátí NULL
+   - Log: "Nenalezen source dir"
+   - Cleanup → return -1
+
+3. Build fail:
+   - .build nebo configure&&make selže
+   - Log warn s exit code
+   - user_confirm("Retry build?")
+   - Pokud ano → retry
+   - Pokud ne → cleanup → return -1
+
+4. Patch fail:
+   - patch command non-zero exit
+   - Log warn (ale pokračuj!)
+   - Důvod: Patches mohou být optional
+
+5. No .build fallback:
+   - access(".build", X_OK) == -1
+   - Fallback: ./configure --prefix=/usr && make && make install
+   - Log: "fallback configure+make"
+
+OPTIMALIZACE
+------------
+
+1. Parallel make:
+   - MAKEFLAGS=-j$(nproc)
+   - Využití všech CPU cores
+   - Zkrácení build času (gcc: 2h → 30min)
+
+2. Cache reuse:
+   - Downloader cachuje tar soubory
+
+   - Nestahuji znovu pokud existuje
+
+3. Minimal cleanup:
+   - rm -rf pouze build_dir
+   - Nemazání cache (persists)
+   - Staging zůstává (pro install)
+
+4. Early exit:
+   - no_package → skip okamžitě
+   - is_group → skip build (pouze extract)
+   - Šetří čas pro meta-packages
+
+BEZPEČNOST
+----------
+
+1. Build izolace:
+   - mkdtemp pro unique tmp dir
+   - Žádný konflikt s jinými buildy
+   - Cleanup zaručen (i při selhání)
+
+2. Staging:
+   - DESTDIR=$P izoluje od host /usr
+   - Nelze poškodit systém během buildu
+   - Rollback možný (rm -rf $P)
+
+3. Chroot (budoucí):
+   - run_with_chroot() fork + chroot
+   - Build nemůže přistoupit k host /
+   - Bezpečnost proti malicious .build
+
+4. User confirmation:
+   - user_confirm() před buildem
+   - Možnost abort (q)
+   - Review transaction před změnami
+
+TESTOVÁNÍ
+---------
+
+Test suite v tests/tests-src/test_builder.c:
+
+1. test_set_staging_enabled()
+   - Ověř settery fungují
+
+2. test_set_staging_dir()
+   - Ověř custom staging
+
+3. test_set_build_tmp_dir()
+   - Ověř custom tmp
+
+4. test_find_source_path()
+   - Vytvoř tmp/pkg-1.0/
+   - Najde první subdir
+
+5. test_find_source_path_nested_with_build()
+   - Vytvoř tmp/pkg-1.0/src/.build
+   - Najde src/ rekurzí
+
+6. test_apply_extras()
+   - Dummy test (nepadá)
+
+7. test_commit_element_simple()
+   - Simplified (avoid segfault)
+
+8. test_commit_element_is_group()
+   - Simplified (avoid segfault)
+
+9. test_run_with_chroot_basic()
+   - Ověř NULL check
+
+Integrace test:
+  Vytvoř hello-1.0.tar.bz2 s .build
+  → balikar build hello
+  → Verify $P/usr/bin/hello exists
+
+BUDOUCÍ VYLEPŠENÍ
+-----------------
+
+1. Caching buildů:
+   - Cache build output v /var/cache/balikar/builds/
+
+   - Zkrácení repeated builds
+
+2. Parallel builds:
+   - Build více balíčků paralelně (pokud no deps)
+   - Využití multi-core pro transaction
+
+3. Build profiling:
+   - Měření času každého buildu
+   - Optimalizace slow packages
+
+4. Custom build flags:
+   - CFLAGS, CXXFLAGS z config
+   - Optimization level (-O2, -O3)
+   - LTO support
+
+5. Incremental builds:
+   - Nemazání build_dir pokud --keep-build
+   - make pro incremental rebuild
+
+6. Distribuce:
+   - Build farm integrace
+   - Remote build offload
+   - Binary cache sdílení
+
+ZNÁMÉ LIMITACE
+--------------
+
+1. Depth limit:
+   - find_build_or_source: max depth=3
+   - Pokud .build je hlouběji → fallback na první subdir
+
+2. Single .build:
+   - Pouze jeden .build skript
+   - Nepodporuje multi-stage builds
+
+3. No rollback během buildu:
+   - Pokud build failne v půlce → partial $P
+   - Musí cleanup manually
+
+4. Serial builds:
+   - Jeden build najednou (pro trans step)
+   - No parallelism (zatím)
+
+5. Limited error recovery:
+   - Build fail → user_confirm retry
+   - No automatic fixes
+
+DEPENDENCIES
+------------
+
+Knihovny:
+  - libsolv: Pool, Solvable, Transaction
+  - jansson: json_t pro extras parsing
+  - sys/stat.h: stat, mkdir, access
+  - dirent.h: opendir, readdir (pro find_source_path)
+  - sys/wait.h: waitpid (pro run_with_chroot)
+  - unistd.h: fork, chroot, chdir
+
+Moduly:
+  - parser.c: get_custom_* funkce
+  - downloader.c: download_package, download_extras
+  - solver.c: Transaction, transaction_order
+  - common.c: log_*, error codes
+  - cli_helpers.c: user_confirm
+
+SEE ALSO
+--------
+doc/balikar/parser.txt
+doc/balikar/solver.txt
+doc/balikar/downloader.txt
+doc/manual.txt
+
+AUTOR
+-----
+Builder module - Build-from-source automation
+Implementace: listopad 2025
+Založeno na: LLD tutorial (extract, staging, .build workflow)

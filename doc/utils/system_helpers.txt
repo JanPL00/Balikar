@@ -1,0 +1,65 @@
+========================================
+                 CZECH
+========================================
+
+system_helpers
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: system_helpers.c
+
+Tento modul poskytuje systémové pomocné funkce pro inicializaci a konfiguraci prostředí v projektu Package Managera.
+Hlavní funkcionalita je zaměřena na detekci a nastavení architektury systému pro libsolv Pool, což zajišťuje kompatibilitu balíčků (např. x86_64 vs. noarch).
+Funkce adaptují standardní systémové volání (jako uname) s fallback mechanismy pro robustnost,
+integrací loggingu pro debugging a podporou custom override z metadat (např. z index.json).
+Modul minimalizuje chyby v heterogenních prostředích (Linux, Docker) a podporuje LFS/LLD workflow bezpečným nastavením defaultů.
+
+Klíčové funkce
+----
+void set_system_arch(Pool *pool);
+    - Nastaví architekturu Poolu podle systémového uname (např. "x86_64"), s fallbackem na default "x86_64" při chybě.
+    - Podporuje noarch pro data-only balíčky (jako Iana-Etc); loguje detekci a nastavení pro debugging.
+    - Používá libsolv API (pool_setarch) a error handling (log_warn při non-standard arch).
+
+Integrace v projektu
+----
+Používá se brzy v main.c pro init Poolu (před načtením repo).
+V parser.c umožňuje override z index.json ("arch" pole) pro specifické balíčky.
+Integruje se s common.h loggingem (log_info/warn) pro konzistentní výstupy v CLI a testech.
+V budoucnosti rozšířit pro multi-arch repo (např. v solver.c pro filtraci deps).
+
+
+
+
+========================================
+                ENGLISH
+========================================
+
+system_helpers
+=============
+(Czech above)
+
+Description
+----
+Source file: system_helpers.c
+
+This module provides system utility functions for initializing and configuring the environment in the Package Manager project.
+The main functionality focuses on detecting and setting the system architecture for the libsolv Pool, ensuring package compatibility (e.g., x86_64 vs. noarch).
+Functions adapt standard system calls (like uname) with fallback mechanisms for robustness,
+logging integration for debugging, and support for custom overrides from metadata (e.g., from index.json).
+The module minimizes errors in heterogeneous environments (Linux, Docker) and supports LFS/LLD workflows with safe default settings.
+
+Key Functions
+----
+void set_system_arch(Pool *pool);
+    - Sets the Pool architecture based on system uname (e.g., "x86_64"), with fallback to default "x86_64" on error.
+    - Supports noarch for data-only packages (like Iana-Etc); logs detection and setting for debugging.
+    - Uses libsolv API (pool_setarch) and error handling (log_warn on non-standard arch).
+
+Integration in the Project
+----
+Used early in main.c for Pool initialization (before loading repos). In parser.c,
+it enables overrides from index.json ("arch" field) for specific packages. Integrates with common.h logging (log_info/warn) for consistent outputs in CLI and tests.
+In the future, expand for multi-arch repos (e.g., in solver.c for dependency filtering).
