@@ -26,9 +26,18 @@ HLAVNÍ KOMPONENTY
    
    - Podporované formáty:
      * .tar.gz   (iana-etc, mnoho upstream balíčků)
-     * .tar.bz2  (hello, legacy LFS balíčky)
+     * .tar.bz2  (hello, legacy LFS balíčky, repository archivy)
      * .tar.xz   (moderní LFS balíčky - gzip, glibc, bash)
      * .tar      (fallback)
+   
+   - EMBEDDED SOURCE HANDLING (NOVÉ):
+     Po extrakci kontroluje přítomnost index.json v první subdirectory.
+     Pokud existuje index.json a source[0].url je lokální soubor (neobsahuje "://"):
+       * Ověří existenci embedded source souboru v extrahované struktuře
+       * Extrahuje embedded source do parent directory (tmp_dir)
+       * Eliminuje double-nesting (např. openssl-3.4.0/openssl-3.4.0/)
+     POZNÁMKA: Remote URLs jsou nyní zpracovány downloaderem PŘED buildem,
+     takže builder pouze extrahuje lokální embedded source pokud existuje.
 
 2. REKURZIVNÍ VYHLEDÁVÁNÍ .BUILD
    Funkce: find_source_path(const char *tmp_dir)

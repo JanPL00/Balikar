@@ -81,12 +81,118 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
 
 
 /**
+ * Extract repository archive and check for embedded source files.
+ * 
+ * This function enables packages to include source archives directly in the
+ * repository archive (e.g., gzip-1.14.tar.bz2 contains gzip-1.14/gzip-1.14.tar.xz).
+ * 
+ * Process:
+ * 1. Extract repository archive to temporary directory
+ * 2. Read index.json to get source[0].url
+ * 3. Check if source URL is a local filename (no ://)
+ * 4. If local file exists in extracted archive, copy to cache
+ * 
+ * @param repo_archive_path Path to repository archive in cache
+ * @param pkg_name Package name
+ * @param version Package version
+ * @param target_cache_path Where to copy the embedded source
+ * @return 1 if embedded source found and copied, 0 otherwise
+ */
+static int extract_and_check_embedded_source(const char *repo_archive_path,
+                                             const char *pkg_name,
+                                             const char *version,
+                                             const char *target_cache_path) {
+    if (!repo_archive_path || !pkg_name || !version || !target_cache_path) {
+        return 0;
+    }
+    
+    // Check if repository archive exists
+    if (access(repo_archive_path, F_OK) != 0) {
+        return 0;
+    }
+    
+    // Create temporary extraction directory
+    char tmp_extract[2048];
+    snprintf(tmp_extract, sizeof(tmp_extract), "%s/balikar_extract_%s_%d", 
+             CACHE_DIR, pkg_name, (int)getpid());
+    
+    char mkdir_cmd[2560];
+    snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", tmp_extract);
+    if (system(mkdir_cmd) != 0) {
+        return 0;
+    }
+    
+    // Extract repository archive
+    char extract_cmd[4096];
+    snprintf(extract_cmd, sizeof(extract_cmd), "tar -xjf '%s' -C '%s' 2>/dev/null",
+             repo_archive_path, tmp_extract);
+    
+    int result = 0;
+    if (system(extract_cmd) == 0) {
+        // Look for index.json in extracted package directory
+        char index_path[2560];
+        snprintf(index_path, sizeof(index_path), "%s/%s-%s/index.json",
+                tmp_extract, pkg_name, version);
+        
+        if (access(index_path, F_OK) == 0) {
+            // Parse index.json to get source array
+            json_error_t error;
+            json_t *index_root = json_load_file(index_path, 0, &error);
+            
+            if (index_root) {
+                json_t *source_array = json_object_get(index_root, "source");
+                
+                if (source_array && json_is_array(source_array) && json_array_size(source_array) > 0) {
+                    json_t *first_source = json_array_get(source_array, 0);
+                    
+                    if (first_source && json_is_object(first_source)) {
+                        json_t *url_json = json_object_get(first_source, "url");
+                        
+                        if (url_json && json_is_string(url_json)) {
+                            const char *source_file = json_string_value(url_json);
+                            
+                            // Check if it's a local filename (not a URL with ://)
+                            if (!strstr(source_file, "://")) {
+                                char embedded_path[4096];
+                                snprintf(embedded_path, sizeof(embedded_path), "%s/%s-%s/%s",
+                                        tmp_extract, pkg_name, version, source_file);
+                                
+                                if (access(embedded_path, F_OK) == 0) {
+                                    // Copy embedded source to cache
+                                    char copy_cmd[8192];
+                                    snprintf(copy_cmd, sizeof(copy_cmd), "cp '%s' '%s'",
+                                            embedded_path, target_cache_path);
+                                    
+                                    if (system(copy_cmd) == 0) {
+                                        log_info("Using embedded source from repository archive: %s", source_file);
+                                        result = 1;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                json_decref(index_root);
+            }
+        }
+    }
+    
+    // Cleanup temporary extraction directory
+    char rm_cmd[2560];
+    snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf '%s'", tmp_extract);
+    system(rm_cmd);
+    
+    return result;
+}
+
+/**
  * Download package and return file pointer.
  * 
  * Main download function that:
  * 1. Creates cache directory
  * 2. Checks for cached file (no hash verification)
- * 3. Downloads from URL or copies from local path
+ * 3. **NEW**: Checks for embedded source in repository archive
+ * 4. Downloads from URL or copies from local path
  * 
  * Supports both local files and HTTP/HTTPS URLs with automatic fallback
  * to local repository structure. Includes progress indication.
@@ -162,6 +268,32 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
         free(cache_dir);
         if (source_array) json_decref(source_array);
         return fopen(cache_path, "r");
+    }
+
+    // NEW: Check for embedded source in repository archive BEFORE downloading from remote
+    // This allows packages to include source files directly (e.g., gzip-1.14.tar.bz2 contains gzip-1.14.tar.xz)
+    if (loc && strstr(loc, "://")) {  // loc is a remote repository URL
+        // Construct repository archive path (always .tar.bz2)
+        char repo_archive_path[2048];
+        snprintf(repo_archive_path, sizeof(repo_archive_path), "%s/%s-%s.tar.bz2", 
+                cache_dir, pkg_name, version);
+        
+        // Download repository archive if not cached
+        if (access(repo_archive_path, F_OK) != 0) {
+            log_debug(1, "Downloading repository archive: %s", loc);
+            if (download_url_to_file(loc, repo_archive_path) != 0) {
+                log_warn("Failed to download repository archive");
+                return NULL;
+            }
+        }
+        
+        // Check for embedded source in repository archive
+        if (extract_and_check_embedded_source(repo_archive_path, pkg_name, version, cache_path)) {
+            // Embedded source was found and copied to cache
+            free(cache_dir);
+            if (source_array) json_decref(source_array);
+            return fopen(cache_path, "r");
+        }
     }
 
     // Try each URL in source array until one succeeds

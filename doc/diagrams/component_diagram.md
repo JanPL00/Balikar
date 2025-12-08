@@ -9,7 +9,7 @@
 ### Core Modules
 - **parser.c**: Repository loading and metadata parsing
 - **solver.c**: Dependency resolution using libsolv
-- **downloader.c**: Package download with multi-source fallback
+- **downloader.c**: Package download with multi-source fallback and embedded source support
 - **builder.c**: Package building and staging
 - **installer.c**: Package installation and tracking (NEW)
 - **config.c**: Repository configuration management
@@ -75,8 +75,10 @@ User → main.c
 ### IPackageDownloader (downloader.c)
 ```c
 + download_package(s: Solvable*, loc: const char*, pool: Pool*, data: Repodata*, repo_path: const char*): FILE*
++ extract_and_check_embedded_source(repo_archive_path: const char*, pkg_name: const char*, version: const char*, output_path: char*): int
 + download_extras(extras: json_t*, pkg_name: const char*, version: const char*, repo_base_url: const char*, tmp_dir: const char*): void
 + download_package_to_directory(s: Solvable*, loc: const char*, pool: Pool*, data: Repodata*, repo_path: const char*, output_dir: const char*): int
++ download_url_to_file(url: const char*, output_path: const char*): int
 + get_cache_dir(): char*
 ```
 
@@ -296,6 +298,20 @@ main.c
 - **jansson**: Used by parser.c, installer.c for JSON parsing
 - **libcurl**: Used by downloader.c for HTTP downloads
 - **libarchive/tar**: Used by builder.c for archive extraction
+
+## Recent Changes
+
+### Embedded Source Support (Dec 2024)
+- **downloader.c**: Added `extract_and_check_embedded_source()` function
+  - Detects source files embedded in repository archives (.tar.bz2)
+  - Automatically extracts and caches embedded source before attempting remote download
+  - Example: gzip-1.14.tar.xz inside gzip-1.14.tar.bz2
+  - Reduces bandwidth usage and improves reliability for packages with bundled sources
+
+- **builder.c**: Simplified embedded source handling
+  - Removed remote URL download logic (now handled by downloader)
+  - Only extracts local embedded sources if present in extracted repository archive
+  - Cleaner separation of concerns: downloader handles acquisition, builder handles extraction
 
 ## See Also
 - [component_diagram.puml](component_diagram.puml) - Full PlantUML diagram with UML 2.5 interfaces

@@ -636,7 +636,7 @@ int main(int argc, char **argv) {
                     
                     // Cleanup staging
                     char cleanup_cmd[512];
-                    snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s'/* 2>/dev/null", staging);
+                    snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s' 2>/dev/null && mkdir -p '%s'", staging, staging);
                     system(cleanup_cmd);
                     log_debug(1, "Cleaned up staging directory: %s", staging);
                 }
@@ -786,7 +786,7 @@ int main(int argc, char **argv) {
                         
                         // Cleanup staging directory after successful installation
                         char cleanup_cmd[512];
-                        snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s'/* 2>/dev/null", staging);
+                        snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s' 2>/dev/null && mkdir -p '%s'", staging, staging);
                         system(cleanup_cmd);
                         log_debug(1, "Cleaned up staging directory: %s", staging);
                     }
