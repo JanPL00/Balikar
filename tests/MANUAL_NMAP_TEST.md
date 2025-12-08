@@ -11,6 +11,7 @@ cd /home/placeja5/Balikar/proj6_balikar/tests
 docker build -f Dockerfile.minimal -t balikar-minimal-test .
 ```
 
+
 ### 2. Spusť Interaktivní Kontejner
 
 **Jednorázový test (kontejner se smaže po odpojení):**
@@ -53,6 +54,63 @@ balikar repo-update
 # Zobrazení závislostí
 balikar resolve nmap
 ```
+
+
+### Build & Install
+
+```bash
+# Build balíčku (bez instalace)
+balikar build zlib
+
+# Instalace balíčku (build + install)
+balikar install nmap
+
+# Odebrání balíčku
+balikar remove nmap
+```
+
+### Testování Nmap
+
+Kompletní test včetně závislostí (~5 min):
+```bash
+balikar install nmap
+nmap --version
+nmap -p 22,80,443 localhost
+```
+## Dependency Chain (nmap)
+
+```
+nmap
+├── libpcap
+├── openssl
+├── libssh2
+│   ├── openssl
+│   └── zlib
+└── zlib
+```
+
+### Kontrola Instalace
+
+```bash
+# Seznam nainstalovaných balíčků
+cat /var/lib/balikar/installed.json | grep -o '"name":"[^"]*"' | cut -d'"' -f4
+```
+
+### Embedded Source Detection
+
+```bash
+# 1. Vyčistit cache a instalovat gzip (má embedded source)
+sudo rm -rf /var/cache/balikar/downloads/gzip*
+sudo balikar install gzip
+
+# 2. Zkontrolovat logy - mělo by zobrazit:
+# [INFO] Using embedded source from repository archive: gzip-1.14.tar.xz
+
+# 3. Ověřit cache
+ls -lh /var/cache/balikar/downloads/gzip*
+# Expected: gzip-1.14.tar.xz (embedded) a gzip-1.14.tar.bz2 (repo)
+```
+
 
 ### Repository Management
 
@@ -97,35 +155,6 @@ balikar repo add local-dev /path/to/repo 150
 # Verify: balikar repos (local-dev by měl být "Currently using")
 ```
 
-### Build & Install
-
-```bash
-# Build balíčku (bez instalace)
-balikar build zlib
-
-# Instalace balíčku (build + install)
-balikar install nmap
-
-# Odebrání balíčku
-balikar remove nmap
-```
-
-### Testování Nmap
-
-Kompletní test včetně závislostí (~5 min):
-```bash
-balikar install nmap
-nmap --version
-nmap -p 22,80,443 localhost
-```
-
-### Kontrola Instalace
-
-```bash
-# Seznam nainstalovaných balíčků
-cat /var/lib/balikar/installed.json | grep -o '"name":"[^"]*"' | cut -d'"' -f4
-```
-
 ## Testovací Scénáře
 
 ### Scénář 1: Vlastní Lokální Repozitář
@@ -163,32 +192,6 @@ balikar repo remove my-custom
 rm -rf /tmp/my-repo
 ```
 
-### Scénář 2: Embedded Source Detection
-
-```bash
-# 1. Vyčistit cache a instalovat gzip (má embedded source)
-sudo rm -rf /var/cache/balikar/downloads/gzip*
-sudo balikar install gzip
-
-# 2. Zkontrolovat logy - mělo by zobrazit:
-# [INFO] Using embedded source from repository archive: gzip-1.14.tar.xz
-
-# 3. Ověřit cache
-ls -lh /var/cache/balikar/downloads/gzip*
-# Expected: gzip-1.14.tar.xz (embedded) a gzip-1.14.tar.bz2 (repo)
-
-
-## Dependency Chain (nmap)
-
-```
-nmap
-├── libpcap
-├── openssl
-├── libssh2
-│   ├── openssl
-│   └── zlib
-└── zlib
-```
 
 ## Správa Kontejnerů
 

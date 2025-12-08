@@ -38,6 +38,7 @@ RUN apt-get update && apt-get install -y \
     libtool \
     gettext \
     flex \
+    vim \
     && rm -rf /var/lib/apt/lists/*
 
 # Vytvoření adresářové struktury pro balikar
