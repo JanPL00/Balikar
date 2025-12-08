@@ -518,14 +518,15 @@ int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *poo
 
 	// Configure build environment
 	// Set DESTDIR for staging installation if enabled
-	// Also create the staging directory if it doesn't exist
+	// Clean and recreate staging directory to avoid conflicts between builds
 	if (g_staging_enabled) {
 		const char *destdir = g_staging_dir ? g_staging_dir : STAGING_DIR;
 		
-		// Create staging directory if it doesn't exist
-		char mkdir_cmd[512];
-		snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", destdir);
-		system(mkdir_cmd);
+		// Clean and recreate staging directory
+		char cleanup_cmd[512];
+		snprintf(cleanup_cmd, sizeof(cleanup_cmd), "rm -rf '%s' 2>/dev/null && mkdir -p '%s'", destdir, destdir);
+		system(cleanup_cmd);
+		log_debug(1, "Cleaned and recreated staging directory: %s", destdir);
 		
 		setenv("DESTDIR", destdir, 1);
 		log_debug(1, "DESTDIR set to: %s", destdir);
