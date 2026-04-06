@@ -6,9 +6,6 @@
 #define IMPL_BUILDER_H
 
 #include "../../common/common.h"
-#include "parser.h"
-#include "downloader.h"
-#include "solver.h"
 
 // Public builder API
 

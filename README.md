@@ -13,7 +13,9 @@ Source-based package manager inspired by Linux From Scratch (LFS), using libsolv
 
 ## Quick Start
 
-### Installation (Pre-built Binary)
+### Installation Options
+
+#### Option 1: Pre-built Binary (with bundled libraries)
 
 **Prerequisites - Install system libraries:**
 ```bash
@@ -36,6 +38,31 @@ sudo sh install_prebuilt.sh
 # OR user installation
 sh install_prebuilt.sh
 ```
+
+#### Option 2: Static Binary (single file, works anywhere)
+
+**Build static binary using Alpine Docker (recommended):**
+```bash
+# Requires only Docker installed
+./build_static_alpine.sh
+
+# Install
+sudo cp balikar-static /usr/local/bin/balikar
+```
+
+**Or build natively (requires static libraries):**
+```bash
+# See doc/STATIC_BUILD.md for detailed instructions
+./build_static.sh
+```
+
+**Advantages of static build:**
+- ✅ Single file, no dependencies
+- ✅ Works on any Linux distribution
+- ✅ No need to distribute lib/ directory
+- ✅ Perfect for embedded systems or containers
+
+See [doc/STATIC_BUILD.md](doc/STATIC_BUILD.md) for complete static build guide.
 
 **Manual:**
 ```bash

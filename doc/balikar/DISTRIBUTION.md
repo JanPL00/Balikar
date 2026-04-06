@@ -92,13 +92,13 @@ Balikar requires **conda's libsolv** which includes conda-specific features not 
 ### Compatibility
 
 **Supported:**
-- ✅ Debian 11, 12
-- ✅ Ubuntu 20.04, 22.04, 24.04
-- ✅ Other glibc-based Linux distributions
+- Debian 11, 12
+- Ubuntu 20.04, 22.04, 24.04
+- Other glibc-based Linux distributions
 
 **Not Supported:**
-- ❌ Alpine Linux (musl libc) - requires separate build
-- ❌ macOS, Windows - not tested
+- Alpine Linux (musl libc) - requires separate build
+- macOS, Windows - not tested
 
 For Alpine, build directly on Alpine:
 ```bash

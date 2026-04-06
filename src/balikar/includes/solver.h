@@ -6,7 +6,6 @@
 #define IMPL_REPO_SOLVER_H
 
 #include "../../common/common.h"
-#include "parser.h"
 
 // Create a solver instance for the pool.
 Solver *create_solver(Pool *pool);
