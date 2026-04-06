@@ -69,7 +69,7 @@ static int ensure_db_dir(const char *chroot_path) {
  * @return JSON object containing packages, or NULL on error
  *         Caller must json_decref() the returned object
  */
-static json_t* load_installed_db(const char *chroot_path) {
+json_t* load_installed_db(const char *chroot_path) {
     if (ensure_db_dir(chroot_path) != 0) {
         return NULL;
     }
@@ -705,13 +705,13 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
  * Find reverse dependencies - packages that depend on given package.
  */
 json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
-                                  Pool *pool, Repo *repo) {
+                                  Pool *pool, Repo *repo, json_t* (*load_db_cb)(const char*)) {
     if (!pkg_name || !chroot_path || !pool || !repo) {
         return NULL;
     }
     
     json_t *result = json_array();
-    json_t *db = load_installed_db(chroot_path);
+    json_t *db = load_db_cb ? load_db_cb(chroot_path) : NULL;
     if (!db) {
         return result;  // Return empty array
     }
@@ -785,13 +785,13 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
 /**
  * Find orphaned packages - dependencies no longer needed.
  */
-json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo) {
+json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo, json_t* (*load_db_cb)(const char*)) {
     if (!chroot_path || !pool || !repo) {
         return NULL;
     }
     
     json_t *result = json_array();
-    json_t *db = load_installed_db(chroot_path);
+    json_t *db = load_db_cb ? load_db_cb(chroot_path) : NULL;
     if (!db) {
         return result;
     }
@@ -817,7 +817,7 @@ json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo) 
         if (strcmp(reason, "dependency") != 0) continue;
         
         // Check if any installed package depends on this one
-        json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo);
+        json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo, load_db_cb);
         if (json_array_size(reverse_deps) == 0) {
             // No packages depend on this - it's orphaned
             json_array_append_new(result, json_string(pkg_name));
@@ -832,12 +832,12 @@ json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo) 
 /**
  * Remove all orphaned packages.
  */
-int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry_run) {
+int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry_run, json_t* (*load_db_cb)(const char*), int (*erase_cb)(const char*, const char*)) {
     if (!chroot_path || !pool || !repo) {
         return -1;
     }
     
-    json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo);
+    json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo, load_db_cb);
     if (!orphaned) {
         return -1;
     }
@@ -871,7 +871,7 @@ int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry
     for (size_t i = 0; i < count; i++) {
         const char *pkg = json_string_value(json_array_get(orphaned, i));
         log_info("Removing orphaned package: %s", pkg);
-        if (erase_package(pkg, chroot_path) == 0) {
+        if (erase_cb && erase_cb(pkg, chroot_path) == 0) {
             removed++;
         }
     }
@@ -885,14 +885,14 @@ int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry
  * Erase package with dependency checks and orphan detection.
  */
 int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
-                               Pool *pool, Repo *repo, int show_orphans) {
+                               Pool *pool, Repo *repo, int show_orphans, json_t* (*load_db_cb)(const char*), int (*erase_cb)(const char*, const char*)) {
     if (!pkg_name || !chroot_path) {
         return -1;
     }
     
     // Check for reverse dependencies if pool/repo available
     if (pool && repo) {
-        json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo);
+        json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo, load_db_cb);
         if (reverse_deps) {
             size_t dep_count = json_array_size(reverse_deps);
             if (dep_count > 0) {
@@ -914,11 +914,11 @@ int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
     }
     
     // Perform removal
-    int result = erase_package(pkg_name, chroot_path);
+    int result = erase_cb ? erase_cb(pkg_name, chroot_path) : -1;
     
     // Show orphaned packages after removal
     if (result == 0 && show_orphans && pool && repo) {
-        json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo);
+        json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo, load_db_cb);
         if (orphaned) {
             size_t count = json_array_size(orphaned);
             if (count > 0) {

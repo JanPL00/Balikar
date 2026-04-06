@@ -1,4 +1,5 @@
 
+
 //
 // Created by placeja5 on 11/12/25.
 //
@@ -61,7 +62,7 @@ Solver *create_solver(Pool *pool) {
  * @param repo The repository containing the solvable
  * @param depth Current recursion depth (starts at 0)
  */
-void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
+void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, json_t* (*mkdeps_cb)(Repodata*, Id, Pool*)) {
     // Check recursion depth to prevent infinite loops from circular dependencies
     if (depth > MAX_RECURSION_DEPTH) {
         log_error("Recursion depth exceeded (%d) – possible circular dependency.", depth);
@@ -76,7 +77,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
     }
 
     // Get makedeps as JSON array from custom metadata
-    json_t *mkdeps = get_custom_mkdeps(data, p, pool);
+    json_t *mkdeps = mkdeps_cb ? mkdeps_cb(data, p, pool) : NULL;
     if (!mkdeps || !json_is_array(mkdeps)) {
         log_debug(2, "No mkdeps for solvable %d.", p);
         if (mkdeps) json_decref(mkdeps);
@@ -110,7 +111,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
         FOR_REPO_SOLVABLES(repo, q, s) {
             if (s->name == pkg_id) {
                 // Recurse into this dependency's makedeps
-                add_mkdeps_to_queue(job, q, pool, repo, depth + 1);
+                add_mkdeps_to_queue(job, q, pool, repo, depth + 1, mkdeps_cb);
                 break;  // Assume unique name in repo
             }
         }
@@ -139,7 +140,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
  * @return Queue with success indicator (1) on success, NULL on failure
  *         Caller must free the returned queue with queue_free() and solv_free()
  */
-Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo, const char *root_path) {
+Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo, const char *root_path, json_t* (*mkdeps_cb)(Repodata*, Id, Pool*)) {
     if (!solv || !pool || !repo || !pkg_name) {
         log_error("Invalid arguments in solve_dependencies.");
         return NULL;
@@ -238,7 +239,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         // First, recursively process all makedeps (build-time dependencies)
         // This ensures build dependencies are resolved before runtime dependencies
         // TODO: Pass installed_names to skip already installed makedeps
-        add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
+        add_mkdeps_to_queue(&job, main_p, pool, repo, 0, mkdeps_cb);
 
         // Then add runtime dependencies: Add main package as SOLVER_INSTALL
         // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME

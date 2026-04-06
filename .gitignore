@@ -3,6 +3,7 @@ build/
 build-dist/
 dist/
 cmake-build-*/
+balikar_backup/
 
 # IDE
 .idea/

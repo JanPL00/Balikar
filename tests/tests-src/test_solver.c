@@ -184,7 +184,7 @@ START_TEST(test_add_mkdeps_simple) {
     // Test add_mkdeps_to_queue
     Queue job;
     queue_init(&job);
-    add_mkdeps_to_queue(&job, p, fixture.pool, fixture.repo, 0);
+    add_mkdeps_to_queue(&job, p, fixture.pool, fixture.repo, 0, NULL);
     
     // Should have added mkdeps - may be 0 if mkdeps not properly stored
     // Let's just check it doesn't crash for now
@@ -220,7 +220,7 @@ START_TEST(test_add_mkdeps_no_mkdeps) {
     
     Queue job;
     queue_init(&job);
-    add_mkdeps_to_queue(&job, p, fixture.pool, fixture.repo, 0);
+    add_mkdeps_to_queue(&job, p, fixture.pool, fixture.repo, 0, NULL);
     
     // Should not add anything (no mkdeps)
     ck_assert_int_eq(job.count, 0);
@@ -269,7 +269,7 @@ START_TEST(test_add_mkdeps_max_recursion) {
     queue_init(&job);
     
     // Should handle recursion gracefully (MAX_RECURSION_DEPTH = 10)
-    add_mkdeps_to_queue(&job, p, fixture.pool, fixture.repo, 0);
+    add_mkdeps_to_queue(&job, p, fixture.pool, fixture.repo, 0, NULL);
     
     // Should not crash, just stop at max depth
     ck_assert_int_ge(job.count, 0);
@@ -297,7 +297,7 @@ START_TEST(test_solve_dependencies_simple_package) {
     Solver* solver = create_solver(fixture.pool);
     ck_assert_ptr_ne(solver, NULL);
     
-    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo, "/");
+    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo, "/", NULL);
     // Result may be NULL if package not found, check solver was called
     if (result) {
         ck_assert_int_ge(result->count, 0);
@@ -331,7 +331,7 @@ START_TEST(test_solve_dependencies_with_runtime_deps) {
     ck_assert_ptr_ne(fixture.repo, NULL);
     
     Solver* solver = create_solver(fixture.pool);
-    Queue* result = solve_dependencies(solver, "app-with-deps", fixture.pool, fixture.repo, "/");
+    Queue* result = solve_dependencies(solver, "app-with-deps", fixture.pool, fixture.repo, "/", NULL);
     
     if (result) {
         // Should include packages
@@ -372,7 +372,7 @@ START_TEST(test_solve_dependencies_with_mkdeps) {
     ck_assert_ptr_ne(fixture.repo, NULL);
     
     Solver* solver = create_solver(fixture.pool);
-    Queue* result = solve_dependencies(solver, "complex-app", fixture.pool, fixture.repo, "/");
+    Queue* result = solve_dependencies(solver, "complex-app", fixture.pool, fixture.repo, "/", NULL);
     
     if (result) {
         // Should include packages
@@ -399,7 +399,7 @@ START_TEST(test_solve_dependencies_nonexistent_package) {
     fixture.repo = load_repository(fixture.pool, fixture.repo_path);
     
     Solver* solver = create_solver(fixture.pool);
-    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo, "/");
+    Queue* result = solve_dependencies(solver, "nonexistent-pkg", fixture.pool, fixture.repo, "/", NULL);
     
     // Should return NULL for nonexistent package
     ck_assert_ptr_eq(result, NULL);
@@ -422,19 +422,19 @@ START_TEST(test_solve_dependencies_invalid_args) {
     Solver* solver = create_solver(fixture.pool);
     
     // Test NULL solver
-    Queue* result = solve_dependencies(NULL, "test-pkg", fixture.pool, fixture.repo, "/");
+    Queue* result = solve_dependencies(NULL, "test-pkg", fixture.pool, fixture.repo, "/", NULL);
     ck_assert_ptr_eq(result, NULL);
     
     // Test NULL pkg_name
-    result = solve_dependencies(solver, NULL, fixture.pool, fixture.repo, "/");
+    result = solve_dependencies(solver, NULL, fixture.pool, fixture.repo, "/", NULL);
     ck_assert_ptr_eq(result, NULL);
     
     // Test NULL pool
-    result = solve_dependencies(solver, "test-pkg", NULL, fixture.repo, "/");
+    result = solve_dependencies(solver, "test-pkg", NULL, fixture.repo, "/", NULL);
     ck_assert_ptr_eq(result, NULL);
     
     // Test NULL repo
-    result = solve_dependencies(solver, "test-pkg", fixture.pool, NULL, "/");
+    result = solve_dependencies(solver, "test-pkg", fixture.pool, NULL, "/", NULL);
     ck_assert_ptr_eq(result, NULL);
     
     solver_free(solver);

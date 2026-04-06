@@ -666,7 +666,7 @@ int main(int argc, char **argv) {
         // Determines all packages needed to satisfy requirements
         // Pass root_path so solver can check for already installed packages
         const char *target_root = cfg.root_path ? cfg.root_path : "/";
-        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, target_root);
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, target_root, get_custom_mkdeps);
         if (!solution) {
             log_error("Dependency resolution failed for %s.", cfg.package_name);
             solver_free(solv);
@@ -746,12 +746,13 @@ int main(int argc, char **argv) {
                     json_t *extras = get_custom_extras(data, p, pool);
                     const char *version = pool_id2str(pool, s->evr);
                     download_extras(extras, pkg_name, version, cfg.repo_path, NULL);
-                    if (extras) json_decref(extras);
                     
                     // Build package into staging directory
                     // Always build to staging first, then install if needed
                     log_info("Building %s...", pkg_name);
-                    int build_rc = commit_element(trans, data, p, fp, pool);
+                    int is_group = get_custom_is_group(data, p, pool);
+                    int no_package = get_custom_no_package(data, p, pool);
+                    int build_rc = commit_element(trans, p, fp, pool, is_group, no_package, extras);
                     if (build_rc != 0) {
                         log_error("Build failed for %s.", pkg_name);
                         exit_code = ERR_BUILD_FAIL;
@@ -820,7 +821,7 @@ int main(int argc, char **argv) {
         }
         
         const char *target_root = cfg.root_path ? cfg.root_path : "/";
-        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, target_root);
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, target_root, get_custom_mkdeps);
         if (!solution) {
             log_error("Dependency resolution failed.");
             solver_free(solv);
@@ -852,7 +853,7 @@ int main(int argc, char **argv) {
         
         // Use erase_package_with_checks for dependency checking and orphan detection
         if (!cfg.dry_run) {
-            if (erase_package_with_checks(cfg.package_name, target_root, pool, repo, 1) != 0) {
+            if (erase_package_with_checks(cfg.package_name, target_root, pool, repo, 1, load_installed_db, erase_package) != 0) {
                 log_error("Failed to remove package '%s'.", cfg.package_name);
                 exit_code = 1;
                 goto cleanup;
@@ -869,7 +870,7 @@ int main(int argc, char **argv) {
         
         log_info("Searching for orphaned packages in %s...", target_root);
         
-        if (autoremove_packages(target_root, pool, repo, cfg.dry_run) < 0) {
+        if (autoremove_packages(target_root, pool, repo, cfg.dry_run, load_installed_db, erase_package) < 0) {
             log_error("Autoremove failed.");
             exit_code = 1;
             goto cleanup;
@@ -1046,7 +1047,7 @@ int main(int argc, char **argv) {
         
         // Step 2: Solve dependencies
         // For download command, use system root (downloads are independent of target root)
-        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, "/");
+        Queue *solution = solve_dependencies(solv, cfg.package_name, pool, repo, "/", get_custom_mkdeps);
         if (!solution) {
             log_error("Dependency resolution failed for %s.", cfg.package_name);
             solver_free(solv);

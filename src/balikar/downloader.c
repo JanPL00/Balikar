@@ -204,7 +204,7 @@ static int extract_and_check_embedded_source(const char *repo_archive_path,
  * @param repo_path Repository base path for local fallback
  * @return FILE pointer to downloaded/cached package, or NULL on error
  */
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path) {
+FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_array, const char *repo_path) {
     if (!s || !loc) {
         log_error("Invalid arguments in download_package.");
         return NULL;
@@ -225,8 +225,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data,
     // Get solvable ID from Solvable pointer
     Id p = s - pool->solvables;
     
-    // Try to load source array from metadata
-    json_t *source_array = get_custom_source_array(data, p, pool);
+    // Source array is passed injected from main.c
     size_t source_count = 0;
     if (source_array && json_is_array(source_array)) {
         source_count = json_array_size(source_array);
@@ -686,7 +685,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
  * @param output_dir Base output directory for downloads
  * @return 0 on success, -1 on error
  */
-int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repodata *data, 
+int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json_t *source_array, 
                                   const char *repo_path, const char *output_dir) {
     if (!s || !loc || !output_dir) {
         log_error("Invalid arguments in download_package_to_directory.");
@@ -699,8 +698,7 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, Repo
     // Get solvable ID from Solvable pointer
     Id p = s - pool->solvables;
     
-    // Try to load source array from metadata
-    json_t *source_array = get_custom_source_array(data, p, pool);
+    // Source array is passed injected from main.c
     size_t source_count = 0;
     if (source_array && json_is_array(source_array)) {
         source_count = json_array_size(source_array);

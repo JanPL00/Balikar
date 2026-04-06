@@ -465,14 +465,11 @@ static int extract_archive(FILE *fp, const char *tmp_dir) {
  * @param pool Dependency resolution pool
  * @return 0 on success, -1 on error
  */
-int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *pool) {
+int commit_element(Transaction *trans, Id p, FILE *fp, Pool *pool, int is_group, int no_package, json_t *extras) {
 	(void)trans; // Reserved for future use (e.g., transaction ordering)
-	if (!data || !fp || !pool) return -1;
+	if (!fp || !pool) return -1;
 
 	// Extract package metadata
-	int is_group = get_custom_is_group(data, p, pool);
-	int no_package = get_custom_no_package(data, p, pool);
-	json_t *extras = get_custom_extras(data, p, pool);
 
 	char *pkg_name = pool_id2str(pool, pool->solvables[p].name);
 	

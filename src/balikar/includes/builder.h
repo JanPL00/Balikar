@@ -26,7 +26,7 @@ int run_with_chroot(const char *root, build_callback func, void *data);
 
 // Main function for building one transaction element.
 // Returns 0 on success, non-zero on error.
-int commit_element(Transaction *trans, Repodata *data, Id p, FILE *fp, Pool *pool);
+int commit_element(Transaction *trans, Id p, FILE *fp, Pool *pool, int is_group, int no_package, json_t *extras);
 
 // Find first subdirectory (source dir) after tar archive extraction.
 // Caller must free the returned malloc'd path.

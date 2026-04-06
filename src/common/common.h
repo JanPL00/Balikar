@@ -115,4 +115,11 @@ void log_warn(const char *fmt, ...);
 // Returns "x86_64", "i686", etc., or "unknown" if pool is NULL
 
 
+// Safe cache dir allocator macro (caller frees result of CACHE_DIR)
+#define CACHE_DIR (get_cache_dir())
+
+// Get the cache directory path.
+static inline char *get_cache_dir(void) {
+        return strdup("/var/cache/balikar/downloads");
+}
 #endif //IMPL_COMMON_H
