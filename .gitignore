@@ -5,7 +5,10 @@ dist/
 cmake-build-*/
 balikar_backup/
 doc/diagrams/
-balikar
+
+doc/balikar/TESTING_RESULTS.md
+doc/balikar/REFACTOR.txt.backup
+doc/balikar/REFACTOR.txt
 
 # IDE
 .idea/
@@ -13,6 +16,7 @@ balikar
 
 # Binary - ALLOWED for distribution
 # /balikar is now tracked for pre-built releases
+tests/DOCKER_128MB_TEST_RESULTS.md
 
 # Temporary files
 *.tmp

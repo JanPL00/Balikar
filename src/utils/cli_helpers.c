@@ -19,6 +19,7 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  install <pkg>         Install package with deps resolution\n");
     fprintf(stderr, "  build <pkg>           Build from source (with mkdeps)\n");
     fprintf(stderr, "  resolve <pkg>         Resolve dependencies only (dry-run)\n");
+    fprintf(stderr, "  download <pkg>        Download packages without installing\n");
     fprintf(stderr, "  remove <pkg>          Remove installed package\n");
     fprintf(stderr, "  autoremove            Remove orphaned dependencies\n");
     fprintf(stderr, "  repo list             List configured repositories\n");
@@ -35,7 +36,9 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  --root=PATH           Set target root for install/remove (default: /)\n");
     fprintf(stderr, "  --no-staging          Disable staging, install directly (stable mode)\n");
     fprintf(stderr, "  --dry-run             Simulate without changes\n");
+    fprintf(stderr, "  --no-deps             Download without dependencies\n");
     fprintf(stderr, "  --repo=PATH           Override repository path\n");
+    fprintf(stderr, "  --output-dir=PATH     Output directory for download command\n");
     fprintf(stderr, "  --local-package=PATH  Install from local tar.bz2 (out of repo)\n");
     fprintf(stderr, "  --pkg=NAME            Package name for clean-cache command\n");
     fprintf(stderr, "  -h, --help            Show this help\n");
@@ -43,6 +46,8 @@ void print_usage(int exit_code) {
     fprintf(stderr, "Examples:\n");
     fprintf(stderr, "  balikar install glibc\n");
     fprintf(stderr, "  balikar build gcc --staging-dir=/tmp/stage\n");
+    fprintf(stderr, "  balikar download nmap --output-dir=/tmp/downloads\n");
+    fprintf(stderr, "  balikar download gzip --no-deps\n");
     fprintf(stderr, "  balikar repo list\n");
     fprintf(stderr, "  balikar repo add myrepo https://example.com/repo\n");
     fprintf(stderr, "  balikar clean-cache --pkg=glibc\n");

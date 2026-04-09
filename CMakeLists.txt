@@ -128,6 +128,17 @@ enable_testing()
 
 add_executable(balikar
         src/balikar/main.c
+        src/balikar/command_context.c
+        src/balikar/command_registry.c
+        src/balikar/commands/cmd_repos.c
+        src/balikar/commands/cmd_autoremove.c
+        src/balikar/commands/cmd_remove.c
+        src/balikar/commands/cmd_resolve.c
+        src/balikar/commands/cmd_clean_cache.c
+        src/balikar/commands/cmd_repo_update.c
+        src/balikar/commands/cmd_repo.c
+        src/balikar/commands/cmd_download.c
+        src/balikar/commands/cmd_install.c
         src/balikar/downloader.c
         src/common/common.c
         src/common/config.c
@@ -142,6 +153,10 @@ add_executable(balikar
         src/balikar/includes/builder.h
         src/balikar/installer.c
         src/balikar/includes/installer.h
+        src/balikar/includes/command.h
+        src/balikar/includes/command_context.h
+        src/balikar/includes/command_registry.h
+        src/balikar/includes/commands.h
 )
 
 # Build binary to project root instead of build/
