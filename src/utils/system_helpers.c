@@ -53,19 +53,14 @@ void set_system_arch(Pool *pool) {
  * @return Architecture string (e.g., "x86_64", "i686"), or "unknown" if pool is NULL
  */
 const char *get_pool_arch(const Pool *pool) {
+    if (!pool) return "unknown";
 
-    if (!pool) {
-        return "unknown";
-    }
-
-    // Direct access to lastarch - correct method for getting current architecture
-    if (pool->lastarch) {
-        const char *arch = pool_id2str(pool, pool->lastarch);
-        if (arch && strlen(arch) > 0) {
-            return arch;
+    const char *best = NULL;
+    for (Id id = 1; id < pool->lastarch; id++) {
+        if (pool->id2arch && pool->id2arch[id]) {
+            unsigned int color = pool->id2arch[id] >> 16;
+            if (color == 1) best = pool_id2str(pool, id);
         }
     }
-
-    // Fallback to default architecture
-    return "x86_64";
+    return best ? best : "x86_64";
 }

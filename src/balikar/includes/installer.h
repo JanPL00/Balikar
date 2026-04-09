@@ -94,4 +94,17 @@ int erase_package(const char *pkg_name, const char *chroot_path);
  */
 int validate_chroot(const char *chroot_path);
 
+// Find reverse dependencies - packages that depend on pkg_name.
+// Uses load_db_cb callback to access installed DB (decoupled from solver).
+json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path, Pool *pool, Repo *repo, json_t* (*load_db_cb)(const char*));
+
+// Find orphaned packages - dependencies no longer needed.
+json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo, json_t* (*load_db_cb)(const char*));
+
+// Remove all orphaned packages.
+int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry_run, json_t* (*load_db_cb)(const char*), int (*erase_cb)(const char*, const char*));
+
+// Erase package with dependency checks and orphan detection.
+int erase_package_with_checks(const char *pkg_name, const char *chroot_path, Pool *pool, Repo *repo, int show_orphans, json_t* (*load_db_cb)(const char*), int (*erase_cb)(const char*, const char*));
+
 #endif // INSTALLER_H

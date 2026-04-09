@@ -4,6 +4,8 @@ build-dist/
 dist/
 cmake-build-*/
 balikar_backup/
+doc/diagrams/
+balikar
 
 # IDE
 .idea/
@@ -24,6 +26,8 @@ repo/repodata.json
 # Structure exports
 structure_exports/
 
+
 # Implementation notes
 impl_builderu.txt
 BUILD_STATIC.txt
+

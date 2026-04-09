@@ -565,40 +565,6 @@ static void collect_packages_recursive(const char* current_path, json_t* package
             if (index) {
                 // Found a package with index.json
                 log_info("Found package at: %s", full_path);
-                
-                // For directory packages, try to compute SHA if there's a source tarball
-                // Look for <name>-<version>.tar.* in current or parent directory
-                const char *pkg_name = json_string_value(json_object_get(index, "name"));
-                const char *pkg_version = json_string_value(json_object_get(index, "version"));
-                
-                if (pkg_name && pkg_version) {
-                    // Try various patterns: name-version.tar.gz, name-version.tar.bz2, name-version-build.tar.*
-                    const char *extensions[] = {".tar.gz", ".tar.bz2", ".tar.xz", NULL};
-                    char tar_candidate[2048];
-                    int found = 0;
-                    
-                    for (int i = 0; extensions[i] && !found; i++) {
-                        // Try in current directory first
-                        snprintf(tar_candidate, sizeof(tar_candidate), "%s/%s-%s%s", 
-                                 full_path, pkg_name, pkg_version, extensions[i]);
-                        if (access(tar_candidate, F_OK) == 0) {
-                            found = 1;
-                            break;
-                        }
-                        
-                        // Try with build number if available
-                        const char *pkg_build = json_string_value(json_object_get(index, "build"));
-                        if (pkg_build) {
-                            snprintf(tar_candidate, sizeof(tar_candidate), "%s/%s-%s-%s%s", 
-                                     full_path, pkg_name, pkg_version, pkg_build, extensions[i]);
-                            if (access(tar_candidate, F_OK) == 0) {
-                                found = 1;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
                 process_index_json(index, packages, pool, repo, NULL);
                 json_decref(index);
             } else {

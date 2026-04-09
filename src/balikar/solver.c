@@ -1,11 +1,8 @@
-
-
 //
 // Created by placeja5 on 11/12/25.
 //
 
 #include "includes/solver.h"
-
 /**
  * Create a solver instance for the given pool.
  * 
@@ -76,7 +73,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, js
         return;
     }
 
-    // Get makedeps as JSON array from custom metadata
+    // Get makedeps as JSON array from custom metadata using callback
     json_t *mkdeps = mkdeps_cb ? mkdeps_cb(data, p, pool) : NULL;
     if (!mkdeps || !json_is_array(mkdeps)) {
         log_debug(2, "No mkdeps for solvable %d.", p);

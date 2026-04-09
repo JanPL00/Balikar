@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
+#include <jansson.h>
 
 // Fixture: creates temp HOME and test file
 typedef struct {
@@ -18,6 +19,7 @@ typedef struct {
     Repodata *data;
     Id solv_id;
     Solvable *solv;
+    json_t *source_array;
 } DownloaderFixture;
 
 static void setup_fixture(DownloaderFixture *f) {
@@ -45,9 +47,16 @@ static void setup_fixture(DownloaderFixture *f) {
     f->solv->evr = pool_str2id(f->pool, "1.0", 1);
     f->data = repo_add_repodata(f->repo, 0);
     ck_assert_ptr_ne(f->data, NULL);
+    
+    // Create source array
+    f->source_array = json_array();
+    json_t *src_obj = json_object();
+    json_object_set_new(src_obj, "url", json_string(f->file_path));
+    json_array_append_new(f->source_array, src_obj);
 }
 
 static void teardown_fixture(DownloaderFixture *f) {
+    if (f->source_array) json_decref(f->source_array);
     if (f->repo) repo_free(f->repo, 1);
     if (f->pool) pool_free(f->pool);
     if (f->home_dir) {
@@ -61,7 +70,7 @@ static void teardown_fixture(DownloaderFixture *f) {
 START_TEST(test_download_package_local_success) {
     DownloaderFixture fx; setup_fixture(&fx);
 
-    FILE *res = download_package(fx.solv, fx.file_path, fx.pool, fx.data, NULL);
+    FILE *res = download_package(fx.solv, fx.file_path, fx.pool, fx.source_array, NULL);
     ck_assert_ptr_ne(res, NULL);
     char buf[32] = {0};
     size_t r = fread(buf, 1, sizeof(buf)-1, res);
@@ -78,7 +87,7 @@ START_TEST(test_download_package_cache_reuse) {
     DownloaderFixture fx; setup_fixture(&fx);
 
     // First download
-    FILE *res1 = download_package(fx.solv, fx.file_path, fx.pool, fx.data, NULL);
+    FILE *res1 = download_package(fx.solv, fx.file_path, fx.pool, fx.source_array, NULL);
     ck_assert_ptr_ne(res1, NULL);
     fclose(res1);
 
@@ -89,7 +98,7 @@ START_TEST(test_download_package_cache_reuse) {
     ck_assert_int_eq(access(expected, F_OK), 0);
 
     // Second download should use cached file (no re-copy)
-    FILE *res2 = download_package(fx.solv, fx.file_path, fx.pool, fx.data, NULL);
+    FILE *res2 = download_package(fx.solv, fx.file_path, fx.pool, fx.source_array, NULL);
     ck_assert_ptr_ne(res2, NULL);
     char buf[16] = {0};
     fread(buf, 1, sizeof(buf)-1, res2);

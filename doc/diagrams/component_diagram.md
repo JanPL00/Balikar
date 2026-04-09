@@ -67,9 +67,13 @@ User → main.c
 ### IDependencyResolver (solver.c)
 ```c
 + create_solver(pool: Pool*): Solver*
-+ solve_dependencies(solv: Solver*, pkg_name: const char*, pool: Pool*, repo: Repo*): Queue*
-+ add_mkdeps_to_queue(job: Queue*, p: Id, pool: Pool*, repo: Repo*, depth: int): void
++ solve_dependencies(solv: Solver*, pkg_name: const char*, pool: Pool*, repo: Repo*, root_path: const char*, mkdeps_cb: fn_ptr): Queue*
++ add_mkdeps_to_queue(job: Queue*, p: Id, pool: Pool*, repo: Repo*, depth: int, mkdeps_cb: fn_ptr): void
 + display_problem_proof(solv: Solver*, problem: int): void
++ find_reverse_dependencies(pkg_name: const char*, chroot_path: const char*, pool: Pool*, repo: Repo*, load_db_cb: fn_ptr): json_t*
++ find_orphaned_packages(chroot_path: const char*, pool: Pool*, repo: Repo*, load_db_cb: fn_ptr): json_t*
++ autoremove_packages(chroot_path: const char*, pool: Pool*, repo: Repo*, dry_run: int, load_db_cb: fn_ptr, erase_cb: fn_ptr): int
++ erase_package_with_checks(pkg_name: const char*, chroot_path: const char*, pool: Pool*, repo: Repo*, show_orphans: int, load_db_cb: fn_ptr, erase_cb: fn_ptr): int
 ```
 
 ### IPackageDownloader (downloader.c)
@@ -146,6 +150,18 @@ User → main.c
 + set_system_arch(pool: Pool*): void
 + get_pool_arch(pool: const Pool*): const char*
 ```
+
+## Modular Architecture
+
+All core modules (parser, solver, downloader, builder, installer) are **fully independent** —
+they have **zero direct cross-module dependencies**. All inter-module communication is
+orchestrated through `main.c`:
+
+- **solver.c** receives `mkdeps_cb` function pointer from main.c (wired to `parser.c::get_custom_mkdeps`)
+- **solver.c** receives `load_db_cb` and `erase_cb` callbacks from main.c (wired to `installer.c::load_installed_db` and `installer.c::erase_package`)
+- **main.c** extracts metadata from parser (get_custom_source_array, get_custom_extras, etc.) and passes it to downloader/builder as data, not as module references
+
+This means any module can be replaced or tested independently.
 
 ## Key Workflows
 

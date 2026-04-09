@@ -117,10 +117,10 @@ main --( IConfigMgr
 main --( ICLIHelper
 
 ' Core module dependencies
-builder --( IRepoLoader
-builder --( IPkgDownloader
-downloader --( IRepoLoader
-solver --( IRepoLoader
+' NOTE: No direct cross-module dependencies exist between core modules.
+' solver.c uses function pointer callbacks (mkdeps_cb) injected by main.c
+' to access parser functions - this is correct modular architecture.
+' builder, downloader, and installer are fully independent modules.
 
 ' Logger dependencies (all core modules use common)
 parser --( ILogger
@@ -132,8 +132,6 @@ config --( ILogger
 
 ' Utility dependencies
 parser --( ISysHelper
-builder --( IPrinter
-solver --( IPrinter
 
 ' Interface operations (UML 2.5 format - simplified for PlantUML)
 note right of IRepoLoader
@@ -194,12 +192,18 @@ note right of IPkgBuilder
 end note
 
 note right of IPkgInstaller
-    **IPackageInstaller API (NEW):**
+    **IPackageInstaller API:**
     + install_package()
+    + install_package_with_reason()
     + is_package_installed()
     + get_installed_packages()
+    + load_installed_db()
     + erase_package()
     + validate_chroot()
+    + find_reverse_dependencies(cb)
+    + find_orphaned_packages(cb)
+    + autoremove_packages(cb)
+    + erase_package_with_checks(cb)
 end note
 
 note right of IConfigMgr

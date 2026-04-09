@@ -110,10 +110,16 @@ end note
 note right of IPkgInstaller
   **IPackageInstaller API:**
   • install_package()
+  • install_package_with_reason()
   • is_package_installed()
   • get_installed_packages()
+  • load_installed_db()
   • erase_package()
   • validate_chroot()
+  • find_reverse_dependencies(cb)
+  • find_orphaned_packages(cb)
+  • autoremove_packages(cb)
+  • erase_package_with_checks(cb)
 end note
 
 note left of ILogger
@@ -132,10 +138,10 @@ main --( IPkgBuilder
 main --( IPkgInstaller
 main --( IConfigMgr
 
-builder --( IRepoLoader
-builder --( IPkgDownloader
-solver --( IRepoLoader
-downloader --( IRepoLoader
+' NOTE: No direct cross-module dependencies exist between core modules.
+' All inter-module communication goes through main.c using callbacks.
+' solver.c accepts mkdeps_cb, load_db_cb, erase_cb function pointers
+' that main.c wires to parser.c and installer.c functions.
 
 ' Logging dependency via ILogger interface
 parser --( ILogger
