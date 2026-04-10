@@ -8,6 +8,9 @@ skinparam component {
     BackgroundColor<<component>> LightYellow
     BackgroundColor<<library>> LightGreen
     BackgroundColor<<datastore>> LightGray
+    BackgroundColor<<dispatcher>> LightSalmon
+    BackgroundColor<<facade>> #FFE4B5
+    BackgroundColor<<command>> #E6FFE6
     BorderColor Black
     ArrowColor DarkBlue
 }
@@ -21,6 +24,25 @@ left to right direction
 
 ' ==================== HLAVNÍ EXECUTABLE ====================
 component [Main CLI\n(main.c)] as main <<executable>>
+
+' ==================== COMMAND LAYER ====================
+package "Command Layer" {
+    component [Command Context\n(command_context.c)\nShared state +\nsubsystem facade] as cmd_ctx <<facade>>
+    component [Command Registry\n(command_registry.c)\nStatic command table\n+ dispatcher] as cmd_reg <<dispatcher>>
+
+    package "Command Pool" {
+        component [cmd_install] as cmd_install <<command>>
+        component [cmd_build] as cmd_build <<command>>
+        component [cmd_resolve] as cmd_resolve <<command>>
+        component [cmd_remove] as cmd_remove <<command>>
+        component [cmd_autoremove] as cmd_autoremove <<command>>
+        component [cmd_download] as cmd_download <<command>>
+        component [cmd_repo] as cmd_repo <<command>>
+        component [cmd_repo_update] as cmd_repo_update <<command>>
+        component [cmd_repos] as cmd_repos <<command>>
+        component [cmd_clean_cache] as cmd_clean <<command>>
+    }
+}
 
 ' ==================== CORE MODULY ====================
 package "Core Modules" {
@@ -46,7 +68,8 @@ package "External Libraries" {
     component [libsolv] as libsolv <<library>>
     component [jansson] as jansson <<library>>
     component [libcurl] as libcurl <<library>>
-    component [libarchive] as libarchive <<library>>
+    ' libarchive: linked but NOT used at C API level
+    ' builder.c uses popen("tar ...") instead
 }
 
 ' ==================== DATOVÁ ÚLOŽIŠTĚ ====================
@@ -57,17 +80,23 @@ package "Data Storage" {
     database "Installed DB" as instdb <<datastore>>
 }
 
-' Note: Dependencies are now modeled through interface connections above
-' using UML lollipop (provided) and socket (required) notation
-
 ' ==================== KNIHOVNÍ ZÁVISLOSTI ====================
 
+' libsolv: parser (vytváří Pool/Repo/Solvable), solver (Solver/Transaction)
+'          + utils: sys_helpers, print, string_helpers přijímají Pool* přímo
 parser ..> libsolv
-parser ..> jansson
 solver ..> libsolv
+sys_helpers ..> libsolv
+print ..> libsolv
+
+' libcurl: downloader (balíčky) + parser (stahuje repodata.json přes HTTP)
 downloader ..> libcurl
-builder ..> libarchive
+parser ..> libcurl
+
+' jansson: parser (repodata.json), installer (installed.json), builder (index.json)
+parser ..> jansson
 installer ..> jansson
+builder ..> jansson
 
 ' ==================== DATA FLOW ====================
 
@@ -79,7 +108,11 @@ installer --> instdb
 
 ' ==================== PROVIDED INTERFACES (Lollipop notation) ====================
 
-' Provided interfaces (lollipop - circle symbol)
+' Command Layer interfaces
+interface "ICommandContext" as ICmdCtx
+interface "ICommandDispatcher" as ICmdDisp
+
+' Core module interfaces
 interface "IRepositoryLoader" as IRepoLoader
 interface "IDependencyResolver" as IDepResolver
 interface "IPackageDownloader" as IPkgDownloader
@@ -92,7 +125,11 @@ interface "IPrinter" as IPrinter
 interface "IDebugger" as IDebugger
 interface "ISystemHelper" as ISysHelper
 
-' Components provide interfaces (lollipop notation)
+' Command layer provides interfaces
+cmd_ctx -up- ICmdCtx
+cmd_reg -up- ICmdDisp
+
+' Core modules provide interfaces (lollipop notation)
 parser -up- IRepoLoader
 solver -up- IDepResolver
 downloader -up- IPkgDownloader
@@ -107,22 +144,44 @@ sys_helpers -up- ISysHelper
 
 ' ==================== REQUIRED INTERFACES (Assembly connectors) ====================
 
-' Main requires all core interfaces
-main --( IRepoLoader
-main --( IDepResolver
-main --( IPkgDownloader
-main --( IPkgBuilder
-main --( IPkgInstaller
-main --( IConfigMgr
-main --( ICLIHelper
+' Main requires only command layer interfaces (no direct core access)
+main --( ICmdCtx
+main --( ICmdDisp
 
-' Core module dependencies
-' NOTE: No direct cross-module dependencies exist between core modules.
-' solver.c uses function pointer callbacks (mkdeps_cb) injected by main.c
-' to access parser functions - this is correct modular architecture.
-' builder, downloader, and installer are fully independent modules.
+' Command Registry requires Command Context (to pass ctx to commands)
+cmd_reg --( ICmdCtx
 
-' Logger dependencies (all core modules use common)
+' Command Pool requires core module interfaces (via ctx->subsystems facade)
+' NOTE: Commands access core APIs *only* through CommandContext subsystem pointers,
+' not through direct function calls. This enables mock injection for testing.
+cmd_install --( IRepoLoader
+cmd_install --( IDepResolver
+cmd_install --( IPkgDownloader
+cmd_install --( IPkgBuilder
+cmd_install --( IPkgInstaller
+
+cmd_build --( IRepoLoader
+cmd_build --( IDepResolver
+cmd_build --( IPkgDownloader
+cmd_build --( IPkgBuilder
+cmd_build --( IPkgInstaller
+
+cmd_resolve --( IRepoLoader
+cmd_resolve --( IDepResolver
+
+cmd_remove --( IPkgInstaller
+cmd_autoremove --( IPkgInstaller
+
+cmd_download --( IRepoLoader
+cmd_download --( IDepResolver
+cmd_download --( IPkgDownloader
+
+cmd_repo --( IConfigMgr
+cmd_repo_update --( IConfigMgr
+cmd_repo_update --( IRepoLoader
+cmd_repos --( IConfigMgr
+
+' Logger dependencies (all modules use common)
 parser --( ILogger
 solver --( ILogger
 downloader --( ILogger
@@ -130,10 +189,63 @@ builder --( ILogger
 installer --( ILogger
 config --( ILogger
 
-' Utility dependencies
+' ==================== UTILS ZÁVISLOSTI ====================
+
+' system_helpers: parser volá set_system_arch()
 parser --( ISysHelper
 
-' Interface operations (UML 2.5 format - simplified for PlantUML)
+' string_helpers: print.c volá solvable_to_string()
+print --( ISysHelper
+
+' cli_helpers (user_confirm, print_usage):
+' command_context volá print_usage()
+cmd_ctx --( ICLIHelper
+' solver volá user_confirm() při problémech
+solver --( ICLIHelper
+' installer volá user_confirm() při instalaci/odebrání
+installer --( ICLIHelper
+' builder volá user_confirm() při selhání buildu
+builder --( ICLIHelper
+' přímo z command poolu:
+cmd_install --( ICLIHelper
+cmd_download --( ICLIHelper
+cmd_clean --( ICLIHelper
+
+' print (display_transaction):
+cmd_install --( IPrinter
+cmd_resolve --( IPrinter
+cmd_download --( IPrinter
+
+' ==================== INTERFACE NOTES ====================
+
+note right of ICmdCtx
+    **ICommandContext API:**
+    + command_context_create()
+    + command_context_init_subsystems()
+    + command_context_parse_args()
+    + command_context_destroy()
+    
+    **Subsystem Facade (ctx->subsystems):**
+    • load_repository / generate_repodata
+    • create_solver / solve_dependencies
+    • download_package / download_extras
+    • commit_element
+    • install_package_with_reason
+    • erase_package / is_package_installed
+end note
+
+note right of ICmdDisp
+    **ICommandDispatcher API:**
+    + command_dispatch()
+    + command_find()
+    + command_list_all()
+    
+    **Registered Commands:**
+    install, build, resolve, remove,
+    autoremove, download, repo,
+    repo-update, repos, clean-cache
+end note
+
 note right of IRepoLoader
     **IRepositoryLoader API:**
     + load_repository()
@@ -167,10 +279,6 @@ note right of IPkgDownloader
     + download_package_to_directory()
     + download_url_to_file()
     + get_cache_dir()
-    
-    **New Features:**
-    • Embedded source detection
-    • Two-stage extraction architecture
 end note
 
 note right of IPkgBuilder
@@ -184,11 +292,6 @@ note right of IPkgBuilder
     + set_staging_dir()
     + set_build_tmp_dir()
     + run_with_chroot()
-    
-    **Enhanced Features:**
-    • BFS search for source directories
-    • Embedded source extraction
-    • Simplified logic (no remote downloads)
 end note
 
 note right of IPkgInstaller
@@ -239,12 +342,6 @@ note left of IPrinter
     + print_disk_usage_changes()
 end note
 
-note left of IDebugger
-    **IDebugger API:**
-    + display_proof()
-    + display_problem_proof()
-end note
-
 note left of ISysHelper
     **ISystemHelper API:**
     + set_system_arch()
@@ -254,21 +351,35 @@ end note
 ' ==================== WORKFLOW NOTES ====================
 
 note top of main
-    **Entry Point**
-    Commands: build, install, resolve,
-    repos, download, clean-cache, repo
+    **Entry Point (Command Pattern)**
+    1. command_context_create()
+    2. command_context_init_subsystems()
+    3. command_context_parse_args()
+    4. command_dispatch()
+    5. command_context_destroy()
     
-    **Main Workflow:**
-    1. Parse CLI arguments
-    2. Initialize pool and repo
-    3. Execute command
-    4. Cleanup resources
+    No direct dependency on core modules.
+end note
+
+note top of cmd_ctx
+    **Shared State + Subsystem Facade**
+    Holds CLI config (flags, package name,
+    chroot path, repo filter, etc.) and
+    injects subsystem function pointers.
+    Enables mock substitution for testing.
+end note
+
+note top of cmd_reg
+    **Static Command Table (zero heap)**
+    Commands registered at compile time.
+    Dispatches by string lookup.
+    Calls validate() before execute().
 end note
 
 note bottom of builder
     **Build Phases:**
     1. Extract archive to /tmp
-    2. Find source directory
+    2. Find source directory (BFS)
     3. Apply extras (.build, patches)
     4. Set environment ($P, DESTDIR)
     5. Execute .build script

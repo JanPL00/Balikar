@@ -5,7 +5,6 @@
 #include "includes/command_registry.h"
 #include "includes/commands.h"
 #include "../common/common.h"
-#include <string.h>
 
 /**
  * Static command registry - zero heap allocation.
@@ -16,61 +15,61 @@ static Command commands[] = {
     {
         .name = "install",
         .description = "Install package with dependency resolution",
-        .execute = cmd_install_execute,  // ✅ IMPLEMENTED
+        .execute = cmd_install_execute,  
         .validate = cmd_install_validate
     },
     {
         .name = "build",
         .description = "Build package from source (with mkdeps)",
-        .execute = cmd_build_execute,    // ✅ IMPLEMENTED
+        .execute = cmd_build_execute,    
         .validate = cmd_install_validate
     },
     {
         .name = "resolve",
         .description = "Resolve dependencies without installing",
-        .execute = cmd_resolve_execute,  // ✅ IMPLEMENTED
+        .execute = cmd_resolve_execute,  
         .validate = NULL
     },
     {
         .name = "remove",
         .description = "Remove installed package",
-        .execute = cmd_remove_execute,   // ✅ IMPLEMENTED
+        .execute = cmd_remove_execute,   
         .validate = cmd_remove_validate
     },
     {
         .name = "autoremove",
         .description = "Remove orphaned dependencies",
-        .execute = cmd_autoremove_execute,  // ✅ IMPLEMENTED
+        .execute = cmd_autoremove_execute,  
         .validate = NULL
     },
     {
         .name = "download",
         .description = "Download packages without installing",
-        .execute = cmd_download_execute,  // ✅ IMPLEMENTED
+        .execute = cmd_download_execute,  
         .validate = cmd_download_validate
     },
     {
         .name = "repo",
         .description = "Manage repositories (list, add, remove, enable, disable)",
-        .execute = cmd_repo_execute,      // ⚠️ PARTIAL (only 'list' works)
+        .execute = cmd_repo_execute,      // PARTIAL (only 'list' works)
         .validate = NULL
     },
     {
         .name = "repos",
         .description = "Show repository information",
-        .execute = cmd_repos_execute,    // ✅ IMPLEMENTED
+        .execute = cmd_repos_execute,    
         .validate = NULL
     },
     {
         .name = "repo-update",
         .description = "Update repository metadata",
-        .execute = cmd_repo_update_execute,  // ✅ IMPLEMENTED
+        .execute = cmd_repo_update_execute,  
         .validate = NULL
     },
     {
         .name = "clean-cache",
         .description = "Clear download cache",
-        .execute = cmd_clean_cache_execute,  // ✅ IMPLEMENTED
+        .execute = cmd_clean_cache_execute, 
         .validate = NULL
     },
     {NULL, NULL, NULL, NULL}  // Terminator

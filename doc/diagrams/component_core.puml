@@ -14,6 +14,17 @@ rectangle "Command Entry" {
 	component [Main CLI\n(main.c)] as main <<executable>>
 }
 
+rectangle "Command Layer" {
+	component [Command Context\n(command_context.c)] as cmd_ctx
+	component [Command Registry\n(command_registry.c)] as cmd_reg
+
+	rectangle "Command Pool" {
+		component [cmd_install\ncmd_build\ncmd_resolve] as cmd_pkg
+		component [cmd_remove\ncmd_autoremove] as cmd_rm
+		component [cmd_download\ncmd_repo\ncmd_repos\ncmd_repo_update\ncmd_clean_cache] as cmd_misc
+	}
+}
+
 ' Core components (ordered by workflow)
 rectangle "Core Workflow" {
 	component [Config\n(config.c)] as config
@@ -28,15 +39,30 @@ rectangle "Shared Services" {
 	component [Common\n(common.c)] as common
 }
 
+rectangle "Utilities" {
+	component [CLI Helpers\n(cli_helpers.c)] as cli_helpers
+	component [System Helpers\n(system_helpers.c)] as sys_helpers
+	component [Print\n(print.c)] as print_util
+	component [String Helpers\n(string_helpers.c)] as str_helpers
+}
+
 ' Provided interfaces (lollipop)
+interface "ICommandContext" as ICmdCtx
+interface "ICommandDispatcher" as ICmdDisp
+interface "IConfigManager" as IConfigMgr
 interface "IRepositoryLoader" as IRepoLoader
 interface "IDependencyResolver" as IDepResolver
 interface "IPackageDownloader" as IPkgDownloader
 interface "IPackageBuilder" as IPkgBuilder
 interface "IPackageInstaller" as IPkgInstaller
-interface "IConfigManager" as IConfigMgr
 interface "ILogger" as ILogger
+interface "ICLIHelper" as ICLIHelper
+interface "IPrinter" as IPrinter
+interface "ISystemHelper" as ISysHelper
+interface "IStringHelper" as IStrHelper
 
+cmd_ctx -up- ICmdCtx
+cmd_reg -up- ICmdDisp
 config -up- IConfigMgr
 parser -up- IRepoLoader
 solver -up- IDepResolver
@@ -44,8 +70,84 @@ downloader -up- IPkgDownloader
 builder -up- IPkgBuilder
 installer -up- IPkgInstaller
 common -up- ILogger
+cli_helpers -up- ICLIHelper
+print_util -up- IPrinter
+sys_helpers -up- ISysHelper
+str_helpers -up- IStrHelper
 
-' Interface method descriptions
+' Required interfaces – assembly connectors
+main --( ICmdCtx
+main --( ICmdDisp
+
+cmd_reg --( ICmdCtx
+
+cmd_pkg --( IRepoLoader
+cmd_pkg --( IDepResolver
+cmd_pkg --( IPkgDownloader
+cmd_pkg --( IPkgBuilder
+cmd_pkg --( IPkgInstaller
+
+cmd_rm --( IPkgInstaller
+
+cmd_misc --( IRepoLoader
+cmd_misc --( IPkgDownloader
+cmd_misc --( IConfigMgr
+
+' Logger dependencies
+parser --( ILogger
+solver --( ILogger
+downloader --( ILogger
+builder --( ILogger
+installer --( ILogger
+config --( ILogger
+
+' ==================== UTILS USAGE ====================
+
+' system_helpers: parser vola set_system_arch(pool)
+parser --( ISysHelper
+
+' string_helpers: print.c vola solvable_to_string()
+print_util --( IStrHelper
+
+' cli_helpers (user_confirm / print_usage):
+' command_context: print_usage() pri --help
+cmd_ctx --( ICLIHelper
+' solver: user_confirm() pri dependency problems
+solver --( ICLIHelper
+' installer: user_confirm() pri install/remove
+installer --( ICLIHelper
+' builder: user_confirm() pri selhani buildu
+builder --( ICLIHelper
+' cmd_pkg (install/download): user_confirm() + display_transaction()
+cmd_pkg --( ICLIHelper
+cmd_pkg --( IPrinter
+' cmd_misc (clean_cache): user_confirm()
+cmd_misc --( ICLIHelper
+
+' ==================== INTERFACE NOTES ====================
+
+note right of ICmdCtx
+  **ICommandContext API:**
+  • command_context_create()
+  • command_context_init_subsystems()
+  • command_context_parse_args()
+  • command_context_destroy()
+  
+  Holds CLI config flags + lazy
+  subsystem function pointers.
+  Enables mock injection in tests.
+end note
+
+note right of ICmdDisp
+  **ICommandDispatcher API:**
+  • command_dispatch()
+  • command_find()
+  • command_list_all()
+  
+  Static table, zero heap.
+  Calls validate() before execute().
+end note
+
 note right of IConfigMgr
   **IConfigManager API:**
   • init_repo_config()
@@ -130,25 +232,40 @@ note left of ILogger
   • log_debug()
 end note
 
-' Required interfaces (socket) – assembly connectors
-main --( IRepoLoader
-main --( IDepResolver
-main --( IPkgDownloader
-main --( IPkgBuilder
-main --( IPkgInstaller
-main --( IConfigMgr
+note right of ICLIHelper
+  **ICLIHelper API:**
+  • user_confirm(prompt, default)
+  • print_usage(exit_code)
+  
+  Callers: command_context, solver,
+  installer, builder, cmd_install,
+  cmd_download, cmd_clean_cache
+end note
 
-' NOTE: No direct cross-module dependencies exist between core modules.
-' All inter-module communication goes through main.c using callbacks.
-' solver.c accepts mkdeps_cb, load_db_cb, erase_cb function pointers
-' that main.c wires to parser.c and installer.c functions.
+note right of IPrinter
+  **IPrinter API:**
+  • display_transaction(trans)
+  • print_disk_usage_changes(trans)
+  
+  Callers: cmd_install, cmd_resolve,
+  cmd_download
+end note
 
-' Logging dependency via ILogger interface
-parser --( ILogger
-solver --( ILogger
-downloader --( ILogger
-builder --( ILogger
-installer --( ILogger
-config --( ILogger
+note right of ISysHelper
+  **ISystemHelper API:**
+  • set_system_arch(Pool*)
+  • get_pool_arch(Pool*)
+  
+  Uses libsolv Pool* directly.
+  Caller: parser (load_repository)
+end note
+
+note right of IStrHelper
+  **IStringHelper API:**
+  • solvable_to_string(Pool*, Id)
+  
+  Uses libsolv Pool* directly.
+  Caller: print.c
+end note
 
 @enduml

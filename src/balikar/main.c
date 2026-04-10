@@ -21,6 +21,7 @@
  * @return Exit code: 0 on success, error code on failure
  */
 int main(int argc, char **argv) {
+    
     // Step 1: Create command context
     CommandContext *ctx = command_context_create();
     if (!ctx) {
