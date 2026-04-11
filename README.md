@@ -140,6 +140,146 @@ priority = 50
 enabled = true
 ```
 
+## Sestavení a zprovoznění
+
+Balikar lze získat a spustit třemi způsoby. Jejich podmínky a postup jsou popsány níže.
+
+---
+
+### Cesta 1: Předkompilovaná binárka (nejjednodušší)
+
+Repozitář obsahuje předkompilovanou binárku spolu s adresářem `lib/`, který obsahuje potřebné knihovny (zejména libsolv s `ENABLE_CONDA=ON`), jež nejsou součástí standardních distribucí. Není potřeba Conda ani kompilátor.
+
+**Požadavky – systémové balíky:**
+```bash
+# Debian/Ubuntu
+sudo apt install libcurl4 libjansson4 libarchive13 patchelf
+
+# Fedora/RHEL
+sudo dnf install libcurl jansson libarchive patchelf
+```
+
+**Postup:**
+```bash
+git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
+cd proj6_balikar
+
+sudo sh install_prebuilt.sh   # systémová instalace (doporučeno)
+# nebo
+sh install_prebuilt.sh        # instalace pro aktuálního uživatele
+```
+
+Instalační skript zkopíruje binárku do `/usr/local/bin/`, knihovny do `/usr/local/lib/balikar/` a pomocí `patchelf` nastaví RPATH tak, aby je binárka za běhu nalezla.
+
+---
+
+### Cesta 2: Dynamická kompilace ze zdrojů
+
+Binárka se sestaví linkováním vůči sdíleným knihovnám (`.so`). Libsolv musí být dostupná jako sdílená knihovna zkompilovaná s příznakem `ENABLE_CONDA=ON` – tuto podmínku splňuje **Conda** (Miniforge/Anaconda) s instalovaným prostředím obsahujícím libsolv.
+
+**Požadavky:**
+- Nainstalovaná Conda (Miniforge) s aktivním prostředím obsahujícím libsolv
+- Systémové balíky: `libcurl`, `libjansson`, `libarchive` (vývojové verze s hlavičkovými soubory)
+
+```bash
+# Debian/Ubuntu
+sudo apt install libcurl4-openssl-dev libjansson-dev libarchive-dev cmake build-essential pkg-config
+
+# Fedora/RHEL
+sudo dnf install libcurl-devel jansson-devel libarchive-devel cmake gcc pkg-config
+```
+
+**Postup:**
+```bash
+git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
+cd proj6_balikar
+
+conda activate <tvoje-prostředí>   # CONDA_PREFIX musí být nastaven
+./build_for_distribution.sh
+sudo sh install_prebuilt.sh
+```
+
+Skript `build_for_distribution.sh` sestaví binárku, pomocí `ldd` detekuje všechny conda-specifické sdílené knihovny a zkopíruje je do `lib/`. Výsledek je identický s Cestou 1 – distribuce pak probíhá stejným skriptem `install_prebuilt.sh`.
+
+> **Poznámka:** CMake tvrdě vyžaduje nastavenou proměnnou `CONDA_PREFIX`. Bez aktivního conda prostředí konfigurace selže.
+
+---
+
+### Cesta 3: Statická kompilace ze zdrojů
+
+Veškeré závislosti jsou zalinkovány přímo do binárky. Výsledkem je jediný přenositelný soubor bez jakékoli závislosti na systémových nebo conda knihovnách.
+
+#### Varianta A: S Condou
+
+Nejjednodušší cesta ke statické binárce, pokud máte Conda k dispozici.
+
+**Požadavky:**
+- Aktivní Conda prostředí s libsolv
+- Statické verze systémových knihoven: `libcurl`, `libjansson`, `libarchive`, `libssl`, `zlib` a jejich statické archívy (`.a`)
+
+```bash
+# Debian/Ubuntu
+sudo apt install libcurl4-openssl-dev libjansson-dev libarchive-dev \
+                 libssl-dev zlib1g-dev liblzma-dev libbz2-dev libzstd-dev \
+                 cmake build-essential
+
+# Fedora/RHEL
+sudo dnf install libcurl-devel jansson-devel libarchive-devel \
+                 openssl-devel zlib-devel xz-devel bzip2-devel libzstd-devel \
+                 cmake gcc glibc-static
+```
+
+**Postup:**
+```bash
+conda activate <tvoje-prostředí>
+./build_static.sh
+sudo cp balikar-static /usr/local/bin/balikar
+```
+
+#### Varianta B: Bez Condy (ruční příprava libsolv)
+
+Pokud Conda není k dispozici, je nutné libsolv zkompilovat ze zdrojů ručně a nainstalovat do systému. Proměnná `CONDA_PREFIX` pak slouží pouze k tomu, aby CMake věděl, kde libsolv hledat – nesouvisí s Condou jako takovou.
+
+```bash
+# Kompilace libsolv ze zdrojů
+git clone https://github.com/openSUSE/libsolv.git
+cd libsolv && mkdir build && cd build
+cmake .. -DBUILD_SHARED_LIBS=OFF -DENABLE_CONDA=ON \
+         -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release
+make -j$(nproc) && sudo make install
+cd /cesta/k/proj6_balikar
+
+export CONDA_PREFIX=/usr/local
+./build_static.sh
+sudo cp balikar-static /usr/local/bin/balikar
+```
+
+#### Varianta C: Alpine Docker (bez Condy, bez ručního nastavení)
+TODO... možná odstranit tuto možnost
+
+Doporučená cesta pro reprodukovatelný build nezávislý na host systému. Alpine Linux používá musl libc, pro které je statické linkování standardní praxí a nevznikají problémy s DNS (na rozdíl od glibc). Uvnitř kontejneru se libsolv automaticky zkompiluje ze zdrojů.
+
+**Požadavky:** pouze Docker.
+
+```bash
+./build_static_alpine.sh
+sudo cp balikar-static /usr/local/bin/balikar
+```
+
+---
+
+### Přehled cest
+
+| Cesta | Conda nutná | Kompilátor nutný | Výsledek | Vhodné pro |
+|---|---|---|---|---|
+| 1 – Předkompilovaná | Ne | Ne | Binárka + `lib/` | Koncové uživatele |
+| 2 – Dynamická kompilace | **Ano** | Ano | Binárka + `lib/` | Vývoj |
+| 3A – Statická s Condou | **Ano** | Ano | Jediný soubor | Distribuce |
+| 3B – Statická bez Condy | Ne | Ano | Jediný soubor | Systémy bez Condy |
+| 3C – Alpine Docker | Ne | Ne (Docker) | Jediný soubor | Přenositelnost |
+
+---
+
 ## Package Repository
 
 Official packages: [github.com/JanPL00/balikar-repository](https://github.com/JanPL00/balikar-repository)
