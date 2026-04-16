@@ -1,0 +1,127 @@
+========================================
+                 CZECH
+========================================
+
+cmd_download
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: commands/cmd_download.c
+
+Modul implementuje příkaz download, který stahuje balíky (a volitelně jejich
+závislosti) bez následné instalace do systému. Výstupní adresář lze specifikovat
+přepínačem --output-dir; pokud není zadán, modul hledá první lokální repozitář
+z konfigurace, a pokud ani ten neexistuje, použije ./repo.
+
+Příkaz podporuje dva módy:
+    1. --no-deps: stáhne pouze zadaný balík bez řešení závislostí
+       (volá download_single_package).
+    2. Výchozí mód: spustí solver, vytvoří transakci, stáhne všechny balíky
+       v transakci (včetně závislostí).
+
+
+Klíčové funkce
+----
+
+static const char *get_download_output_dir(CommandContext *ctx);
+- Vrátí výstupní adresář pro stahování.
+- Priorita: 1) ctx->config.output_dir (přepínač --output-dir)
+            2) první lokální repozitář z konfigurace repos
+            3) "./repo" jako fallback
+- Výstupní adresář je vytvořen pokud neexistuje (mkdir -p ekvivalent).
+
+static int download_single_package(CommandContext *ctx, const char *pkg_name,
+                                   const char *output_dir);
+- Stáhne jeden balík přímo bez solveru.
+- Najde balík v pool/repo (lazy inicializace přes ctx).
+- Získá zdrojovou URL z metadat (get_custom_source).
+- Volá ctx->subsystems.download_package(pkg_name, source, output_dir).
+- Používáno při --no-deps.
+
+int cmd_download_execute(CommandContext *ctx);
+- Hlavní vstupní bod příkazu.
+- Pokud --no-deps: volá download_single_package a vrátí výsledek.
+- Jinak: lazy init pool/repo → create_solver → solve_dependencies →
+         solver_create_transaction → display_transaction →
+         dry-run check → user_confirm → stažení každého balíku v transakci →
+         výpis cílového adresáře → cleanup.
+- Nikdy nevolá builder.c ani installer.c – pouze stahuje.
+
+int cmd_download_validate(CommandContext *ctx);
+- Ověří, že je zadán package_name.
+- Vrací 0 při úspěchu, 1 při selhání.
+
+
+Integrace v projektu
+----
+Závisí na solver.c (create_solver, solve_dependencies), downloader.c
+(download_package), parser.c (get_custom_source). Volá pouze podsystémy
+downloader a solver – žádné builder/installer.
+Registrace v command_registry.c: "download" → cmd_download_execute
+s validátorem cmd_download_validate.
+
+
+========================================
+                ENGLISH
+========================================
+
+cmd_download
+=============
+
+Description
+----
+Source file: commands/cmd_download.c
+
+The module implements the download command, which downloads packages (and optionally
+their dependencies) without installing them into the system. The output directory can
+be specified with --output-dir; if not provided, the module searches for the first
+local repository from the configuration, falling back to ./repo.
+
+The command supports two modes:
+    1. --no-deps: downloads only the specified package without solving dependencies
+       (calls download_single_package).
+    2. Default mode: runs solver, creates transaction, downloads all packages in
+       the transaction (including dependencies).
+
+
+Key functions
+----
+
+static const char *get_download_output_dir(CommandContext *ctx);
+- Returns the output directory for downloads.
+- Priority: 1) ctx->config.output_dir (--output-dir flag)
+            2) first local repository from repos configuration
+            3) "./repo" as fallback
+- Creates the output directory if it does not exist (mkdir -p equivalent).
+
+static int download_single_package(CommandContext *ctx, const char *pkg_name,
+                                   const char *output_dir);
+- Downloads a single package directly without a solver.
+- Finds the package in pool/repo (lazy init via ctx).
+- Gets source URL from metadata (get_custom_source).
+- Calls ctx->subsystems.download_package(pkg_name, source, output_dir).
+- Used with --no-deps.
+
+int cmd_download_execute(CommandContext *ctx);
+- Main entry point for the command.
+- If --no-deps: calls download_single_package and returns result.
+- Otherwise: lazy init pool/repo → create_solver → solve_dependencies →
+             solver_create_transaction → display_transaction →
+             dry-run check → user_confirm → download each package in transaction →
+             print target directory → cleanup.
+- Never calls builder.c or installer.c – downloads only.
+
+int cmd_download_validate(CommandContext *ctx);
+- Verifies that package_name is provided.
+- Returns 0 on success, 1 on failure.
+
+
+Project integration
+----
+Depends on solver.c (create_solver, solve_dependencies), downloader.c
+(download_package), parser.c (get_custom_source). Calls only downloader and solver
+subsystems – no builder/installer.
+Registered in command_registry.c: "download" → cmd_download_execute
+with validator cmd_download_validate.

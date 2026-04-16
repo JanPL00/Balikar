@@ -1,0 +1,90 @@
+========================================
+                 CZECH
+========================================
+
+cmd_resolve
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: commands/cmd_resolve.c
+
+Modul implementuje příkaz resolve. Příkaz je výhradně informační – spustí solver
+a zobrazí výslednou transakci (co by bylo nainstalováno a v jakém pořadí), ale
+neprovede žádné stahování, sestavení ani instalaci. Jde o "dry-run by design".
+
+Typické použití: uživatel chce zjistit které závislosti budou nainstalovány spolu
+s požadovaným balíkem, aniž by cokoli na systému měnil.
+
+
+Klíčové funkce
+----
+
+int cmd_resolve_execute(CommandContext *ctx);
+- Lazy inicializace pool/repo přes ctx.
+- Vytvoření solveru (ctx->subsystems.create_solver).
+- Řešení závislostí (ctx->subsystems.solve_dependencies).
+- Vytvoření transakce (solver_create_transaction).
+- Zobrazení transakce uživateli (display_transaction).
+- Vyčistění (uvolnění transakce a solveru).
+- Nikdy nevolá download_package, commit_element ani install_package_with_reason.
+- Vrací 0 při úspěchu, ERR_SOLVE_FAIL při selhání solveru.
+
+int cmd_resolve_validate(CommandContext *ctx);
+- Ověří, že je zadán package_name.
+- Vrací 0 při úspěchu, 1 při selhání.
+
+
+Integrace v projektu
+----
+Závisí na solver.c (create_solver, solve_dependencies, display_transaction).
+Nepoužívá downloader.c, builder.c ani installer.c.
+Registrace v command_registry.c: "resolve" → cmd_resolve_execute
+s validátorem cmd_resolve_validate.
+
+
+========================================
+                ENGLISH
+========================================
+
+cmd_resolve
+=============
+
+Description
+----
+Source file: commands/cmd_resolve.c
+
+The module implements the resolve command. The command is purely informational –
+it runs the solver and displays the resulting transaction (what would be installed
+and in what order) but performs no downloading, building or installation. It is a
+"dry-run by design".
+
+Typical use: the user wants to see which dependencies would be installed alongside
+the requested package without making any changes to the system.
+
+
+Key functions
+----
+
+int cmd_resolve_execute(CommandContext *ctx);
+- Lazy initialization of pool/repo via ctx.
+- Creates solver (ctx->subsystems.create_solver).
+- Solves dependencies (ctx->subsystems.solve_dependencies).
+- Creates transaction (solver_create_transaction).
+- Displays transaction to user (display_transaction).
+- Cleanup (free transaction and solver).
+- Never calls download_package, commit_element, or install_package_with_reason.
+- Returns 0 on success, ERR_SOLVE_FAIL on solver failure.
+
+int cmd_resolve_validate(CommandContext *ctx);
+- Verifies that package_name is provided.
+- Returns 0 on success, 1 on failure.
+
+
+Project integration
+----
+Depends on solver.c (create_solver, solve_dependencies, display_transaction).
+Does not use downloader.c, builder.c or installer.c.
+Registered in command_registry.c: "resolve" → cmd_resolve_execute
+with validator cmd_resolve_validate.

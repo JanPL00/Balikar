@@ -1,0 +1,201 @@
+========================================
+                 CZECH
+========================================
+
+command_registry
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: command_registry.c
+Hlavičkový soubor: includes/command_registry.h
+Rozhraní příkazu: includes/command.h
+
+Tento modul implementuje registr příkazů a centrální dispatcher jako součást
+Command Pattern. Udržuje statické pole struktur Command, kde každý záznam
+reprezentuje jeden příkaz dostupný na příkazové řádce. Registr je alokován
+staticky v době překladu – žádná heap alokace není potřeba pro samotnou tabulku.
+
+Dispatcher provádí lineární prohledávání registru podle názvu příkazu (O(n),
+kde n = počet příkazů, aktuálně 10 – zanedbatelná réžie), volitelně spustí
+validátor a předá řízení obslužné funkci příkazu.
+
+Command Pattern v tomto modulu umožňuje přidávat nové příkazy bez zásahu
+do stávajícího kódu: stačí přidat jeden záznam do statického pole commands[]
+a implementovat odpovídající execute funkci v novém souboru v commands/.
+
+
+Struktura Command
+----
+Definována v includes/command.h:
+
+    const char *name         Název příkazu (např. "install", "remove")
+    const char *description  Stručný popis pro nápovědu
+    int (*execute)(CommandContext*)   Ukazatel na obslužnou funkci
+    int (*validate)(CommandContext*)  Ukazatel na validační funkci (může být NULL)
+
+Příkazy jsou bezstavové – veškerý stav je v CommandContext.
+
+
+Registrované příkazy
+----
+Statické pole commands[] obsahuje (v pořadí registrace):
+
+    "install"      Instalace balíku se závislostmi
+    "build"        Sestavení balíku ze zdrojů (bez instalace do systému)
+    "resolve"      Výpis závislostí bez stahování
+    "remove"       Odebrání nainstalovaného balíku
+    "autoremove"   Odebrání osiřelých závislostí
+    "download"     Stažení balíků bez instalace
+    "repo"         Správa repozitářů (list, add, remove, enable, disable)
+    "repos"        Zobrazení informací o repozitářích
+    "repo-update"  Aktualizace metadat repozitáře
+    "clean-cache"  Vymazání cache stažených souborů
+    {NULL, ...}    Sentinel – ukončovač pole
+
+Záznamy "install" a "build" sdílejí validační funkci cmd_install_validate.
+
+
+Klíčové funkce
+----
+
+Command* command_lookup(const char *name);
+- Lineárně prohledá pole commands[] a vrátí ukazatel na záznam se shodným name.
+- Vrací NULL pokud příkaz nenalezne nebo name == NULL.
+- Složitost O(n), n = počet příkazů.
+
+int command_dispatch(CommandContext *ctx);
+- Hlavní vstupní bod po naparsování argumentů.
+- Workflow:
+    1. Zkontroluje ctx->config.command (chybí-li, vypíše chybu a vrátí 1)
+    2. Zavolá command_lookup(ctx->config.command)
+    3. Pokud příkaz nenalezen: chybová zpráva + hint na --help, vrátí 1
+    4. Pokud cmd->validate != NULL: zavolá validátor, při selhání vrátí jeho kód
+    5. Zavolá cmd->execute(ctx) a vrátí jeho návratový kód
+
+
+Validační funkce
+----
+Validátory jsou volitelné (NULL = žádná validace). Aktuálně implementované:
+
+cmd_install_validate(CommandContext *ctx)
+- Ověří, že ctx->config.package_name není NULL nebo že je zadán --local-package.
+- Sdílen příkazy "install" a "build".
+
+cmd_remove_validate(CommandContext *ctx)
+- Ověří, že ctx->config.package_name není NULL.
+
+cmd_download_validate(CommandContext *ctx)
+- Ověří, že ctx->config.package_name není NULL.
+
+
+Integrace v projektu
+----
+Voláno z main() jako command_dispatch(ctx) po command_context_parse_args().
+Každá obslužná funkce příkazu je definována v samostatném souboru v src/balikar/commands/.
+Hlavičkové deklarace všech execute a validate funkcí jsou v includes/commands.h,
+který command_registry.c includuje.
+Přidání nového příkazu: vytvořit cmd_xxx.c, deklarovat v commands.h,
+přidat záznam do statického pole commands[] v command_registry.c.
+
+
+========================================
+                ENGLISH
+========================================
+
+command_registry
+=============
+
+Description
+----
+Source file: command_registry.c
+Header file: includes/command_registry.h
+Command interface: includes/command.h
+
+This module implements the command registry and central dispatcher as part of the
+Command Pattern. It maintains a static array of Command structs where each entry
+represents one command available from the command line. The registry is allocated
+statically at compile time – no heap allocation is needed for the table itself.
+
+The dispatcher performs linear search through the registry by command name (O(n),
+where n = number of commands, currently 10 – negligible overhead), optionally runs
+the validator, and transfers control to the command handler function.
+
+The Command Pattern in this module allows adding new commands without modifying
+existing code: just add one entry to the static commands[] array and implement
+the corresponding execute function in a new file under commands/.
+
+
+Command structure
+----
+Defined in includes/command.h:
+
+    const char *name         Command name (e.g., "install", "remove")
+    const char *description  Short description for help text
+    int (*execute)(CommandContext*)   Pointer to handler function
+    int (*validate)(CommandContext*)  Pointer to validation function (may be NULL)
+
+Commands are stateless – all state is in CommandContext.
+
+
+Registered commands
+----
+Static array commands[] contains (in registration order):
+
+    "install"      Install package with dependencies
+    "build"        Build package from source (without system installation)
+    "resolve"      Show dependency tree without downloading
+    "remove"       Remove installed package
+    "autoremove"   Remove orphaned dependencies
+    "download"     Download packages without installing
+    "repo"         Manage repositories (list, add, remove, enable, disable)
+    "repos"        Display repository information
+    "repo-update"  Update repository metadata
+    "clean-cache"  Clear download cache
+    {NULL, ...}    Sentinel – array terminator
+
+Entries "install" and "build" share the cmd_install_validate function.
+
+
+Key functions
+----
+
+Command* command_lookup(const char *name);
+- Linearly searches commands[] and returns pointer to entry with matching name.
+- Returns NULL if command not found or name == NULL.
+- Complexity O(n), n = number of commands.
+
+int command_dispatch(CommandContext *ctx);
+- Main entry point after argument parsing.
+- Workflow:
+    1. Checks ctx->config.command (missing: error message, return 1)
+    2. Calls command_lookup(ctx->config.command)
+    3. If command not found: error message + hint to --help, return 1
+    4. If cmd->validate != NULL: runs validator, on failure returns its code
+    5. Calls cmd->execute(ctx) and returns its return code
+
+
+Validation functions
+----
+Validators are optional (NULL = no validation). Currently implemented:
+
+cmd_install_validate(CommandContext *ctx)
+- Verifies ctx->config.package_name is not NULL or --local-package is set.
+- Shared by "install" and "build" commands.
+
+cmd_remove_validate(CommandContext *ctx)
+- Verifies ctx->config.package_name is not NULL.
+
+cmd_download_validate(CommandContext *ctx)
+- Verifies ctx->config.package_name is not NULL.
+
+
+Project integration
+----
+Called from main() as command_dispatch(ctx) after command_context_parse_args().
+Each command handler function is defined in a separate file under src/balikar/commands/.
+Header declarations of all execute and validate functions are in includes/commands.h,
+which command_registry.c includes.
+Adding a new command: create cmd_xxx.c, declare in commands.h,
+add entry to static commands[] array in command_registry.c.

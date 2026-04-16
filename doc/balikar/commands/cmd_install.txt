@@ -1,0 +1,172 @@
+========================================
+                 CZECH
+========================================
+
+cmd_install / cmd_build
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: commands/cmd_install.c
+
+Tento modul implementuje příkazy install a build – nejsložitější příkazy v aplikaci.
+Oba příkazy sdílejí společnou implementaci cmd_install_or_build_execute() a liší se
+pouze jedním parametrem (do_install): install provede kompletní workflow včetně
+instalace do systému, build zastaví před instalační fází.
+
+Workflow příkazu install:
+    1. Validace vstupů (package_name nebo --local-package)
+    2. Lazy inicializace Pool a Repo přes CommandContext
+    3. Vytvoření solveru (ctx->subsystems.create_solver)
+    4. Řešení závislostí (ctx->subsystems.solve_dependencies)
+    5. Vytvoření transakce (solver_create_transaction)
+    6. Zobrazení transakce uživateli (display_transaction)
+    7. Dry-run: ukončení po zobrazení transakce
+    8. Potvrzení uživatelem (user_confirm)
+    9. Pro každý balík v transakci:
+        a. Přeskočení pokud je již nainstalován (is_package_installed)
+        b. Získání URL zdroje z metadat (get_custom_source)
+        c. Stažení archivu (ctx->subsystems.download_package)
+        d. Stažení extras – patche, build skripty (ctx->subsystems.download_extras)
+        e. Sestavení do staging adresáře (ctx->subsystems.commit_element)
+        f. [pouze install] Instalace ze staging do cílového kořene
+           (ctx->subsystems.install_package_with_reason)
+        g. [pouze install] Vyčistění staging adresáře
+   10. Uvolnění transakce, fronty a solveru
+
+Příkaz build zastaví po kroku (e) – sestaví balík do staging adresáře,
+ale neprovede instalaci do systémového stromu.
+
+Důvody instalace jsou zaznamenány: přímý požadavek uživatele = "manual",
+závislosti = "dependency". Toto slouží pro pozdější autoremove analýzu.
+
+
+Klíčové funkce
+----
+
+static int cmd_install_or_build_execute(CommandContext *ctx, int do_install);
+- Sdílená implementace pro install i build.
+- do_install=1: kompletní workflow (solve → download → build → install)
+- do_install=0: pouze (solve → download → build)
+- Respektuje ctx->config.dry_run: zastaví po zobrazení transakce.
+- Respektuje ctx->config.no_deps: přeskočí solver, stáhne pouze zadaný balík.
+- Vrací 0 při úspěchu, ERR_SOLVE_FAIL/ERR_DOWNLOAD_FAIL/ERR_BUILD_FAIL při selhání.
+
+int cmd_install_execute(CommandContext *ctx);
+- Volá cmd_install_or_build_execute(ctx, 1).
+- Registrován jako execute pro příkaz "install".
+
+int cmd_build_execute(CommandContext *ctx);
+- Volá cmd_install_or_build_execute(ctx, 0).
+- Registrován jako execute pro příkaz "build".
+
+int cmd_install_validate(CommandContext *ctx);
+- Ověří, že je zadán package_name nebo --local-package.
+- Sdílen příkazy "install" i "build" v registru.
+- Vrací 0 pokud validace projde, 1 při selhání.
+
+
+Chybové kódy
+----
+ERR_SOLVE_FAIL    Selhání solveru nebo vytvoření transakce
+ERR_DOWNLOAD_FAIL Selhání stažení balíku
+ERR_BUILD_FAIL    Selhání sestavení nebo instalace
+
+
+Integrace v projektu
+----
+Používá solver.c (create_solver, solve_dependencies), downloader.c (download_package,
+download_extras), builder.c (commit_element), installer.c (install_package_with_reason,
+is_package_installed) a parser.c (get_custom_source, get_custom_extras,
+get_custom_is_group, get_custom_no_package, get_custom_mkdeps).
+Všechny závislé subsystémy jsou volány přes ctx->subsystems.* (Dependency Injection).
+Registrace v command_registry.c: "install" → cmd_install_execute,
+"build" → cmd_build_execute, oboje s validátorem cmd_install_validate.
+
+
+========================================
+                ENGLISH
+========================================
+
+cmd_install / cmd_build
+=============
+
+Description
+----
+Source file: commands/cmd_install.c
+
+This module implements the install and build commands – the most complex commands
+in the application. Both commands share the common implementation
+cmd_install_or_build_execute() and differ only by one parameter (do_install):
+install performs the complete workflow including system installation, build stops
+before the installation phase.
+
+install command workflow:
+    1. Input validation (package_name or --local-package)
+    2. Lazy initialization of Pool and Repo via CommandContext
+    3. Create solver (ctx->subsystems.create_solver)
+    4. Resolve dependencies (ctx->subsystems.solve_dependencies)
+    5. Create transaction (solver_create_transaction)
+    6. Display transaction to user (display_transaction)
+    7. Dry-run: stop after displaying transaction
+    8. User confirmation (user_confirm)
+    9. For each package in transaction:
+        a. Skip if already installed (is_package_installed)
+        b. Get source URL from metadata (get_custom_source)
+        c. Download archive (ctx->subsystems.download_package)
+        d. Download extras – patches, build scripts (ctx->subsystems.download_extras)
+        e. Build into staging directory (ctx->subsystems.commit_element)
+        f. [install only] Install from staging to target root
+           (ctx->subsystems.install_package_with_reason)
+        g. [install only] Clean staging directory
+   10. Free transaction, queue and solver
+
+The build command stops after step (e) – builds the package into the staging
+directory but does not install into the system tree.
+
+Install reasons are recorded: direct user request = "manual",
+dependencies = "dependency". This is used for later autoremove analysis.
+
+
+Key functions
+----
+
+static int cmd_install_or_build_execute(CommandContext *ctx, int do_install);
+- Shared implementation for both install and build.
+- do_install=1: complete workflow (solve → download → build → install)
+- do_install=0: partial workflow (solve → download → build)
+- Respects ctx->config.dry_run: stops after displaying transaction.
+- Respects ctx->config.no_deps: skips solver, downloads only specified package.
+- Returns 0 on success, ERR_SOLVE_FAIL/ERR_DOWNLOAD_FAIL/ERR_BUILD_FAIL on failure.
+
+int cmd_install_execute(CommandContext *ctx);
+- Calls cmd_install_or_build_execute(ctx, 1).
+- Registered as execute for "install" command.
+
+int cmd_build_execute(CommandContext *ctx);
+- Calls cmd_install_or_build_execute(ctx, 0).
+- Registered as execute for "build" command.
+
+int cmd_install_validate(CommandContext *ctx);
+- Verifies that package_name or --local-package is provided.
+- Shared by "install" and "build" in the registry.
+- Returns 0 if validation passes, 1 on failure.
+
+
+Error codes
+----
+ERR_SOLVE_FAIL    Solver failure or transaction creation failure
+ERR_DOWNLOAD_FAIL Package download failure
+ERR_BUILD_FAIL    Build or installation failure
+
+
+Project integration
+----
+Uses solver.c (create_solver, solve_dependencies), downloader.c (download_package,
+download_extras), builder.c (commit_element), installer.c (install_package_with_reason,
+is_package_installed) and parser.c (get_custom_source, get_custom_extras,
+get_custom_is_group, get_custom_no_package, get_custom_mkdeps).
+All dependent subsystems are called via ctx->subsystems.* (Dependency Injection).
+Registered in command_registry.c: "install" → cmd_install_execute,
+"build" → cmd_build_execute, both with validator cmd_install_validate.

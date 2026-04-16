@@ -1,0 +1,104 @@
+========================================
+                 CZECH
+========================================
+
+cmd_autoremove
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: commands/cmd_autoremove.c
+
+Modul implementuje příkaz autoremove. Příkaz identifikuje a odstraní balíky,
+které byly nainstalovány automaticky jako závislosti, ale již nejsou potřebné
+(žádný jiný nainstalovaný balík na ně nezávisí ani nejsou označeny jako manuálně
+instalované).
+
+Algoritmus:
+    1. Lazy inicializace pool/repo přes ctx.
+    2. Načtení instalační databáze (seznam nainstalovaných balíků s důvodem instalace).
+    3. Výběr kandidátů: balíky s důvodem instalace "dependency" bez reverzní závislosti.
+    4. Iterativní opakování kroku 3 dokud existují noví kandidáti (tranzitivní analýza).
+    5. Pokud --dry-run: výpis kandidátů bez akce.
+    6. Bez --dry-run: potvrzení uživatelem → odstranění všech kandidátů přes
+       ctx->subsystems.remove_package.
+
+Příkaz nemá povinný operand – vždy pracuje na celé instalační databázi.
+
+
+Klíčové funkce
+----
+
+static int autoremove_packages(CommandContext *ctx, int dry_run);
+- Jádro příkazu. Provede kompletní analýzu a (pokud dry_run=0) odstranění.
+- Vrací 0 při úspěchu, 1 při selhání.
+- Při dry_run=1 vypíše kandidáty a vrátí 0.
+
+int cmd_autoremove_execute(CommandContext *ctx);
+- Vstupní bod příkazu.
+- Předá ctx->config.dry_run do autoremove_packages.
+- Nevyžaduje package_name – pracuje systémově.
+
+(žádný validátor – cmd_autoremove_validate není registrován; pole validate=NULL
+v command_registry.c, protože příkaz nepotřebuje žádné povinné argumenty)
+
+
+Integrace v projektu
+----
+Závisí na installer.c (get_install_db, get_reverse_deps, remove_package).
+Registrace v command_registry.c: "autoremove" → cmd_autoremove_execute, validate=NULL.
+
+
+========================================
+                ENGLISH
+========================================
+
+cmd_autoremove
+=============
+
+Description
+----
+Source file: commands/cmd_autoremove.c
+
+The module implements the autoremove command. The command identifies and removes
+packages that were installed automatically as dependencies but are no longer needed
+(no other installed package depends on them and they are not marked as manually
+installed).
+
+Algorithm:
+    1. Lazy initialization of pool/repo via ctx.
+    2. Load installation database (list of installed packages with install reason).
+    3. Select candidates: packages with install reason "dependency" with no reverse
+       dependency.
+    4. Iteratively repeat step 3 as long as new candidates exist (transitive analysis).
+    5. If --dry-run: print candidates without action.
+    6. Without --dry-run: user confirmation → remove all candidates via
+       ctx->subsystems.remove_package.
+
+The command has no required operand – it always operates on the full installation
+database.
+
+
+Key functions
+----
+
+static int autoremove_packages(CommandContext *ctx, int dry_run);
+- Core of the command. Performs complete analysis and (if dry_run=0) removal.
+- Returns 0 on success, 1 on failure.
+- With dry_run=1 prints candidates and returns 0.
+
+int cmd_autoremove_execute(CommandContext *ctx);
+- Entry point for the command.
+- Passes ctx->config.dry_run to autoremove_packages.
+- Does not require package_name – operates system-wide.
+
+(no validator – cmd_autoremove_validate is not registered; validate=NULL
+in command_registry.c because the command requires no mandatory arguments)
+
+
+Project integration
+----
+Depends on installer.c (get_install_db, get_reverse_deps, remove_package).
+Registered in command_registry.c: "autoremove" → cmd_autoremove_execute,
+validate=NULL.
