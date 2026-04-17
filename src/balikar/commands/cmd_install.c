@@ -135,7 +135,8 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         // Download source archive
         log_info("Downloading %s from %s", sname, source_url);
         const char *repo_path = command_context_get_repo_path(ctx);
-        FILE *fp = ctx->subsystems.download_package(s, source_url, pool, data, repo_path);
+        json_t *source_array = get_custom_source_array(data, p, pool);
+        FILE *fp = ctx->subsystems.download_package(s, source_url, pool, source_array, repo_path);
         
         if (!fp) {
             log_error("Download failed for %s", sname);

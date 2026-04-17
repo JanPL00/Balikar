@@ -8,6 +8,7 @@
 
 #include "../../common/common.h"
 #include "command.h"
+#include <jansson.h>
 
 /**
  * CLI configuration parsed from command-line arguments.
@@ -63,7 +64,7 @@ typedef struct {
                                   json_t* (*)(Repodata*, Id, Pool*));
     
     // Downloader subsystem
-    FILE* (*download_package)(Solvable*, const char*, Pool*, Repodata*, const char*);
+    FILE* (*download_package)(Solvable*, const char*, Pool*, json_t*, const char*);
     int (*download_extras)(json_t*, const char*, const char*, const char*, const char*);
     
     // Builder subsystem

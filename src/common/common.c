@@ -12,6 +12,13 @@ int DEBUG_LEVEL = 0;
 
 # ifndef UNIT_TESTS
 
+// ANSI color codes (used only when writing to a terminal)
+#define COLOR_RESET   "\033[0m"
+#define COLOR_RED     "\033[1;31m"
+#define COLOR_YELLOW  "\033[1;33m"
+#define COLOR_GREEN   "\033[1;32m"
+#define COLOR_CYAN    "\033[1;36m"
+
 /**
  * Logs an error message to stderr and exits the program.
  * Use for fatal errors that cannot be recovered from.
@@ -21,7 +28,11 @@ int DEBUG_LEVEL = 0;
 void log_error(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    fprintf(stderr, "[ERROR] ");
+    if (isatty(fileno(stderr))) {
+        fprintf(stderr, COLOR_RED "[ERROR]" COLOR_RESET " ");
+    } else {
+        fprintf(stderr, "[ERROR] ");
+    }
     vfprintf(stderr, fmt, args);  // Print formatted message
     fprintf(stderr, "\n");
     va_end(args);
@@ -43,7 +54,11 @@ void log_debug(int level, const char *fmt, ...) {
     }
     va_list args;
     va_start(args, fmt);
-    fprintf(stderr, "[DEBUG %d] ", level);
+    if (isatty(fileno(stderr))) {
+        fprintf(stderr, COLOR_CYAN "[DEBUG %d]" COLOR_RESET " ", level);
+    } else {
+        fprintf(stderr, "[DEBUG %d] ", level);
+    }
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
     va_end(args);
@@ -53,7 +68,11 @@ void log_debug(int level, const char *fmt, ...) {
 void log_info(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    fprintf(stdout, "[INFO] ");   // Stdout místo stderr pro info
+    if (isatty(fileno(stdout))) {
+        fprintf(stdout, COLOR_GREEN "[INFO]" COLOR_RESET " ");
+    } else {
+        fprintf(stdout, "[INFO] ");
+    }
     vfprintf(stdout, fmt, args);
     fprintf(stdout, "\n");
     va_end(args);
@@ -63,7 +82,11 @@ void log_info(const char *fmt, ...) {
 void log_warn(const char *fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    fprintf(stderr, "[WARN] ");
+    if (isatty(fileno(stderr))) {
+        fprintf(stderr, COLOR_YELLOW "[WARN]" COLOR_RESET " ");
+    } else {
+        fprintf(stderr, "[WARN] ");
+    }
     vfprintf(stderr, fmt, args);
     fprintf(stderr, "\n");
     va_end(args);

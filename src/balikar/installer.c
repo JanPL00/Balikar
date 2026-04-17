@@ -392,6 +392,10 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
     }
     
     log_info("Successfully merged staging to chroot");
+    
+    // Update dynamic linker cache so newly installed .so files are found immediately
+    system("ldconfig 2>/dev/null");
+    
     return 0;
 }
 
@@ -556,12 +560,12 @@ int is_package_installed(const char *pkg_name, const char *chroot_path) {
         return -1;
     }
     
-    // Search for package by name prefix
-    const char *key;
+    // Search for package by name (packages is a JSON array)
+    size_t index;
     json_t *value;
     int found = 0;
     
-    json_object_foreach(packages, key, value) {
+    json_array_foreach(packages, index, value) {
         json_t *name_obj = json_object_get(value, "name");
         if (name_obj) {
             const char *name = json_string_value(name_obj);

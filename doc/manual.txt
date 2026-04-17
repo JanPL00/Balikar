@@ -17,6 +17,174 @@ Workflow se skládá z následujících fází:
   4. BUILD    - Extrakce, aplikace patches, spuštění .build skriptu
   5. INSTALL  - Merge staging $P do chroot prostředí
 
+================================================================================
+HLAVNÍ FUNKCIONALITY PROGRAMU
+================================================================================
+
+Balikar poskytuje 9 příkazů a 11 globálních přepínačů. Příkazy se dělí do tří
+logických skupin podle jejich účelu – sestavovací příkazy pracují se zdrojovými
+kódy a archivy, informační příkazy zobrazují stav systému bez změn v souborové
+soustavě a příkazy správy systému odstraňují balíčky nebo čistí dočasné soubory.
+
+Skupiny příkazů
+~~~~~~~~~~~~~~~
+
+  Skupina              Příkazy                          Účel
+  ─────────────────────────────────────────────────────────────────────────────
+  Sestavovací          install, build, download          Stahování, kompilace
+                                                         a instalace balíčků
+  Informační           resolve, repos, repo-update       Zobrazení závislostí,
+                                                         stavu repozitářů
+                                                         a metadat (bez změn)
+  Správa systému       remove, autoremove, clean-cache   Odinstalace, úklid
+                                                         osiřelých závislostí
+                                                         a download cache
+
+Přehled kompatibility přepínačů
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Každý přepínač dává smysl pouze s určitými příkazy. Tabulka níže ukazuje platné
+kombinace (✓ = přepínač je pro daný příkaz podporován):
+
+  Přepínač               install  build  download  resolve  remove  autoremove  clean-cache
+  ──────────────────────────────────────────────────────────────────────────────────────────
+  -d                        ✓       ✓        ✓        ✓        ✓        ✓           ✓
+  --dry-run                 ✓       ✓        -        -        ✓        ✓           -
+  --no-staging              ✓       ✓        -        -        -        -           -
+  --staging-dir=PATH        ✓       ✓        -        -        -        -           -
+  --root=PATH               ✓       -        -        -        ✓        ✓           -
+  --build-tmp-dir=PATH      ✓       ✓        -        -        -        -           -
+  --repo=PATH               ✓       ✓        ✓        ✓        -        -           -
+  --local-package=PATH      ✓       ✓        -        -        -        -           -
+  --output-dir=PATH         -       -        ✓        -        -        -           -
+  --no-deps                 -       -        ✓        -        -        -           -
+  --pkg=NAME                -       -        -        -        -        -           ✓
+
+  Poznámka: repos a repo-update přijímají pouze -d. Přepínač -h/--help je
+  globální a lze ho použít s jakýmkoliv příkazem.
+
+Klíčové příkazy v praxi
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. install – Plný build workflow
+   ────────────────────────────
+   Hlavní příkaz Balikaru. Spustí kompletní workflow: resolving závislostí →
+   stažení archivu → extrakce → aplikace patches → build do stagingu → merge
+   do cílového rootu → zápis do databáze nainstalovaných balíčků.
+
+   Ukázka – instalace gzip do nativního systému:
+
+     $ sudo balikar install gzip
+     [INFO] Loading repository: ./repo/repodata.json
+     [INFO] Resolving dependencies for: gzip
+     [INFO] Transaction plan:
+            Install: gzip-1.14-1 (x86_64)
+     [INFO] Downloading: gzip-1.14.tar.xz
+     Downloading gzip-1.14.tar.xz [============================] 100% (1.0MB/1.0MB)
+     [INFO] Extracting archive to /tmp/balikar_build_gzip_a3Fk7x
+     [INFO] Running build script...
+     [INFO] Build successful: gzip-1.14
+     [INFO] Merging staging directory to /
+     [INFO] Package installed: gzip-1.14
+     [INFO] Tracking database updated: /var/lib/balikar/installed.json
+
+   Ukázka – instalace do LFS prostředí s vlastním stagingem:
+
+     $ balikar --staging-dir=/mnt/lfs/stage --root=/mnt/lfs install glibc
+     [INFO] Loading repository: ./repo/repodata.json
+     [INFO] Resolving dependencies for: glibc
+     [INFO] Transaction plan:
+            Install: linux-headers-6.10-1 (x86_64)
+            Install: glibc-2.40-1 (x86_64)
+     [INFO] Build successful: linux-headers-6.10
+     [INFO] Build successful: glibc-2.40
+     [INFO] Merging staging directory to /mnt/lfs
+
+   Klíčové přepínače pro install:
+     --dry-run          Zobrazí plán bez skutečné akce
+     --root=PATH        Instalace do alternativního rootu (LFS prostředí)
+     --staging-dir=PATH Vlastní staging adresář místo výchozího $P
+     --local-package    Instalace z lokálního tar archivu bez repozitáře
+
+2. build – Build bez instalace
+   ────────────────────────────
+   Shodný workflow jako install, ale merge do systému neproběhne. Výsledek
+   zůstane v staging adresáři ($P) pro manuální verifikaci před nasazením.
+   Vhodné pro testování build skriptů nebo přípravu balíčků pro LFS build.
+
+   Ukázka:
+
+     $ balikar build hello
+     [INFO] Loading repository: ./repo/repodata.json
+     [INFO] Resolving dependencies for: hello
+     [INFO] Downloading: hello-2.12.1.tar.gz
+     Downloading hello-2.12.1.tar.gz [============================] 100% (840KB/840KB)
+     [INFO] Build successful: hello-2.12.1
+     [INFO] Staging result available at: /tmp/balikar_staging/
+
+   Obsah stagingu po buildu:
+
+     $ ls -la /tmp/balikar_staging/usr/bin/
+     -rwxr-xr-x 1 root root 29792 Apr 17 14:22 hello
+
+   Přepínač --no-staging spustí build přímo bez DESTDIR mezikroku (instaluje
+   přímo do systému – vhodné pouze v disposable prostředí):
+
+     $ balikar --no-staging build hello
+
+3. resolve – Zobrazení plánu závislostí (dry-run solver)
+   ──────────────────────────────────────────────────────
+   Zobrazí dependency tree a pořadí instalace bez jakýchkoliv změn v systému.
+   Ideální pro ověření, co bude potřeba nainstalovat, než spustíte samotný build.
+
+   Ukázka:
+
+     $ balikar resolve bash
+     [INFO] Resolving dependencies for: bash
+     [INFO] Transaction plan:
+            Install: ncurses-6.5-1 (x86_64)
+            Install: readline-8.2-1 (x86_64)
+            Install: bash-5.3-1 (x86_64)
+     Total: 3 package(s) to install
+
+4. remove a autoremove – Odinstalace a úklid závislostí
+   ──────────────────────────────────────────────────────
+   Příkaz remove odstraní balíček ze systému s kontrolou reverse dependencies.
+   Pokud jiné nainstalované balíčky závisí na odstraňovaném, zobrazí varování
+   a vyžádá si explicitní potvrzení.
+
+   Ukázka pokusu o odstranění balíčku s existujícími závislostmi:
+
+     $ balikar remove readline --root=/mnt/lfs
+     [INFO] Removing package: readline
+     [WARN] Package 'readline' is required by the following installed packages:
+     [WARN]   - bash
+     [WARN] Removing 'readline' may break these packages.
+     Continue with removal? [n]: n
+     [INFO] Removal cancelled.
+
+   Po úspěšném remove Balikar zobrazí osiřelé závislosti:
+
+     $ balikar remove vim --root=/mnt/lfs
+     [INFO] Removed 847 files (0 failed)
+     [INFO] Successfully erased package: vim
+     [INFO]
+     [INFO] The following packages were installed as dependencies and are no longer required:
+     [INFO]   ncurses
+     [INFO] Use 'balikar autoremove --root=/mnt/lfs' to remove them.
+
+   Příkaz autoremove automaticky vyhledá a nabídne smazání všech osiřelých
+   balíčků (balíčků s install_reason="dependency", na které nic nespoléhá):
+
+     $ balikar autoremove --root=/mnt/lfs
+     [INFO] Found 1 orphaned package(s):
+     [INFO]   - ncurses
+     Remove these packages? [y]: y
+     [INFO] Removed 4082 files (0 failed)
+     [INFO] Successfully erased package: ncurses
+     [INFO] Removed 1 orphaned package(s)
+
+
 POUŽITÍ
 -------
 Základní syntaxe:

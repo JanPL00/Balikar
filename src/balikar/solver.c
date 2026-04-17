@@ -169,11 +169,11 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         json_t *root = json_load_file(installed_db, 0, &error);
         if (root) {
             json_t *packages = json_object_get(root, "packages");
-            if (packages && json_is_object(packages)) {
-                const char *key;
+            if (packages && json_is_array(packages)) {
+                size_t pkg_idx;
                 json_t *pkg_obj;
                 
-                json_object_foreach(packages, key, pkg_obj) {
+                json_array_foreach(packages, pkg_idx, pkg_obj) {
                     const char *name = json_string_value(json_object_get(pkg_obj, "name"));
                     
                     if (name) {

@@ -57,10 +57,10 @@ sudo cp balikar-static /usr/local/bin/balikar
 ```
 
 **Advantages of static build:**
-- ✅ Single file, no dependencies
-- ✅ Works on any Linux distribution
-- ✅ No need to distribute lib/ directory
-- ✅ Perfect for embedded systems or containers
+- Single file, no dependencies
+- Works on any Linux distribution
+- No need to distribute lib/ directory
+- Perfect for embedded systems or containers
 
 See [doc/STATIC_BUILD.md](doc/STATIC_BUILD.md) for complete static build guide.
 

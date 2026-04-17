@@ -3,6 +3,9 @@
 
 set -e
 
+# Always run from the project root (where CMakeLists.txt lives)
+cd "$(dirname "$0")"
+
 echo "========= Building Balikar for Distribution (with bundled libs) ========="
 echo ""
 

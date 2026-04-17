@@ -4,6 +4,9 @@
 
 set -e
 
+# Always run from the project root (where CMakeLists.txt lives)
+cd "$(dirname "$0")"
+
 echo "========= Building STATIC Balikar Binary ========="
 echo ""
 
