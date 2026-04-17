@@ -808,10 +808,29 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
         // Remote repository: download to cache location
         snprintf(repodata_path, sizeof(repodata_path), "/var/cache/balikar/downloads/repodata.json");
         
-        // Always download fresh repodata.json for remote repos
-        if (download_repodata(repo_path, repodata_path) != 0) {
-            log_error("Failed to download repodata.json from remote repository");
-            return NULL;
+        // Only download repodata.json if it doesn't exist or is older than 1 hour.
+        // Commands like remove/autoremove don't need a fresh copy - they only use
+        // the pool/repo for dependency graph lookups which don't change frequently.
+        int needs_download = 1;
+        struct stat cache_st;
+        if (stat(repodata_path, &cache_st) == 0) {
+            time_t age = time(NULL) - cache_st.st_mtime;
+            if (age < 3600) {
+                log_debug(1, "Using cached repodata.json (age: %lds < 1h)", (long)age);
+                needs_download = 0;
+            }
+        }
+        
+        if (needs_download) {
+            if (download_repodata(repo_path, repodata_path) != 0) {
+                // If download fails but cache exists, fall back to cached version
+                if (access(repodata_path, F_OK) == 0) {
+                    log_warn("Download failed, using existing cached repodata.json");
+                } else {
+                    log_error("Failed to download repodata.json from remote repository");
+                    return NULL;
+                }
+            }
         }
     } else {
         // Local repository
