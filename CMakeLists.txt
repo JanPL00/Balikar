@@ -159,9 +159,17 @@ add_executable(balikar
         src/balikar/includes/commands.h
 )
 
-# Build binary to project root instead of build/
+# Build binary into build/ directory (not project root directly)
+# POST_BUILD then writes content in-place to project root to preserve inode
+# so Docker bind mounts see the updated binary without container restart.
 set_target_properties(balikar PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+)
+
+add_custom_command(TARGET balikar POST_BUILD
+    COMMAND dd "if=${CMAKE_BINARY_DIR}/balikar" "of=${CMAKE_SOURCE_DIR}/balikar"
+    COMMAND chmod +x "${CMAKE_SOURCE_DIR}/balikar"
+    COMMENT "Overwriting balikar in-place (preserving inode for Docker bind mount)"
 )
 
 target_include_directories(balikar PRIVATE

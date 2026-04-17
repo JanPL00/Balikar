@@ -594,15 +594,40 @@ int commit_element(Transaction *trans, Id p, FILE *fp, Pool *pool, int is_group,
 	if (rc != 0) {
 		log_warn("Build failed (%d) for %s", rc, pkg_name);
 		
-		// Offer retry on failure
-		if (user_confirm("Retry build? [y/N]", 0)) {
-			rc = system(build_cmd);
+		// Show last lines of build log to help diagnose failure
+		if (access("build.log", F_OK) == 0) {
+			log_warn("--- Last lines of build.log ---");
+			system("tail -20 build.log >&2");
+			log_warn("--- End of build.log ---");
 		}
 		
+		// Retry with sequential make (MAKEFLAGS=-j1) to avoid parallel build race conditions
+		log_info("Retrying build with sequential make (MAKEFLAGS=-j1)...");
+		char retry_cmd[2048];
+		if (have_build) {
+			if (g_staging_enabled) {
+				snprintf(retry_cmd, sizeof(retry_cmd),
+					"DESTDIR='%s' MAKEFLAGS='-j1' bash -e build.sh > build.log 2>&1", destdir);
+			} else {
+				snprintf(retry_cmd, sizeof(retry_cmd),
+					"MAKEFLAGS='-j1' bash -e build.sh > build.log 2>&1");
+			}
+		} else {
+			snprintf(retry_cmd, sizeof(retry_cmd), "%s", build_cmd);
+		}
+		rc = system(retry_cmd);
+		
 		if (rc != 0) {
+			// Show log from failed retry too
+			if (access("build.log", F_OK) == 0) {
+				log_warn("--- Build.log after retry ---");
+				system("tail -30 build.log >&2");
+				log_warn("--- End ---");
+			}
 			log_error("Build permanently failed for %s", pkg_name);
 			goto fail_chdir;
 		}
+		log_info("Build succeeded on retry with sequential make");
 	}
 
 done:

@@ -393,8 +393,11 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
     
     log_info("Successfully merged staging to chroot");
     
-    // Update dynamic linker cache so newly installed .so files are found immediately
-    system("ldconfig 2>/dev/null");
+    // Update dynamic linker cache so newly installed .so files are found immediately.
+    // Use full path because /sbin and /usr/sbin may not be in PATH.
+    if (system("/sbin/ldconfig 2>/dev/null") != 0) {
+        system("/usr/sbin/ldconfig 2>/dev/null");
+    }
     
     return 0;
 }
