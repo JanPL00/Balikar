@@ -1,0 +1,77 @@
+# Balikar Package Manager - Test 2: Dependency Tracking
+#
+# Testuje resolvovani zavislosti, sledovani install_reason,
+# remove s kontrolou reverzich zavislosti a autoremove.
+# Instaluje bash vcetne celeho retezce: ncurses -> readline -> bash.
+#
+# Doporuceny limit RAM: 148 MB
+#   docker run --memory=148m --memory-swap=148m ...
+#
+# Simuluje: minimalni Debian 12 zarizeni pripravene pro sestavovani
+# GNU nastroju vcetne balicku vyzadujicich bison, gawk, autoconf.
+
+FROM debian:12-slim
+
+LABEL description="Balikar Package Manager - Test 2: Dependency Tracking"
+LABEL version="1.0"
+LABEL ram_limit="148m"
+LABEL tests="install (dep chain), install_reason, remove, autoremove, --root, --dry-run"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Minimalni SW predinstalovaný v kontejneru:
+#
+# Balikar runtime (nejsou v balikar-repository):
+#   libcurl4, libjansson4, libarchive13 - dynamicke zavislosti balikar binary
+#   ca-certificates                     - overeni HTTPS certifikatu
+#
+# Nastroje pro extrakci archivu (nejsou v balikar-repository):
+#   xz-utils, bzip2
+#
+# Build nastroje (no_package=true v balikar-repository - musi byt predinstaleny):
+#   gcc, g++, make
+#
+# Dalsi build nastroje chybejici v balikar-repository:
+#   autoconf, automake  - generovani configure skriptu
+#   gawk                - GNU awk (vyzadovan nizkourovnovymi GNU buildy)
+# POZNAMKA: bison, gettext jsou v balikar-repository (no_package=False)
+#   -> balikar je nainstaluje sam jako zavislosti, pokud je balicek potrebuje
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcurl4 \
+    libjansson4 \
+    libarchive13 \
+    ca-certificates \
+    xz-utils \
+    bzip2 \
+    gcc \
+    g++ \
+    make \
+    autoconf \
+    automake \
+    gawk \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Adresarova struktura pro balikar
+RUN mkdir -p /var/cache/balikar/downloads \
+    && mkdir -p /var/lib/balikar \
+    && mkdir -p /etc/balikar \
+    && mkdir -p /usr/local/bin \
+    && mkdir -p /test \
+    && mkdir -p /test_root
+
+# Konfigurace repozitare - GitHub jako zdroj balicku
+RUN printf '[balikar-official]\n' > /etc/balikar/repos.conf && \
+    printf 'url = https://raw.githubusercontent.com/JanPL00/balikar-repository/main\n' >> /etc/balikar/repos.conf && \
+    printf 'priority = 100\n' >> /etc/balikar/repos.conf && \
+    printf 'enabled = true\n' >> /etc/balikar/repos.conf
+
+ENV PATH=/usr/local/bin:$PATH
+
+# Test skript - sledovani zavislosti a autoremove
+COPY test2.sh /test/run_tests.sh
+RUN chmod +x /test/run_tests.sh
+
+WORKDIR /test
+
+CMD ["/test/run_tests.sh"]

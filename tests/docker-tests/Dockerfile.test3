@@ -1,0 +1,90 @@
+# Balikar Package Manager - Test 3: Staging, Network Packages and Advanced Options
+#
+# Testuje pokrocile volby: --staging-dir, --no-staging, --build-tmp-dir,
+# --root, download --output-dir, download --no-deps, clean-cache --pkg
+# a instalaci sit'ovych balicku (nmap a jeho zavislosti).
+#
+# Doporuceny limit RAM: 164 MB
+#   docker run --memory=164m --memory-swap=164m ...
+#
+# Simuluje: minimalni Debian 12 zarizeni schopne sestavovat balicky
+# vyzadujici perl, python3 a pokrocile build nastroje (openssl, libpcap).
+
+FROM debian:12-slim
+
+LABEL description="Balikar Package Manager - Test 3: Staging, Network Packages and Advanced Options"
+LABEL version="1.0"
+LABEL ram_limit="164m"
+LABEL tests="--staging-dir, --no-staging, --build-tmp-dir, --root, download --output-dir, download --no-deps, clean-cache --pkg, install (nmap chain)"
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# Minimalni SW predinstalovaný v kontejneru:
+#
+# Balikar runtime (nejsou v balikar-repository):
+#   libcurl4, libjansson4, libarchive13 - dynamicke zavislosti balikar binary
+#   ca-certificates                     - overeni HTTPS certifikatu
+#
+# Nastroje pro extrakci archivu (nejsou v balikar-repository):
+#   xz-utils, bzip2
+#
+# Build nastroje (no_package=true v balikar-repository - musi byt predinstaleny):
+#   gcc, g++, make
+#
+# Dalsi build nastroje chybejici v balikar-repository:
+#   autoconf, automake  - generovani configure skriptu
+#   gawk                - GNU awk (vyzadovan nizkourovnovymi GNU buildy)
+#   perl                - vyzadovan openssl buildem (Configure skript)
+#   python3             - vyzadovan nekterymi build systemy
+#   libtool             - sd. knihovny pri kompilaci
+#   flex                - lexikalni analyzator (libpcap)
+#   linux-libc-dev      - hlavickove soubory jadra (potreba pro libpcap/glibc)
+# POZNAMKA: bison, gettext jsou v balikar-repository (no_package=False)
+#   -> balikar je nainstaluje sam jako zavislosti, pokud je balicek potrebuje
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcurl4 \
+    libjansson4 \
+    libarchive13 \
+    ca-certificates \
+    xz-utils \
+    bzip2 \
+    gcc \
+    g++ \
+    make \
+    autoconf \
+    automake \
+    gawk \
+    perl \
+    python3 \
+    libtool \
+    flex \
+    linux-libc-dev \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Adresarova struktura pro balikar
+RUN mkdir -p /var/cache/balikar/downloads \
+    && mkdir -p /var/lib/balikar \
+    && mkdir -p /etc/balikar \
+    && mkdir -p /usr/local/bin \
+    && mkdir -p /test \
+    && mkdir -p /test_root \
+    && mkdir -p /tmp/stage \
+    && mkdir -p /var/tmp/builds \
+    && mkdir -p /tmp/sources
+
+# Konfigurace repozitare - GitHub jako zdroj balicku
+RUN printf '[balikar-official]\n' > /etc/balikar/repos.conf && \
+    printf 'url = https://raw.githubusercontent.com/JanPL00/balikar-repository/main\n' >> /etc/balikar/repos.conf && \
+    printf 'priority = 100\n' >> /etc/balikar/repos.conf && \
+    printf 'enabled = true\n' >> /etc/balikar/repos.conf
+
+ENV PATH=/usr/local/bin:$PATH
+
+# Test skript - pokrocile volby a sit'ove balicky
+COPY test3.sh /test/run_tests.sh
+RUN chmod +x /test/run_tests.sh
+
+WORKDIR /test
+
+CMD ["/test/run_tests.sh"]
