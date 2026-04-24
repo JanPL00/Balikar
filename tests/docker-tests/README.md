@@ -1,14 +1,17 @@
 # Balikar - Docker Tests
 
-Izolované testovací prostředí pro Balikar package manager. Každý test simuluje minimální Debian 12 zařízení s RAM limitem 128–164 MB a pokrývá jinou skupinu příkazů z uživatelského manuálu.
+Izolované testovací prostředí pro Balikar package manager.
+Jeden `Dockerfile` (Debian bookworm-slim) pokrývá všechny tři testovací skripty.
 
 ## Obsah adresáře
 
 | Soubor | Popis |
 |---|---|
-| `Dockerfile.test1` | Test základního workflow (128 MB RAM) |
-| `Dockerfile.test2` | Test sledování závislostí a autoremove (148 MB RAM) |
-| `Dockerfile.test3` | Test pokročilých voleb a síťových balíčků (164 MB RAM) |
+| `Dockerfile` | Minimální Debian bookworm-slim image pro všechny testy |
+| `test1.sh` | Základní workflow (--help, repo-update, resolve, build, install, clean-cache) |
+| `test2.sh` | Sledování závislostí, remove, autoremove, install --root |
+| `test3.sh` | Pokročilé volby: --staging-dir, --build-tmp-dir, download, install chain |
+| `ALPINE.md` | Návod pro spuštění na Alpine Linux (glibc compat workaroundy) |
 
 ## Předpoklady
 
