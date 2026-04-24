@@ -41,9 +41,7 @@ Všechny příkazy spouštějte z adresáře `docker-tests/`:
 PROJ_ROOT=/cesta/k/proj6_balikar
 cd "$PROJ_ROOT/tests/docker-tests"
 
-docker build -f Dockerfile.test1 -t balikar-test1 .
-docker build -f Dockerfile.test2 -t balikar-test2 .
-docker build -f Dockerfile.test3 -t balikar-test3 .
+docker build -t balikar-alpine .
 ```
 
 ---
@@ -68,13 +66,13 @@ docker build -f Dockerfile.test3 -t balikar-test3 .
 **Spuštění:**
 
 ```bash
-docker run --rm -it \
-    --memory=128m \
-    --memory-swap=128m \
+docker run --rm \
     -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib:/usr/local/lib/balikar:ro" \
-    -e LD_LIBRARY_PATH=/usr/local/lib/balikar \
-    balikar-test1
+    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
+    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
+    -v "${PROJ_ROOT}/tests/docker-tests/test1.sh:/test/test1.sh:ro" \
+    balikar-alpine \
+    bash /test/test1.sh
 ```
 
 **Očekávaný výsledek:** Všechny kroky projdou bez chyby. `hello` a `gzip` jsou úspěšně sestaveny a nainstalovány.
@@ -99,13 +97,13 @@ docker run --rm -it \
 **Spuštění:**
 
 ```bash
-docker run --rm -it \
-    --memory=148m \
-    --memory-swap=148m \
+docker run --rm \
     -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib:/usr/local/lib/balikar:ro" \
-    -e LD_LIBRARY_PATH=/usr/local/lib/balikar \
-    balikar-test2
+    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
+    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
+    -v "${PROJ_ROOT}/tests/docker-tests/test2.sh:/test/test2.sh:ro" \
+    balikar-alpine \
+    bash /test/test2.sh
 ```
 
 **Očekávaný výsledek:**
@@ -140,13 +138,13 @@ docker run --rm -it \
 **Spuštění:**
 
 ```bash
-docker run --rm -it \
-    --memory=164m \
-    --memory-swap=164m \
+docker run --rm \
     -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib:/usr/local/lib/balikar:ro" \
-    -e LD_LIBRARY_PATH=/usr/local/lib/balikar \
-    balikar-test3
+    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
+    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
+    -v "${PROJ_ROOT}/tests/docker-tests/test3.sh:/test/test3.sh:ro" \
+    balikar-alpine \
+    bash /test/test3.sh
 ```
 
 **Očekávaný výsledek:**
@@ -171,10 +169,10 @@ docker run --rm -it \
     --memory=128m \
     --memory-swap=128m \
     -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib:/usr/local/lib/balikar:ro" \
+    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
+    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
     -v "${REPO_PATH}:/repo:ro" \
-    -e LD_LIBRARY_PATH=/usr/local/lib/balikar \
-    balikar-test1 \
+    balikar-alpine \
     /bin/bash -c "
         printf '[local]\nurl = /repo\npriority = 100\nenabled = true\n' \
             > /etc/balikar/repos.conf
@@ -188,12 +186,10 @@ docker run --rm -it \
 
 ```bash
 docker run --rm -it \
-    --memory=128m \
-    --memory-swap=128m \
     -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib:/usr/local/lib/balikar:ro" \
-    -e LD_LIBRARY_PATH=/usr/local/lib/balikar \
-    balikar-test1 \
+    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
+    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
+    balikar-alpine \
     /bin/bash
 ```
 
@@ -205,18 +201,14 @@ Všechny tři kontejnery sdílí společnou množinu minimálních balíčků. S
 
 | Balíček | Důvod předinstalace |
 |---|---|
-| `libcurl4` | Runtime balikar (není v balikar-repository) |
-| `libjansson4` | Runtime balikar (není v balikar-repository) |
-| `libarchive13` | Runtime balikar (není v balikar-repository) |
-| `ca-certificates` | HTTPS stažení balíčků (není v balikar-repository) |
-| `xz-utils` | Extrakce `.tar.xz` archivů |
-| `bzip2` | Extrakce `.tar.bz2` archivů |
-| `gcc`, `g++` | Kompilátor C/C++ (`no_package=true` v repository) |
-| `make` | Spouštěč Makefile (`no_package=true` v repository) |
-| `autoconf`, `automake` | Generování configure skriptů (není v balikar-repository) |
+| `libcurl4` | Runtime balikar — libcurl.so.4 (přímá dep binárky) |
+| `libjansson4` | Runtime balikar — libjansson.so.4 (přímá dep binárky) |
+| `libpcre2-posix3` | Dep libsolv.so.1 — libpcre2-posix.so.3 (libsolv není v Debian repech) |
+| `ca-certificates` | Ověření HTTPS certifikátů při stahování balíčků |
 
-**Kontejner test2** přidá navíc: `gawk`
-**Kontejner test3** přidá navíc: `gawk`, `perl`, `python3`, `libtool`, `flex`, `linux-libc-dev`
+`libsolv.so.1` a `libsolvext.so.1` **nejsou** v Debian repech — mountují se z `proj/lib/` při každém `docker run` (viz příkazy výše).
+
+SW pro kompilaci (`gcc`, `make`, `autoconf`, …) **není** předinstalován — instaluje ho balikar sám z balikar-repository jako `no_package=true` závislosti.
 
 ---
 
@@ -230,11 +222,11 @@ ls -l /usr/local/bin/balikar
 ```
 
 **`error while loading shared libraries`**
-Zkontrolujte, že je nastaven `LD_LIBRARY_PATH` a namountováno `/usr/local/lib/balikar` ze složky `lib/`:
+Namountujte `libsolv.so.1` a `libsolvext.so.1` z `proj/lib/` (nejsou v Debian repech):
 
 ```bash
--v "${PROJ_ROOT}/lib:/usr/local/lib/balikar:ro"
--e LD_LIBRARY_PATH=/usr/local/lib/balikar
+-v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro"
+-v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro"
 ```
 
 **`Package not found in pool`**
