@@ -1,10 +1,13 @@
 # Build directories
 build/
 build-dist/
+build-static/
 dist/
 cmake-build-*/
 balikar_backup/
 doc/diagrams/
+
+balikar-static
 
 doc/balikar/TESTING_RESULTS.md
 doc/balikar/REFACTOR.txt.backup

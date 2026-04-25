@@ -42,12 +42,30 @@ RUN apk add --no-cache \
     openssl-dev \
     openssl-libs-static \
     nghttp2-dev \
+    nghttp2-static \
     jansson-dev \
+    jansson-static \
     libarchive-dev \
+    libarchive-static \
     xz-dev \
+    xz-static \
     bzip2-dev \
+    bzip2-static \
+    zlib-dev \
+    zlib-static \
     zstd-dev \
+    zstd-static \
     expat-dev \
+    expat-static \
+    c-ares-dev \
+    brotli-dev \
+    brotli-static \
+    libpsl-dev \
+    libpsl-static \
+    libidn2-dev \
+    libidn2-static \
+    libunistring-dev \
+    libunistring-static \
     check-dev
 
 # Statický build libsolv ze zdrojového kódu
@@ -63,6 +81,7 @@ RUN git clone --depth=1 https://github.com/openSUSE/libsolv.git /tmp/libsolv \
     && cmake -B /tmp/libsolv/build /tmp/libsolv \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_SHARED_LIBS=OFF \
+        -DENABLE_STATIC=ON \
         -DENABLE_CONDA=ON \
         -DCMAKE_INSTALL_PREFIX=/usr \
     && cmake --build /tmp/libsolv/build -j$(nproc) \
@@ -73,12 +92,12 @@ RUN git clone --depth=1 https://github.com/openSUSE/libsolv.git /tmp/libsolv \
 WORKDIR /src
 COPY . .
 
-# Statický build balikaru
+# Statický build balikaru — pouze binárka balikar, ne testy
 RUN cmake -B build-static \
         -DCMAKE_BUILD_TYPE=Release \
         -DBUILD_STATIC=ON \
         -DCONDA_PREFIX=/usr \
-    && cmake --build build-static -j$(nproc)
+    && cmake --build build-static -j$(nproc) --target balikar
 
 #  Stage 2: Minimální Alpine runtime 
 FROM alpine:3.21

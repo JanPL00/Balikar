@@ -12,9 +12,24 @@ echo ""
 
 # Check if running in conda environment
 if [ -z "$CONDA_PREFIX" ]; then
-    echo "WARNING: CONDA_PREFIX not set!"
-    echo "Setting to /usr for system libsolv..."
-    export CONDA_PREFIX=/usr
+    # Podpora pro manuální sestavení bez Condy:
+    # Pokud uživatel nainstaloval libsolv.a ručně, může nastavit LIBSOLV_PREFIX
+    # na adresář obsahující lib/libsolv.a a include/solv/
+    # Příklad:
+    #   git clone https://github.com/openSUSE/libsolv.git
+    #   cmake -B libsolv/build libsolv -DENABLE_STATIC=ON -DENABLE_CONDA=ON \
+    #         -DCMAKE_INSTALL_PREFIX=/usr/local
+    #   make -C libsolv/build install
+    #   CONDA_PREFIX=/usr/local bash build_static.sh
+    if [ -n "$LIBSOLV_PREFIX" ]; then
+        export CONDA_PREFIX="$LIBSOLV_PREFIX"
+        echo "Using LIBSOLV_PREFIX as CONDA_PREFIX: $CONDA_PREFIX"
+    else
+        echo "WARNING: CONDA_PREFIX not set!"
+        echo "Setting to /usr/local for system libsolv..."
+        echo "(Pro manuální instalaci nastavte: CONDA_PREFIX=/cesta/k/libsolv bash build_static.sh)"
+        export CONDA_PREFIX=/usr/local
+    fi
 fi
 
 echo "Using CONDA_PREFIX: $CONDA_PREFIX"
@@ -24,9 +39,9 @@ echo ""
 echo "Checking for required static libraries..."
 MISSING_LIBS=""
 
-# Core libraries
+# Core libraries — hledej nejdřív v CONDA_PREFIX, pak v systémových cestách
 for lib in libcurl.a libjansson.a libarchive.a libssl.a libcrypto.a libz.a; do
-    if ! find /usr/lib /usr/local/lib -name "$lib" 2>/dev/null | grep -q .; then
+    if ! find "$CONDA_PREFIX/lib" /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu -name "$lib" 2>/dev/null | grep -q .; then
         MISSING_LIBS="$MISSING_LIBS $lib"
     fi
 done
@@ -80,11 +95,12 @@ echo "Configuring static build..."
 cmake -B build-static \
     -DCMAKE_BUILD_TYPE=Release \
     -DBUILD_STATIC=ON \
-    -DCONDA_PREFIX="$CONDA_PREFIX"
+    -DCONDA_PREFIX="$CONDA_PREFIX" \
+    -DCMAKE_PREFIX_PATH="$CONDA_PREFIX"
 
 echo ""
 echo "Building static binary..."
-cmake --build build-static -j$(nproc)
+cmake --build build-static -j$(nproc) --target balikar
 
 # Copy to root
 echo ""

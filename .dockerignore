@@ -1,0 +1,10 @@
+# Build adresáře, neposílat do Docker build contextu
+build/
+build-static/
+balikar-static
+balikar
+
+# Dočasné soubory
+*.o
+*.a.bak
+/tmp/

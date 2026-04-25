@@ -18,16 +18,33 @@ endif()
 find_package(PkgConfig REQUIRED)
 
 if(BUILD_STATIC)
-    # Pro statický build: hledej .a soubory přímo
+    # Při statickém buildu upřednostni CONDA_PREFIX před systémovými cestami
+    if(CONDA_PREFIX)
+        set(ENV{PKG_CONFIG_PATH} "${CONDA_PREFIX}/lib/pkgconfig:$ENV{PKG_CONFIG_PATH}")
+        set(ENV{PKG_CONFIG_LIBDIR} "")
+    endif()
+
+    # Pro statický build: hledej .a soubory přímo (full path, ne -lcurl)
     pkg_check_modules(CURL REQUIRED libcurl)
     pkg_check_modules(Jansson REQUIRED jansson)
     pkg_check_modules(LibArchive REQUIRED libarchive)
     pkg_check_modules(CHECK REQUIRED check)
+
+    # Nahraď -lcurl plnou cestou aby linker nenašel systémovou verzi
+    find_library(CURL_LIBRARY_STATIC NAMES libcurl.a curl REQUIRED
+        HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib
+        NO_DEFAULT_PATH)
+    if(NOT CURL_LIBRARY_STATIC)
+        find_library(CURL_LIBRARY_STATIC NAMES libcurl.a curl REQUIRED)
+    endif()
     
     # Přidej statické závislosti libcurl
-    find_library(SSL_LIBRARY NAMES libssl.a ssl REQUIRED)
-    find_library(CRYPTO_LIBRARY NAMES libcrypto.a crypto REQUIRED)
-    find_library(ZLIB_LIBRARY NAMES libz.a z REQUIRED)
+    find_library(SSL_LIBRARY NAMES libssl.a ssl REQUIRED
+        HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+    find_library(CRYPTO_LIBRARY NAMES libcrypto.a crypto REQUIRED
+        HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
+    find_library(ZLIB_LIBRARY NAMES libz.a z REQUIRED
+        HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
     
     # Přidej statické závislosti libarchive
     find_library(LZMA_LIBRARY NAMES liblzma.a lzma)
@@ -38,6 +55,12 @@ if(BUILD_STATIC)
     find_library(NGHTTP2_LIBRARY NAMES libnghttp2.a nghttp2)
     find_library(PSL_LIBRARY NAMES libpsl.a psl)
     find_library(IDN2_LIBRARY NAMES libidn2.a idn2)
+    # c-ares a brotli: potřeba na Alpine kde curl-static je sestaven s jejich podporou
+    find_library(CARES_LIBRARY NAMES libcares.a cares)
+    find_library(BROTLI_DEC_LIBRARY NAMES libbrotlidec.a brotlidec)
+    find_library(BROTLI_COMMON_LIBRARY NAMES libbrotlicommon.a brotlicommon)
+    # libunistring: potřeba pro libidn2-static na Alpine
+    find_library(UNISTRING_LIBRARY NAMES libunistring.a unistring)
     
     set(STATIC_EXTRA_LIBS 
         ${SSL_LIBRARY}
@@ -63,6 +86,18 @@ if(BUILD_STATIC)
     endif()
     if(IDN2_LIBRARY)
         list(APPEND STATIC_EXTRA_LIBS ${IDN2_LIBRARY})
+    endif()
+    if(CARES_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${CARES_LIBRARY})
+    endif()
+    if(BROTLI_DEC_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${BROTLI_DEC_LIBRARY})
+    endif()
+    if(BROTLI_COMMON_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${BROTLI_COMMON_LIBRARY})
+    endif()
+    if(UNISTRING_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${UNISTRING_LIBRARY})
     endif()
     
     message(STATUS "Static extra libraries: ${STATIC_EXTRA_LIBS}")
@@ -184,12 +219,16 @@ target_include_directories(balikar PRIVATE
 
 if(BUILD_STATIC)
     # Statický build: linkuj všechny závislosti
+    # --start-group/--end-group: linker opakuje průchody pro rozlišení
+    # kruhových závislostí (libssl.a ↔ libcrypto.a v OpenSSL 3)
     target_link_libraries(balikar
+        -Wl,--start-group
         ${LibSolv_LIBRARIES}
-        ${CURL_LIBRARIES}
+        ${CURL_LIBRARY_STATIC}
         ${Jansson_LIBRARIES}
         ${LibArchive_LIBRARIES}
         ${STATIC_EXTRA_LIBS}
+        -Wl,--end-group
         pthread
         m
         dl
@@ -259,7 +298,7 @@ target_link_libraries(tests
         ${CHECK_LIBRARIES}
         ${LibSolv_LIBRARIES}
         ${Jansson_LIBRARIES}
-        ${CURL_LIBRARIES}
+        $<IF:$<BOOL:${BUILD_STATIC}>,${CURL_LIBRARY_STATIC},${CURL_LIBRARIES}>
         m
         pthread
         rt
