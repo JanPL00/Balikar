@@ -1,3 +1,5 @@
+ALPINE:
+
 # Spuštění balikar na Alpine Linux
 
 balikar binary je zkompilovaný jako glibc-linked ELF. Alpine Linux používá musl libc,
@@ -12,7 +14,7 @@ apk add --no-cache gcompat libc6-compat libcurl jansson pcre2 zlib ca-certificat
 - `gcompat` — poskytuje `libc.so.6` a `ld-linux-x86-64.so.2` (glibc compat vrstva)
 - `libc6-compat` — symlink `/lib64/ld-linux-x86-64.so.2` pro glibc ELF interpreter
 - `libcurl`, `jansson` — přímé runtime deps binary
-- `pcre2`, `zlib` — **nelze mountovat bundlované glibc verze** z `proj/lib/`; použij Alpine balíčky
+- `pcre2`, `zlib` — **nelze mountovat bundlované glibc verze** z `proj/lib/`; použijte Alpine balíčky
 
 ## 2. fcntl64@GLIBC_2.28
 

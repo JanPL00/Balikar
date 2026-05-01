@@ -5,6 +5,8 @@ dist/
 cmake-build-*/
 balikar_backup/
 doc/diagrams/
+balikar-static
+build-static
 
 doc/balikar/TESTING_RESULTS.md
 doc/balikar/REFACTOR.txt.backup
