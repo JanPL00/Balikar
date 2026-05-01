@@ -23,10 +23,6 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  remove <pkg>          Remove installed package\n");
     fprintf(stderr, "  autoremove            Remove orphaned dependencies\n");
     fprintf(stderr, "  repo list             List configured repositories\n");
-    fprintf(stderr, "  repo add <name> <url> Add new repository\n");
-    fprintf(stderr, "  repo remove <name>    Remove repository\n");
-    fprintf(stderr, "  repo enable <name>    Enable repository\n");
-    fprintf(stderr, "  repo disable <name>   Disable repository\n");
     fprintf(stderr, "  repo-update           Regenerate repodata.json from repository\n");
     fprintf(stderr, "  clean-cache           Clear download cache\n");
     fprintf(stderr, "\n");
@@ -37,7 +33,6 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  --no-staging          Disable staging, install directly (stable mode)\n");
     fprintf(stderr, "  --dry-run             Simulate without changes\n");
     fprintf(stderr, "  --no-deps             Download without dependencies\n");
-    fprintf(stderr, "  --repo=PATH           Override repository path\n");
     fprintf(stderr, "  --output-dir=PATH     Output directory for download command\n");
     fprintf(stderr, "  --local-package=PATH  Install from local tar.bz2 (out of repo)\n");
     fprintf(stderr, "  --pkg=NAME            Package name for clean-cache command\n");
@@ -49,7 +44,6 @@ void print_usage(int exit_code) {
     fprintf(stderr, "  balikar download nmap --output-dir=/tmp/downloads\n");
     fprintf(stderr, "  balikar download gzip --no-deps\n");
     fprintf(stderr, "  balikar repo list\n");
-    fprintf(stderr, "  balikar repo add myrepo https://example.com/repo\n");
     fprintf(stderr, "  balikar clean-cache --pkg=glibc\n");
     fprintf(stderr, "  balikar install --local-package=/path/to/gzip.tar.bz2\n");
     exit(exit_code);

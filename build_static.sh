@@ -39,8 +39,8 @@ echo ""
 echo "Checking for required static libraries..."
 MISSING_LIBS=""
 
-# Core libraries — hledej nejdřív v CONDA_PREFIX, pak v systémových cestách
-for lib in libcurl.a libjansson.a libarchive.a libssl.a libcrypto.a libz.a; do
+# Core libraries — hledej v CONDA_PREFIX a systémových cestách (bez libcurl — tu stavíme ze zdrojů)
+for lib in libjansson.a libarchive.a libssl.a libcrypto.a libz.a; do
     if ! find "$CONDA_PREFIX/lib" /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu -name "$lib" 2>/dev/null | grep -q .; then
         MISSING_LIBS="$MISSING_LIBS $lib"
     fi
@@ -67,15 +67,15 @@ if [ -n "$MISSING_LIBS" ]; then
     echo "Install development packages with static libraries:"
     echo ""
     echo "Debian/Ubuntu:"
-    echo "  sudo apt install libcurl4-openssl-dev libjansson-dev libarchive-dev \\"
+    echo "  sudo apt install libjansson-dev libarchive-dev \\"
     echo "                   libssl-dev zlib1g-dev liblzma-dev libbz2-dev libzstd-dev"
     echo ""
     echo "Fedora/RHEL:"
-    echo "  sudo dnf install libcurl-devel jansson-devel libarchive-devel \\"
+    echo "  sudo dnf install jansson-devel libarchive-devel \\"
     echo "                   openssl-devel zlib-devel xz-devel bzip2-devel libzstd-devel"
     echo ""
     echo "Alpine Linux:"
-    echo "  sudo apk add curl-dev curl-static jansson-dev jansson-static \\"
+    echo "  sudo apk add jansson-dev jansson-static \\"
     echo "               libarchive-dev libarchive-static openssl-libs-static zlib-static"
     echo ""
     exit 1
@@ -83,6 +83,39 @@ fi
 
 echo "All required static libraries found."
 echo ""
+
+# Build libcurl from source with minimal features (HTTPS only)
+# Systémový libcurl.a na Debian/Ubuntu je sestaven se SSH2, RTMP, GSSAPI, LDAP —
+# to vyžaduje desítky extra statických knihoven. Proto stavíme vlastní minimální verzi.
+if ! [ -f "$CONDA_PREFIX/lib/libcurl.a" ]; then
+    echo "Building libcurl from source (minimal: HTTPS only, no SSH/RTMP/LDAP/GSSAPI)..."
+    TMP_CURL=$(mktemp -d)
+    git clone --depth=1 https://github.com/curl/curl.git "$TMP_CURL/curl"
+    cmake -B "$TMP_CURL/build" "$TMP_CURL/curl" \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DCURL_USE_OPENSSL=ON \
+        -DCURL_USE_LIBSSH2=OFF \
+        -DCURL_BROTLI=OFF \
+        -DCURL_USE_GSSAPI=OFF \
+        -DCURL_DISABLE_LDAP=ON \
+        -DCURL_DISABLE_LDAPS=ON \
+        -DCURL_USE_LIBRTMP=OFF \
+        -DUSE_NGHTTP2=OFF \
+        -DCURL_ZSTD=OFF \
+        -DCURL_USE_LIBPSL=OFF \
+        -DCURL_USE_LIBIDN2=OFF \
+        -DCMAKE_INSTALL_LIBDIR=lib \
+        -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX"
+    cmake --build "$TMP_CURL/build" -j$(nproc)
+    cmake --install "$TMP_CURL/build" 2>/dev/null || sudo cmake --install "$TMP_CURL/build"
+    rm -rf "$TMP_CURL"
+    echo "libcurl installed to $CONDA_PREFIX"
+    echo ""
+else
+    echo "libcurl already built at $CONDA_PREFIX/lib/libcurl.a — skipping."
+    echo ""
+fi
 
 # Clean previous build
 if [ -d "build-static" ]; then

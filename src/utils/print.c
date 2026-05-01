@@ -56,10 +56,6 @@ void display_transaction(Transaction *trans) {
 
     printf("Transaction summary:\n\n");
 
-    // Order transaction steps by dependencies
-    // Ensures packages are processed in correct order
-    transaction_order(trans, 0);
-
     // Display each transaction step
     for (i = 0; i < trans->steps.count; i++) {
         Id p = trans->steps.elements[i];

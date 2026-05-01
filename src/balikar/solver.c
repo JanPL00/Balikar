@@ -98,6 +98,20 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, js
         // Convert package name to pool ID (create=1 to add if not exists)
         Id pkg_id = pool_str2id(pool, pkg_name, 1);
 
+        // Check if already queued to prevent circular dependency infinite loops.
+        // Job queue is pairs: [flags, id, flags, id, ...] – ids are at odd indices.
+        int already_queued = 0;
+        for (int j = 1; j < job->count; j += 2) {
+            if (job->elements[j] == pkg_id) {
+                already_queued = 1;
+                break;
+            }
+        }
+        if (already_queued) {
+            log_debug(2, "Mkdep '%s' already queued, skipping to avoid cycle.", pkg_name);
+            continue;
+        }
+
         // Add to job queue as install operation
         queue_push2(job, SOLVER_INSTALL | SOLVER_SOLVABLE_NAME, pkg_id);
         log_debug(2, "Added mkdep '%s' to job queue at depth %d.", pkg_name, depth);
@@ -233,10 +247,71 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     }
 
     if (!already_installed) {
-        // First, recursively process all makedeps (build-time dependencies)
-        // This ensures build dependencies are resolved before runtime dependencies
-        // TODO: Pass installed_names to skip already installed makedeps
-        add_mkdeps_to_queue(&job, main_p, pool, repo, 0, mkdeps_cb);
+        // -----------------------------------------------------------------------
+        // Two-pass solver to handle mkdeps for transitive dependencies:
+        //
+        // Pass 1: Solve for the main package only → get the full list of
+        //         packages that need to be installed (runtime deps).
+        // Pass 2: For each package in the pass-1 transaction, collect its
+        //         mkdeps and add them to the job queue, then re-solve.
+        //
+        // This ensures that e.g. `balikar install nmap` also picks up flex
+        // (mkdep of libpcap) and perl (mkdep of openssl) even though the user
+        // only requested nmap.
+        // -----------------------------------------------------------------------
+
+        // --- Pass 1: runtime deps only ---
+        Queue job1;
+        queue_init(&job1);
+        queue_push2(&job1, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
+
+        Solver *solv1 = solver_create(pool);
+        if (!solv1) {
+            log_error("Failed to create pass-1 solver.");
+            goto cleanup;
+        }
+        solver_set_flag(solv1, SOLVER_FLAG_ALLOW_UNINSTALL,    1);
+        solver_set_flag(solv1, SOLVER_FLAG_ALLOW_VENDORCHANGE, 1);
+        solver_set_flag(solv1, SOLVER_FLAG_ALLOW_DOWNGRADE,    0);
+        solver_set_flag(solv1, SOLVER_FLAG_NO_AUTOTARGET,      1);
+        solver_solve(solv1, &job1);
+
+        Transaction *trans1 = solver_create_transaction(solv1);
+
+        // --- Collect mkdeps for every package in the pass-1 transaction ---
+        Queue mkdep_job;
+        queue_init(&mkdep_job);
+
+        if (trans1) {
+            for (int i = 0; i < trans1->steps.count; i++) {
+                Id p = trans1->steps.elements[i];
+                add_mkdeps_to_queue(&mkdep_job, p, pool, repo, 0, mkdeps_cb);
+            }
+            transaction_free(trans1);
+        }
+        solver_free(solv1);
+        queue_free(&job1);
+
+        // --- Build pass-2 job: mkdeps first, then main package ---
+        // Cycle detection already handled inside add_mkdeps_to_queue, but also
+        // filter mkdeps that are already installed.
+        for (int i = 0; i + 1 < mkdep_job.count; i += 2) {
+            int flags  = (int)mkdep_job.elements[i];
+            Id  pkg_id = mkdep_job.elements[i + 1];
+            int skip   = 0;
+            if ((flags & SOLVER_SELECTMASK) == SOLVER_SOLVABLE_NAME) {
+                for (int j = 0; j < installed_names.count; j++) {
+                    if (installed_names.elements[j] == pkg_id) {
+                        log_debug(1, "Skipping already-installed mkdep '%s' from pass-2 job.",
+                                  pool_id2str(pool, pkg_id));
+                        skip = 1;
+                        break;
+                    }
+                }
+            }
+            if (!skip) queue_push2(&job, flags, pkg_id);
+        }
+        queue_free(&mkdep_job);
 
         // Then add runtime dependencies: Add main package as SOLVER_INSTALL
         // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME
@@ -249,7 +324,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         return result;
     }
 
-    // Run the solver to compute the installation transaction
+    // Run the solver (pass 2) to compute the final installation transaction
     int problem_count = solver_solve(solv, &job);
     if (problem_count > 0) {
         // Analyze problems to distinguish between runtime deps and build deps (mkdeps)

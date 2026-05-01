@@ -65,6 +65,49 @@ int cmd_resolve_execute(CommandContext *ctx) {
     }
     
     // Display what would be installed
+    transaction_order(trans, 0);
+
+    // Reorder so mkdep (build-time) packages appear before the packages that need them
+    {
+        Repodata *order_data = repo_id2repodata(repo, 1);
+        if (order_data) {
+            int n = trans->steps.count;
+            int changed = 1;
+            int passes = 0;
+            while (changed && passes++ < n) {
+                changed = 0;
+                for (int i = 0; i < n; i++) {
+                    Id p = trans->steps.elements[i];
+                    json_t *mkdeps = get_custom_mkdeps(order_data, p, pool);
+                    if (!mkdeps || !json_is_array(mkdeps)) {
+                        if (mkdeps) json_decref(mkdeps);
+                        continue;
+                    }
+                    size_t ki;
+                    json_t *mk_item;
+                    json_array_foreach(mkdeps, ki, mk_item) {
+                        if (!json_is_string(mk_item)) continue;
+                        const char *mkdep_name = json_string_value(mk_item);
+                        Id mkdep_name_id = pool_str2id(pool, mkdep_name, 0);
+                        if (!mkdep_name_id) continue;
+                        for (int j = i + 1; j < n; j++) {
+                            Solvable *sj = pool_id2solvable(pool, trans->steps.elements[j]);
+                            if (sj->name == mkdep_name_id) {
+                                Id mkdep_solvable = trans->steps.elements[j];
+                                for (int kk = j; kk > i; kk--)
+                                    trans->steps.elements[kk] = trans->steps.elements[kk - 1];
+                                trans->steps.elements[i] = mkdep_solvable;
+                                changed = 1;
+                                break;
+                            }
+                        }
+                    }
+                    json_decref(mkdeps);
+                }
+            }
+        }
+    }
+
     display_transaction(trans);
     
     // Cleanup

@@ -233,6 +233,7 @@ int cmd_download_execute(CommandContext *ctx) {
     if (trans->steps.count == 0) {
         log_info("No packages to download - package may already be resolved");
     } else {
+        transaction_order(trans, 0);
         display_transaction(trans);
     }
     

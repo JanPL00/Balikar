@@ -61,7 +61,7 @@ if(BUILD_STATIC)
     find_library(BROTLI_COMMON_LIBRARY NAMES libbrotlicommon.a brotlicommon)
     # libunistring: potřeba pro libidn2-static na Alpine
     find_library(UNISTRING_LIBRARY NAMES libunistring.a unistring)
-    
+
     set(STATIC_EXTRA_LIBS 
         ${SSL_LIBRARY}
         ${CRYPTO_LIBRARY}
