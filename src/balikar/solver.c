@@ -59,12 +59,27 @@ Solver *create_solver(Pool *pool) {
  * @param repo The repository containing the solvable
  * @param depth Current recursion depth (starts at 0)
  */
-void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, json_t* (*mkdeps_cb)(Repodata*, Id, Pool*)) {
-    // Check recursion depth to prevent infinite loops from circular dependencies
+
+/* Internal recursive worker.  `visited` tracks solvable IDs already processed
+ * in this call tree so circular makedep chains (A→B→A) are detected and
+ * silently skipped instead of hitting the depth limit. */
+static void add_mkdeps_recursive(Queue *job, Id p, Pool *pool, Repo *repo, int depth,
+                                  json_t* (*mkdeps_cb)(Repodata*, Id, Pool*),
+                                  Queue *visited) {
+    // Guard: depth limit
     if (depth > MAX_RECURSION_DEPTH) {
         log_error("Recursion depth exceeded (%d) – possible circular dependency.", depth);
         return;
     }
+
+    // Guard: already visited this solvable in the current traversal
+    for (int vi = 0; vi < visited->count; vi++) {
+        if (visited->elements[vi] == p) {
+            log_debug(1, "Circular mkdep detected for solvable %d – skipping.", p);
+            return;
+        }
+    }
+    queue_push(visited, p);
 
     // Load repodata for this solvable (assumes repo has been internalized)
     Repodata *data = repo_last_repodata(repo);
@@ -107,8 +122,7 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, js
         Solvable *s;
         FOR_REPO_SOLVABLES(repo, q, s) {
             if (s->name == pkg_id) {
-                // Recurse into this dependency's makedeps
-                add_mkdeps_to_queue(job, q, pool, repo, depth + 1, mkdeps_cb);
+                add_mkdeps_recursive(job, q, pool, repo, depth + 1, mkdeps_cb, visited);
                 break;  // Assume unique name in repo
             }
         }
@@ -116,6 +130,15 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, js
 
     json_decref(mkdeps);  // Cleanup (z jansson, jak v parser.c)
     log_debug(1, "Added %zu mkdeps for solvable %d at depth %d.", mkdep_count, p, depth);
+}
+
+/* Public wrapper – creates an empty visited set per top-level call. */
+void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth,
+                         json_t* (*mkdeps_cb)(Repodata*, Id, Pool*)) {
+    Queue visited;
+    queue_init(&visited);
+    add_mkdeps_recursive(job, p, pool, repo, depth, mkdeps_cb, &visited);
+    queue_free(&visited);
 }
 
 /**
@@ -233,14 +256,62 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     }
 
     if (!already_installed) {
-        // First, recursively process all makedeps (build-time dependencies)
-        // This ensures build dependencies are resolved before runtime dependencies
-        // TODO: Pass installed_names to skip already installed makedeps
-        add_mkdeps_to_queue(&job, main_p, pool, repo, 0, mkdeps_cb);
+        // Shared visited set for all mkdep traversals in this solve call.
+        // A single set across both the main package and all transitive runtime
+        // deps prevents the same package from being processed twice and detects
+        // circular chains (A mkdep B, B mkdep A).
+        Queue visited;
+        queue_init(&visited);
+
+        // First, recursively process makedeps of the explicitly requested package
+        add_mkdeps_recursive(&job, main_p, pool, repo, 0, mkdeps_cb, &visited);
 
         // Then add runtime dependencies: Add main package as SOLVER_INSTALL
         // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME
         queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
+
+        // Pass 1: solve to discover all transitive runtime dependencies
+        solver_solve(solv, &job);
+
+        // Pass 2: collect mkdeps for every package that will be installed as a
+        // runtime dependency.  Without this, a package like libpcap that is pulled
+        // in transitively would never have its mkdeps (e.g. flex, bison) added to
+        // the transaction.  The shared `visited` set prevents re-processing
+        // packages whose mkdeps were already added above.
+        {
+            Transaction *tmp_trans = solver_create_transaction(solv);
+            if (tmp_trans) {
+                int added = 0;
+                for (int i = 0; i < tmp_trans->steps.count; i++) {
+                    Id p = tmp_trans->steps.elements[i];
+                    Id type = transaction_type(tmp_trans, p, SOLVER_TRANSACTION_RPM_ONLY);
+                    if (type != SOLVER_TRANSACTION_INSTALL &&
+                        type != SOLVER_TRANSACTION_MULTIINSTALL)
+                        continue;
+                    if (p == main_p) continue; // already handled above
+
+                    Solvable *sp = pool_id2solvable(pool, p);
+                    // Skip packages that are already installed in the target root
+                    int is_inst = 0;
+                    for (int j = 0; j < installed_names.count; j++) {
+                        if (installed_names.elements[j] == sp->name) { is_inst = 1; break; }
+                    }
+                    if (!is_inst) {
+                        int before = job.count;
+                        add_mkdeps_recursive(&job, p, pool, repo, 0, mkdeps_cb, &visited);
+                        if (job.count > before) added = 1;
+                    }
+                }
+                transaction_free(tmp_trans);
+
+                // Re-solve so mkdeps of transitive deps appear in the final transaction
+                if (added) {
+                    solver_solve(solv, &job);
+                }
+            }
+        }
+
+        queue_free(&visited);
     } else {
         // Package already installed, just set success
         queue_push(result, 1);
@@ -249,8 +320,8 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         return result;
     }
 
-    // Run the solver to compute the installation transaction
-    int problem_count = solver_solve(solv, &job);
+    // Check problems from the final solve
+    int problem_count = solver_problem_count(solv);
     if (problem_count > 0) {
         // Analyze problems to distinguish between runtime deps and build deps (mkdeps)
         int runtime_problems = 0;
