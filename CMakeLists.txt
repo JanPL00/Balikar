@@ -38,7 +38,11 @@ if(BUILD_STATIC)
     find_library(NGHTTP2_LIBRARY NAMES libnghttp2.a nghttp2)
     find_library(PSL_LIBRARY NAMES libpsl.a psl)
     find_library(IDN2_LIBRARY NAMES libidn2.a idn2)
-    
+    find_library(CARES_LIBRARY NAMES libcares.a cares)
+    find_library(BROTLIDEC_LIBRARY NAMES libbrotlidec.a brotlidec)
+    find_library(BROTLICOMMON_LIBRARY NAMES libbrotlicommon.a brotlicommon)
+    find_library(UNISTRING_LIBRARY NAMES libunistring.a unistring)
+
     set(STATIC_EXTRA_LIBS 
         ${SSL_LIBRARY}
         ${CRYPTO_LIBRARY}
@@ -63,6 +67,18 @@ if(BUILD_STATIC)
     endif()
     if(IDN2_LIBRARY)
         list(APPEND STATIC_EXTRA_LIBS ${IDN2_LIBRARY})
+    endif()
+    if(CARES_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${CARES_LIBRARY})
+    endif()
+    if(BROTLIDEC_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${BROTLIDEC_LIBRARY})
+    endif()
+    if(BROTLICOMMON_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${BROTLICOMMON_LIBRARY})
+    endif()
+    if(UNISTRING_LIBRARY)
+        list(APPEND STATIC_EXTRA_LIBS ${UNISTRING_LIBRARY})
     endif()
     
     message(STATUS "Static extra libraries: ${STATIC_EXTRA_LIBS}")

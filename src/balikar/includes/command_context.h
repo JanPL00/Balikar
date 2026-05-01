@@ -65,7 +65,7 @@ typedef struct {
     
     // Downloader subsystem
     FILE* (*download_package)(Solvable*, const char*, Pool*, json_t*, const char*);
-    int (*download_extras)(json_t*, const char*, const char*, const char*, const char*);
+    void (*download_extras)(json_t*, const char*, const char*, const char*, const char*);
     
     // Builder subsystem
     int (*commit_element)(Transaction*, Id, FILE*, Pool*, int, int, json_t*);

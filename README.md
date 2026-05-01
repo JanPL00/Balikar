@@ -244,7 +244,7 @@ Pokud Conda není k dispozici, je nutné libsolv zkompilovat ze zdrojů ručně 
 # Kompilace libsolv ze zdrojů
 git clone https://github.com/openSUSE/libsolv.git
 cd libsolv && mkdir build && cd build
-cmake .. -DBUILD_SHARED_LIBS=OFF -DENABLE_CONDA=ON \
+cmake .. -DBUILD_SHARED_LIBS=OFF -DENABLE_STATIC=ON -DENABLE_CONDA=ON \
          -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc) && sudo make install
 cd /cesta/k/proj6_balikar
@@ -262,7 +262,6 @@ Doporučená cesta pro reprodukovatelný build nezávislý na host systému. Alp
 **Požadavky:** pouze Docker.
 
 ```bash
-./build_static_alpine.sh
 sudo cp balikar-static /usr/local/bin/balikar
 ```
 

@@ -1,5 +1,3 @@
-ALPINE
-
 # Dockerfile.alpine — Statický build balikaru pro Alpine Linux
 #
 # Vytváří plně staticky linkovanou binárku pomocí Alpine + musl libc.
@@ -102,7 +100,8 @@ RUN cmake -B build-static \
 FROM alpine:3.21
 
 # bash je potřeba pro build.sh skripty z repozitáře (#!/bin/bash)
-RUN apk add --no-cache bash
+# ca-certificates je potřeba pro HTTPS přenosy přes libcurl
+RUN apk add --no-cache bash ca-certificates
 
 # Statická binárka
 COPY --from=builder /src/build-static/balikar /usr/local/bin/balikar
