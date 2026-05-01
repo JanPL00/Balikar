@@ -10,6 +10,7 @@ RUN apt-get update && apt-get install -y \
     make \
     bash \
     bzip2 \
+    xz-utils \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
