@@ -85,49 +85,53 @@ if [ -n "$MISSING_LIBS" ]; then
 fi
 
 # Detekce tranzitivních závislostí systémové libcurl.a
-# Conda libcurl je sestavena minimalisticky (jen ssl/crypto/z), zatímco
-# systémová Debian/RHEL libcurl je sestavena s rozšířeními (gssapi, ldap,
-# brotli, idn2, psl, nghttp2, ssh2, rtmp, zstd). Tyto musí mít odpovídající
-# .a soubory, jinak linker selže s "undefined reference".
+# Balikar volá libcurl jen na jednoduché HTTPS GET — nepotřebuje gssapi,
+# ldap, sasl, ssh2, rtmp, brotli, idn2, psl, nghttp2 ani zstd. Conda
+# libcurl je sestavena minimalisticky a linkuje se proti ssl/crypto/z.
+# Distribuční libcurl.a (Debian/RHEL) je ale obvykle sestavena se všemi
+# těmito rozšířeními → linker by hledal jejich .a, které typicky nejsou
+# v základní instalaci a jejichž symboly balikar stejně nikdy nezavolá.
+# Místo nafouknutí binárky desítkami nevyužitých knihoven vyžadujeme,
+# aby uživatel sestavil minimalistickou libcurl ze zdrojů.
 if [ -z "$CONDA_PREFIX" ] || [ "$CONDA_PREFIX" = "/usr/local" ] || \
    ! [ -f "$CONDA_PREFIX/lib/libcurl.a" ]; then
     echo "Variant B detected (system libcurl.a) — auditing transitive deps..."
-    # Zeptáme se Debian/system pkg-config jaké závislosti libcurl vyžaduje
     SYS_PC_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/lib64/pkgconfig"
     CURL_DEPS=$(PKG_CONFIG_LIBDIR="$SYS_PC_PATH" pkg-config --static --libs libcurl 2>/dev/null \
                 | tr ' ' '\n' | sed -n 's/^-l//p' | sort -u)
 
-    EXTRA_MISSING=""
+    UNUSED_DEPS=""
     for dep in $CURL_DEPS; do
-        # přeskoč libs, které už pokrýváme jinde
         case "$dep" in
             curl|ssl|crypto|z|pthread|dl|m|c|gcc_s) continue ;;
         esac
-        if ! find /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu \
-                -name "lib${dep}.a" 2>/dev/null | grep -q .; then
-            EXTRA_MISSING="$EXTRA_MISSING lib${dep}.a"
-        fi
+        UNUSED_DEPS="$UNUSED_DEPS $dep"
     done
 
-    if [ -n "$EXTRA_MISSING" ]; then
+    if [ -n "$UNUSED_DEPS" ]; then
         echo ""
-        echo "ERROR: System libcurl.a requires extra static libraries that are missing:"
-        echo "  $EXTRA_MISSING"
+        echo "ERROR: System libcurl.a is built with features that balikar does not use:"
+        echo "  $UNUSED_DEPS"
         echo ""
-        echo "Install on Debian/Ubuntu:"
-        echo "  sudo apt install libkrb5-dev libldap2-dev librtmp-dev libssh2-1-dev \\"
-        echo "                   libnghttp2-dev libidn2-dev libpsl-dev libzstd-dev libbrotli-dev"
+        echo "Linking against this libcurl.a would either fail (missing .a) or"
+        echo "needlessly bloat the static binary by megabytes."
         echo ""
-        echo "Or rebuild libcurl from source without these features (like Conda does):"
-        echo "  wget https://curl.se/download/curl-8.5.0.tar.xz && tar xf curl-8.5.0.tar.xz"
-        echo "  cd curl-8.5.0 && ./configure --prefix=$CONDA_PREFIX --disable-shared --enable-static \\"
+        echo "Recommended fix — build minimal static libcurl into \$CONDA_PREFIX:"
+        echo ""
+        echo "  PREFIX=\${CONDA_PREFIX:-/usr/local}"
+        echo "  wget https://curl.se/download/curl-8.5.0.tar.xz"
+        echo "  tar xf curl-8.5.0.tar.xz && cd curl-8.5.0"
+        echo "  ./configure --prefix=\$PREFIX --disable-shared --enable-static \\"
+        echo "      --with-openssl \\"
         echo "      --without-libpsl --without-nghttp2 --without-libidn2 --without-brotli \\"
-        echo "      --without-zstd --disable-ldap --disable-ldaps --without-gssapi --without-librtmp"
-        echo "  make -j\$(nproc) && sudo make install"
+        echo "      --without-zstd --without-libssh2 --without-librtmp --without-gssapi \\"
+        echo "      --disable-ldap --disable-ldaps"
+        echo "  make -j\$(nproc) && make install"
+        echo "  cd .. && CONDA_PREFIX=\$PREFIX bash run_scripts/build/build_static.sh"
         echo ""
         exit 1
     fi
-    echo "All transitive libcurl dependencies satisfied."
+    echo "System libcurl.a has no extra features — proceeding."
 fi
 
 echo "All required static libraries found."

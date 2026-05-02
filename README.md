@@ -235,23 +235,41 @@ conda activate <tvoje-prostředí>
 sudo cp balikar-static /usr/local/bin/balikar
 ```
 
-#### Varianta B: Bez Condy (ruční příprava libsolv)
+#### Varianta B: Bez Condy (ruční příprava libsolv + libcurl)
 
-Pokud Conda není k dispozici, je nutné libsolv zkompilovat ze zdrojů ručně a nainstalovat do systému. Proměnná `CONDA_PREFIX` pak slouží pouze k tomu, aby CMake věděl, kde libsolv hledat – nesouvisí s Condou jako takovou.
+Pokud Conda není k dispozici, je nutné **libsolv i libcurl** zkompilovat staticky ze zdrojů. Distribuční `libcurl.a` (Debian/RHEL) je sestavena s mnoha rozšířeními (gssapi, ldap, brotli, idn2, nghttp2, ssh2, rtmp, zstd, …), která balikar **vůbec nepoužívá** — balikar volá libcurl jen pro jednoduché HTTPS GET. Linkování proti distribuční verzi by buď selhalo na chybějící `.a` extras, nebo by binárku nafouklo o megabajty zbytečného kódu. Conda libcurl je z téhož důvodu sestavena minimalisticky — Variant B postup to napodobuje.
+
+Proměnná `CONDA_PREFIX` slouží jen jako prefix, kam CMake hledá `.a` knihovny — nesouvisí s Condou jako takovou.
 
 ```bash
-# Kompilace libsolv ze zdrojů
+PREFIX=/usr/local   # nebo libovolný jiný prefix s právy zápisu
+
+# 1. Statická libsolv (s ENABLE_CONDA=ON kvůli conda metadatovému formátu)
 git clone https://github.com/openSUSE/libsolv.git
 cd libsolv && mkdir build && cd build
 cmake .. -DBUILD_SHARED_LIBS=OFF -DENABLE_STATIC=ON -DENABLE_CONDA=ON \
-         -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release
+         -DCMAKE_INSTALL_PREFIX=$PREFIX -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc) && sudo make install
-cd /cesta/k/proj6_balikar
+cd ../..
 
-export CONDA_PREFIX=/usr/local
+# 2. Minimalistická statická libcurl (jen ssl/crypto/z, žádné extras)
+wget https://curl.se/download/curl-8.5.0.tar.xz
+tar xf curl-8.5.0.tar.xz && cd curl-8.5.0
+./configure --prefix=$PREFIX --disable-shared --enable-static --with-openssl \
+            --without-libpsl --without-nghttp2 --without-libidn2 --without-brotli \
+            --without-zstd --without-libssh2 --without-librtmp --without-gssapi \
+            --disable-ldap --disable-ldaps
+make -j$(nproc) && sudo make install
+cd ..
+
+# 3. Statický build balikaru
+cd /cesta/k/proj6_balikar
+export CONDA_PREFIX=$PREFIX
 ./run_scripts/build/build_static.sh
 sudo cp balikar-static /usr/local/bin/balikar
 ```
+
+Pokud by uživatel zapomněl na krok 2 a nasměroval `CONDA_PREFIX` na prefix s distribuční `libcurl.a`, `build_static.sh` selže s čitelnou chybou a vypíše přesně tento postup.
 
 #### Varianta C: Alpine Docker (bez Condy, bez ručního nastavení)
 
