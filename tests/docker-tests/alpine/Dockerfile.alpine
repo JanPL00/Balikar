@@ -20,13 +20,11 @@
 #   ldd ./balikar-alpine-static    # → "not a dynamic executable"
 #   ./balikar-alpine-static --help
 #
-#  Spuštění finálního Alpine image
-#
-#   docker run --rm balikar-static-builder balikar --help
-#
-#   # Nebo interaktivní shell s balikar v PATH:
-#   docker run --rm -it balikar-static-builder /bin/sh
-#
+#  !!! POZOR !!!
+#   Tento kontajner slouží pouze pro extrakci statické binárky.
+#   Pro používání balikaru zde chybí gcc, make apod.
+#   (Za tímto účelem použijte standartní dockerfile)
+
 
 #  Stage 1: Builder 
 FROM alpine:3.21 AS builder

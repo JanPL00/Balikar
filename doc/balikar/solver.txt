@@ -1,0 +1,181 @@
+========================================
+                 CZECH
+========================================
+
+solver
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: src/balikar/solver.c
+Hlavičkový soubor: src/balikar/includes/solver.h
+
+Modul solver je tenkou vrstvou nad libsolv (SAT solverem) – konfiguruje
+jej pro potřeby balikaru, sestavuje job queue (včetně rekurzivního
+přidání make-time závislostí mkdeps) a překládá selhání solveru do
+čitelných chybových hlášek (display_problem_proof).
+
+Konfigurace solveru (create_solver):
+    SOLVER_FLAG_ALLOW_UNINSTALL = 1   (povol odinstalaci pro řešení konfliktů)
+    SOLVER_FLAG_ALLOW_VENDORCHANGE = 1
+    SOLVER_FLAG_ALLOW_DOWNGRADE = 0   (zakaž downgrade z bezpečnosti)
+    SOLVER_FLAG_NO_AUTOTARGET = 1     (žádné implicit target nasměrování)
+
+Workflow funkce solve_dependencies:
+    1. Najít solvable podle pkg_name v Repo
+    2. Vytvořit prázdný Queue
+    3. Přidat hlavní balík jako SOLVER_INSTALL job
+    4. Rekurzivně rozšířit queue o mkdeps (add_mkdeps_to_queue) –
+       toto je balikar-specific: tradiční runtime depends řeší libsolv
+       sám, ale build-time depends musí být explicitně dodány
+    5. Spustit solver_solve(solv, &job)
+    6. Při selhání: pro každý problem zavolat display_problem_proof
+       (čitelný výpis, jaké pravidlo a kterou solvable kombinaci
+       solver odmítl)
+    7. Vrátit Queue připravenou pro solver_create_transaction
+
+
+Klíčové funkce
+----
+
+Solver *create_solver(Pool *pool);
+- Vytvoří a nakonfiguruje solver instanci pro pool. Vrací NULL při
+  pool == NULL nebo selhání solver_create.
+- Volá se z cmd_install_or_build_execute před každou solve fází.
+
+Queue *solve_dependencies(Solver *solv, const char *pkg_name,
+                          Pool *pool, Repo *repo,
+                          const char *root_path,
+                          json_t* (*mkdeps_cb)(Repodata*, Id, Pool*));
+- Hlavní vstupní bod modulu. Provede plný solve workflow popsaný
+  výše. mkdeps_cb je dependency injection point pro
+  parser.get_custom_mkdeps – umožňuje testovat solver bez
+  reálného repozitáře.
+- Vrací nově alokovanou Queue (caller queue_free) s instrukcemi
+  pro solver_create_transaction. Vrací NULL při selhání.
+
+void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo,
+                         int depth,
+                         json_t* (*mkdeps_cb)(Repodata*, Id, Pool*));
+- Rekurzivně přidá make-time závislosti balíku p (a jejich vlastní
+  mkdeps) do solver queue. depth je ochrana proti cyklům
+  (limit MAX_MKDEPS_DEPTH).
+- Pro každou závislost najde nejvyšší dostupnou verzi v Repo
+  a přidá ji jako SOLVER_INSTALL job.
+
+void display_problem_proof(Solver *solv, int problem);
+- Vypíše uživatelsky čitelné odůvodnění, proč solver odmítl
+  problém: které pravidlo se uplatnilo, kterou solvable kombinaci
+  to ovlivnilo, jaké jsou alternativy. Volá se v cmd_install
+  pro každý nahlášený problem solver_problem_count.
+
+
+Chybové kódy
+----
+NULL                create_solver – pool je NULL nebo malloc selhal
+NULL                solve_dependencies – pkg_name nenalezen, solver_solve
+                    nahlásil problémy (předtím jsou všechny vypsány)
+                    nebo malloc Queue selhal
+add_mkdeps_to_queue tiše ignoruje neexistující balíky a zacyklení
+
+
+Integrace v projektu
+----
+Volán z cmd_install_or_build_execute (viz cmd_install.txt) přes
+ctx->subsystems.create_solver a solve_dependencies. Konzumuje
+parser.get_custom_mkdeps jako mkdeps_cb. Výsledná Queue se předává
+do solver_create_transaction (libsolv API), kterou pak iteruje
+cmd_install pro download/build/install každého balíku.
+
+
+========================================
+                ENGLISH
+========================================
+
+solver
+=============
+
+Description
+----
+Source file: src/balikar/solver.c
+Header: src/balikar/includes/solver.h
+
+The solver module is a thin layer on top of libsolv (a SAT solver) –
+it configures the solver for balikar's needs, builds the job queue
+(including recursive injection of make-time dependencies / mkdeps),
+and translates solver failures into human-readable messages
+(display_problem_proof).
+
+Solver configuration (create_solver):
+    SOLVER_FLAG_ALLOW_UNINSTALL = 1   (allow uninstall for conflict
+                                       resolution)
+    SOLVER_FLAG_ALLOW_VENDORCHANGE = 1
+    SOLVER_FLAG_ALLOW_DOWNGRADE = 0   (disable downgrade for safety)
+    SOLVER_FLAG_NO_AUTOTARGET = 1     (no implicit target binding)
+
+solve_dependencies() workflow:
+    1. Find solvable matching pkg_name in Repo
+    2. Create an empty Queue
+    3. Add the main package as a SOLVER_INSTALL job
+    4. Recursively extend the queue with mkdeps
+       (add_mkdeps_to_queue) – this is balikar-specific: classic
+       runtime depends are handled by libsolv itself, but build-time
+       depends must be supplied explicitly
+    5. Run solver_solve(solv, &job)
+    6. On failure: call display_problem_proof for each problem
+       (readable output of which rule and which solvable combination
+       the solver rejected)
+    7. Return a Queue ready for solver_create_transaction
+
+
+Key functions
+----
+
+Solver *create_solver(Pool *pool);
+- Create and configure a solver instance for pool. Returns NULL when
+  pool is NULL or solver_create fails.
+- Called from cmd_install_or_build_execute before every solve phase.
+
+Queue *solve_dependencies(Solver *solv, const char *pkg_name,
+                          Pool *pool, Repo *repo,
+                          const char *root_path,
+                          json_t* (*mkdeps_cb)(Repodata*, Id, Pool*));
+- Main entry point. Runs the full solve workflow above. mkdeps_cb is
+  the dependency-injection point for parser.get_custom_mkdeps – it
+  enables testing the solver without a real repository.
+- Returns a newly allocated Queue (caller queue_free) with
+  instructions for solver_create_transaction. Returns NULL on failure.
+
+void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo,
+                         int depth,
+                         json_t* (*mkdeps_cb)(Repodata*, Id, Pool*));
+- Recursively adds the make-time dependencies of package p (and
+  their own mkdeps) to the solver queue. depth is the cycle guard
+  (limit MAX_MKDEPS_DEPTH).
+- For each dependency it finds the highest available version in Repo
+  and queues it as a SOLVER_INSTALL job.
+
+void display_problem_proof(Solver *solv, int problem);
+- Prints a human-readable justification of why the solver rejected
+  the problem: which rule fired, which solvable combination
+  triggered it, what alternatives exist. Called by cmd_install for
+  every reported problem (solver_problem_count).
+
+
+Error codes
+----
+NULL                create_solver – pool is NULL or malloc failed
+NULL                solve_dependencies – pkg_name not found,
+                    solver_solve reported problems (already printed)
+                    or Queue malloc failed
+add_mkdeps_to_queue silently ignores missing packages and cycles
+
+
+Project integration
+----
+Called from cmd_install_or_build_execute (see cmd_install.txt) via
+ctx->subsystems.create_solver and solve_dependencies. Consumes
+parser.get_custom_mkdeps as mkdeps_cb. The resulting Queue is fed
+into solver_create_transaction (libsolv API), which cmd_install then
+iterates to download/build/install each package.

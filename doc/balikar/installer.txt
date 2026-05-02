@@ -1,0 +1,231 @@
+========================================
+                 CZECH
+========================================
+
+installer
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: src/balikar/installer.c
+Hlavičkový soubor: src/balikar/includes/installer.h
+
+Modul installer spravuje databázi nainstalovaných balíků a provádí
+přesun souborů ze staging adresáře do cílového kořenového adresáře
+(chrootu). Plní také roli "package database" – uchovává JSON manifest
+{name, version, files[], reason} v souboru
+{chroot}/var/lib/balikar/installed.json.
+
+Workflow funkce install_package_with_reason():
+    1. Validace chroot cesty (validate_chroot)
+    2. Načtení existující databáze (load_installed_db)
+    3. Sběr manifestu souborů ze staging adresáře
+       (collect_file_manifest – rekurzivní průchod)
+    4. Volitelné spuštění install.sh ze staging (execute_install_script)
+    5. Sloučení staging stromu do chroot stromu
+       (merge_staging_to_chroot – kopie + nastavení vlastnictví)
+    6. Přidání záznamu do databáze (add_installed_package) s reason
+       ("manual" pro přímý požadavek, "dependency" pro auto-install)
+    7. Uložení databáze (save_installed_db)
+    8. Vyčistění staging adresáře
+
+Reason mechanism slouží příkazu autoremove: pouze balíky s reason
+"dependency", které již nejsou potřeba (find_orphaned_packages),
+mohou být automaticky odstraněny.
+
+
+Klíčové funkce
+----
+
+int install_package_with_reason(const char *pkg_name, const char *pkg_version,
+                                const char *staging_dir,
+                                const char *chroot_path, const char *reason);
+- Hlavní instalační funkce. Provede full workflow popsaný výše.
+- reason je "manual" nebo "dependency".
+- Vrací 0 při úspěchu, nenulovou hodnotu při selhání.
+
+int install_package(const char *pkg_name, const char *pkg_version,
+                    const char *staging_dir, const char *chroot_path);
+- Tenká obálka kolem install_package_with_reason s reason="manual".
+
+int erase_package(const char *pkg_name, const char *chroot_path);
+- Odinstalace balíku: smaže všechny soubory uvedené v manifestu
+  z chroot stromu, odstraní záznam z databáze, uloží.
+- Volá se z cmd_remove.c a z autoremove.
+
+int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
+                              ...);
+- Verze erase_package se safety kontrolami: ověří, že balík není
+  reverzní závislostí jiného nainstalovaného balíku
+  (find_reverse_dependencies). Použito pro interaktivní balikar remove.
+
+int is_package_installed(const char *pkg_name, const char *chroot_path);
+- Rychlý dotaz na databázi. Vrací 1 pokud je balík nainstalován,
+  0 jinak. Používá se v cmd_install pro skip-if-installed logiku.
+
+json_t* get_installed_packages(const char *chroot_path);
+- Vrátí celé pole nainstalovaných balíků z databáze. Použito např.
+  příkazem balikar list-installed.
+
+json_t* find_reverse_dependencies(const char *pkg_name,
+                                  const char *chroot_path,
+                                  Pool *pool, Repo *repo);
+- Najde balíky, které deklarují pkg_name jako svou závislost.
+  Použito pro bezpečné odinstalování.
+
+json_t* find_orphaned_packages(const char *chroot_path, Pool *pool,
+                               Repo *repo,
+                               json_t* (*load_db_cb)(const char*));
+- Najde balíky s reason="dependency", na které už nic nezávisí.
+  Vrací JSON pole jmen pro autoremove.
+
+int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo,
+                        int dry_run,
+                        json_t* (*load_db_cb)(const char*),
+                        int (*erase_cb)(const char*, const char*));
+- Provede plný autoremove workflow. dry_run=1 jen vypíše seznam.
+- Callbacks (load_db_cb, erase_cb) umožňují dependency injection
+  pro testy.
+
+json_t* load_installed_db(const char *chroot_path);
+- Načte installed.json. Pokud neexistuje, vrátí prázdné JSON pole.
+  Caller musí json_decref.
+
+int validate_chroot(const char *chroot_path);
+- Ověří, že chroot cesta existuje a má potřebnou strukturu.
+
+
+Chybové kódy
+----
+0                   Úspěch
+1                   Obecné selhání (validate_chroot, load_installed_db,
+                    save_installed_db, kopie souboru)
+NULL                load_installed_db, find_*, get_installed_packages
+                    – chyba IO nebo malformed JSON
+
+
+Integrace v projektu
+----
+Volán z cmd_install (přes ctx->subsystems.install_package_with_reason
+a is_package_installed), cmd_remove (přes erase_package_with_checks),
+cmd_autoremove (přes autoremove_packages, find_orphaned_packages).
+Spotřebovává staging adresář vyrobený builderem (commit_element).
+Closely cooperates with parser.c – pro find_reverse_dependencies se
+prochází metadata všech nainstalovaných balíků.
+
+
+========================================
+                ENGLISH
+========================================
+
+installer
+=============
+
+Description
+----
+Source file: src/balikar/installer.c
+Header: src/balikar/includes/installer.h
+
+The installer module manages the installed-package database and
+relocates files from the staging directory into the target root
+(chroot). It also acts as the "package database" – persisting a JSON
+manifest {name, version, files[], reason} in
+{chroot}/var/lib/balikar/installed.json.
+
+install_package_with_reason() workflow:
+    1. Validate chroot path (validate_chroot)
+    2. Load existing database (load_installed_db)
+    3. Collect file manifest from staging dir (collect_file_manifest –
+       recursive walk)
+    4. Optionally run install.sh from staging (execute_install_script)
+    5. Merge staging tree into chroot tree (merge_staging_to_chroot –
+       copy + ownership)
+    6. Append record to database (add_installed_package) with reason
+       ("manual" for explicit request, "dependency" for auto-install)
+    7. Save database (save_installed_db)
+    8. Clean up staging dir
+
+The reason mechanism is consumed by autoremove: only packages with
+reason "dependency" that are no longer needed
+(find_orphaned_packages) may be automatically removed.
+
+
+Key functions
+----
+
+int install_package_with_reason(const char *pkg_name, const char *pkg_version,
+                                const char *staging_dir,
+                                const char *chroot_path, const char *reason);
+- Main install function. Runs the full workflow above.
+- reason is "manual" or "dependency".
+- Returns 0 on success, non-zero on failure.
+
+int install_package(const char *pkg_name, const char *pkg_version,
+                    const char *staging_dir, const char *chroot_path);
+- Thin wrapper around install_package_with_reason with reason="manual".
+
+int erase_package(const char *pkg_name, const char *chroot_path);
+- Uninstall: delete every file in the manifest from the chroot tree,
+  remove the database record, save.
+- Called from cmd_remove.c and from autoremove.
+
+int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
+                              ...);
+- Safety-checked version: ensures the package is not a reverse
+  dependency of any installed package (find_reverse_dependencies).
+  Used by interactive balikar remove.
+
+int is_package_installed(const char *pkg_name, const char *chroot_path);
+- Fast database query. Returns 1 if installed, 0 otherwise. Used in
+  cmd_install for the skip-if-installed logic.
+
+json_t* get_installed_packages(const char *chroot_path);
+- Returns the full installed-packages array from the database. Used by
+  e.g. balikar list-installed.
+
+json_t* find_reverse_dependencies(const char *pkg_name,
+                                  const char *chroot_path,
+                                  Pool *pool, Repo *repo);
+- Finds packages that declare pkg_name as a dependency. Used for safe
+  uninstallation.
+
+json_t* find_orphaned_packages(const char *chroot_path, Pool *pool,
+                               Repo *repo,
+                               json_t* (*load_db_cb)(const char*));
+- Finds packages with reason="dependency" that nothing else needs.
+  Returns a JSON array of names for autoremove.
+
+int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo,
+                        int dry_run,
+                        json_t* (*load_db_cb)(const char*),
+                        int (*erase_cb)(const char*, const char*));
+- Runs the full autoremove workflow. dry_run=1 only prints the list.
+- Callbacks (load_db_cb, erase_cb) enable dependency injection for
+  tests.
+
+json_t* load_installed_db(const char *chroot_path);
+- Loads installed.json. Returns an empty JSON array if missing.
+  Caller must json_decref.
+
+int validate_chroot(const char *chroot_path);
+- Verifies the chroot path exists and has the required structure.
+
+
+Error codes
+----
+0                   Success
+1                   Generic failure (validate_chroot, load_installed_db,
+                    save_installed_db, file copy)
+NULL                load_installed_db, find_*, get_installed_packages
+                    – IO error or malformed JSON
+
+
+Project integration
+----
+Called from cmd_install (via ctx->subsystems.install_package_with_reason
+and is_package_installed), cmd_remove (via erase_package_with_checks),
+cmd_autoremove (via autoremove_packages, find_orphaned_packages).
+Consumes the staging directory produced by the builder
+(commit_element). Closely cooperates with parser.c – metadata of all
+installed packages is consulted for find_reverse_dependencies.

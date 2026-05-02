@@ -1,0 +1,227 @@
+========================================
+                 CZECH
+========================================
+
+parser
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: src/balikar/parser.c
+Hlavičkový soubor: src/balikar/includes/parser.h
+
+Modul parser propojuje JSON metadata balíkového repozitáře s libsolv
+Pool/Repo strukturami. Načítá per-balíček index.json soubory, generuje
+agregované repodata.json, plní libsolv repodatu vlastními (custom)
+poli (source URL, extras, mkdeps, is_group, no_package) a poskytuje
+gettery, které tato pole čtou zpět během solve/install fáze.
+
+Repository layout (struktura repozitáře):
+    repo_root/
+      repodata.json                  (agregát, generovaný / stahovaný)
+      packages/
+        <pkg_name>/
+          <version>/
+            index.json               (per-version metadata)
+            <pkg>-<version>.tar.bz2  (archiv s extras + případně source)
+        ...
+
+Klíčové role modulu:
+    1. Bootstrap repozitáře: collect_packages → generate_repodata
+    2. Načtení repozitáře do libsolv: load_repository (lokální nebo
+       remote URL přes is_remote_url + download_repodata)
+    3. Custom solvable atributy: rozšiřuje libsolv pool o pole, která
+       tradiční RPM/DEB repozitáře nemají (zdrojové URL, build deps,
+       skupiny)
+    4. Ad-hoc načtení lokálního archivu: add_package_tar_bz2
+       (použito pro --local-package)
+
+
+Klíčové funkce
+----
+
+Repo *load_repository(Pool *pool, const char *repo_path);
+- Načte repozitář ze souboru/URL do libsolv Repo. Pro http(s) URL
+  cachuje repodata.json lokálně. Vrací NULL při selhání.
+- Volá se z command_context.c při lazy inicializaci.
+
+int generate_repodata(const char *repo_path);
+- Projde všechny packages/*/*/index.json, agreguje je a uloží
+  repodata.json do kořene repozitáře. Volá se z balikar repo-update.
+
+void collect_packages(const char* repo_path, json_t* packages,
+                      Pool *pool, Repo *repo);
+- Rekurzivní průchod packages/, aplikace add_default_fields,
+  process_index_json (vytvoří solvable pro každou verzi).
+
+const char* get_custom_source(Repodata *data, Id p, Pool *pool);
+- Vrátí primární zdrojové URL pro daný solvable (Id p).
+  Použito downloaderem.
+
+json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);
+- Vrátí pole zdrojových URL (mirror list) pro daný solvable.
+  Použito downloaderem pro fallback.
+
+json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
+- Vrátí JSON pole extras (jména patchů a extra build skriptů).
+  Použito download_extras a builder.apply_extras.
+
+json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
+- Vrátí pole make-time závislostí (mkdeps), které je třeba přidat
+  do solver queue navíc nad runtime depends.
+- Použito solver.add_mkdeps_to_queue.
+
+int get_custom_is_group(Repodata *data, Id p, Pool *pool);
+int get_custom_no_package(Repodata *data, Id p, Pool *pool);
+- Boolean příznaky: is_group = meta-balík (jen závislosti),
+  no_package = nestaví se, neinstaluje se (čisté seskupení).
+
+void internalize_repo(Repo *repo);
+- Wrapper kolem libsolv repo_internalize – musí se volat po
+  modifikacích repodaty před solverem.
+
+Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
+- Načte jediný .tar.bz2 archiv jako solvable. Použito pro
+  --local-package volbu příkazu install.
+
+json_t* generate_default_metadata(const char* filename);
+- Heuristika pro extrakci jména a verze z názvu archivu, když
+  index.json chybí (např. při add_package_tar_bz2).
+
+json_t* load_json(const char* filepath);
+- Načtení JSON souboru s reportingem chyb. Caller json_decref.
+
+
+Chybové kódy
+----
+NULL                load_repository, load_json, get_custom_*,
+                    generate_default_metadata – chyba IO/parse
+0                   generate_repodata, internalize_repo úspěch
+< 0                 generate_repodata, download_repodata selhání
+add_package_tar_bz2 vrací 0 (= invalid Id) při selhání
+
+
+Integrace v projektu
+----
+Centrální datová vrstva projektu. Volán:
+    - command_context.c: lazy load Repo při prvním přístupu
+    - solver.c: get_custom_mkdeps, internalize_repo
+    - downloader.c: get_custom_source*, get_custom_extras
+    - builder.c: get_custom_is_group, get_custom_no_package
+    - cmd_install / cmd_resolve: získávání metadat pro display
+    - cmd_repo_update: generate_repodata
+
+
+========================================
+                ENGLISH
+========================================
+
+parser
+=============
+
+Description
+----
+Source file: src/balikar/parser.c
+Header: src/balikar/includes/parser.h
+
+The parser module bridges the JSON repository metadata and the libsolv
+Pool/Repo structures. It loads per-package index.json files, generates
+the aggregated repodata.json, populates the libsolv repodata with
+custom fields (source URL, extras, mkdeps, is_group, no_package), and
+exposes getters that read these fields back during solve/install.
+
+Repository layout:
+    repo_root/
+      repodata.json                  (aggregate, generated / downloaded)
+      packages/
+        <pkg_name>/
+          <version>/
+            index.json               (per-version metadata)
+            <pkg>-<version>.tar.bz2  (archive with extras + optional source)
+        ...
+
+Key roles:
+    1. Repository bootstrap: collect_packages → generate_repodata
+    2. Loading a repository into libsolv: load_repository (local path
+       or remote URL via is_remote_url + download_repodata)
+    3. Custom solvable attributes: extends the libsolv pool with
+       fields that classic RPM/DEB repos lack (source URLs, build
+       deps, groups)
+    4. Ad-hoc loading of a local archive: add_package_tar_bz2
+       (used by --local-package)
+
+
+Key functions
+----
+
+Repo *load_repository(Pool *pool, const char *repo_path);
+- Load a repository from file/URL into a libsolv Repo. For http(s)
+  URLs, repodata.json is cached locally. Returns NULL on failure.
+- Called from command_context.c during lazy initialization.
+
+int generate_repodata(const char *repo_path);
+- Walks packages/*/*/index.json, aggregates them and writes
+  repodata.json into the repo root. Called by balikar repo-update.
+
+void collect_packages(const char* repo_path, json_t* packages,
+                      Pool *pool, Repo *repo);
+- Recursive walk of packages/, applying add_default_fields and
+  process_index_json (creates a solvable for each version).
+
+const char* get_custom_source(Repodata *data, Id p, Pool *pool);
+- Returns the primary source URL for a solvable (Id p). Used by the
+  downloader.
+
+json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);
+- Returns an array of source URLs (mirror list) for a solvable.
+  Used by the downloader for fallback.
+
+json_t* get_custom_extras(Repodata *data, Id p, Pool *pool);
+- Returns the JSON array of extras (patch and extra build-script
+  names). Used by download_extras and builder.apply_extras.
+
+json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool);
+- Returns the make-time dependencies that must be added to the
+  solver queue on top of runtime depends.
+- Used by solver.add_mkdeps_to_queue.
+
+int get_custom_is_group(Repodata *data, Id p, Pool *pool);
+int get_custom_no_package(Repodata *data, Id p, Pool *pool);
+- Boolean flags: is_group = meta-package (deps only),
+  no_package = nothing to build / install (pure grouping).
+
+void internalize_repo(Repo *repo);
+- Wrapper around libsolv repo_internalize – must be called after
+  modifying repodata before running the solver.
+
+Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo);
+- Loads a single .tar.bz2 archive as a solvable. Used for the
+  --local-package install option.
+
+json_t* generate_default_metadata(const char* filename);
+- Heuristic to extract name and version from the archive filename
+  when index.json is missing (e.g. add_package_tar_bz2).
+
+json_t* load_json(const char* filepath);
+- Loads a JSON file with error reporting. Caller must json_decref.
+
+
+Error codes
+----
+NULL                load_repository, load_json, get_custom_*,
+                    generate_default_metadata – IO/parse error
+0                   generate_repodata, internalize_repo success
+< 0                 generate_repodata, download_repodata failure
+add_package_tar_bz2 returns 0 (= invalid Id) on failure
+
+
+Project integration
+----
+Central data layer of the project. Called from:
+    - command_context.c: lazy-load Repo on first access
+    - solver.c: get_custom_mkdeps, internalize_repo
+    - downloader.c: get_custom_source*, get_custom_extras
+    - builder.c: get_custom_is_group, get_custom_no_package
+    - cmd_install / cmd_resolve: metadata for display
+    - cmd_repo_update: generate_repodata

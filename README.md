@@ -255,15 +255,21 @@ sudo cp balikar-static /usr/local/bin/balikar
 ```
 
 #### Varianta C: Alpine Docker (bez Condy, bez ručního nastavení)
-TODO... možná odstranit tuto možnost
 
 Doporučená cesta pro reprodukovatelný build nezávislý na host systému. Alpine Linux používá musl libc, pro které je statické linkování standardní praxí a nevznikají problémy s DNS (na rozdíl od glibc). Uvnitř kontejneru se libsolv automaticky zkompiluje ze zdrojů.
+Jde o sestavení na základě dockerfile proj6_balikar/tests/docker-tests/alpine.
+
 
 **Požadavky:** pouze Docker.
 
+
 ```bash
-./build_static_alpine.sh
-sudo cp balikar-static /usr/local/bin/balikar
+cd /cesta/k/proj6_balikar
+docker build -f alpine/Dockerfile.alpine -t balikar-static-builder .
+
+docker create --name tmp balikar-static-builder
+docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
+docker rm tmp
 ```
 
 ---

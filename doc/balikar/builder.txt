@@ -1,0 +1,184 @@
+========================================
+                 CZECH
+========================================
+
+builder
+=============
+(English below)
+
+Popis
+----
+Zdrojový soubor: src/balikar/builder.c
+Hlavičkový soubor: src/balikar/includes/builder.h
+
+Modul builder je odpovědný za sestavení balíku ze zdrojového archivu do
+staging adresáře (DESTDIR), případně přímo do cílového kořenového adresáře
+v "no-staging" režimu. Tvoří kritickou fázi mezi stažením archivu
+(downloader) a vlastní instalací do systému (installer).
+
+Workflow funkce commit_element():
+    1. Detekce typu komprese archivu (gzip, bzip2, xz) z magic bytes
+    2. Rozbalení archivu do dočasného build adresáře (g_build_tmp_dir,
+       výchozí /tmp/balikar_build_<pkg>_XXXXXX)
+    3. Aplikace případných extras (patche, build skripty) z extras
+       adresáře pomocí apply_extras()
+    4. Vyhledání skutečného zdrojového adresáře uvnitř archivu pomocí
+       find_source_path() (heuristika: prochází podadresáře hloubky
+       až 3 a hledá build.sh, configure, Makefile.am nebo configure.ac)
+    5. Pokud existuje build.sh: spuštění s nastaveným DESTDIR
+       (na staging adresář nebo cílový root podle g_staging_enabled)
+    6. Volitelně chrootování přes run_with_chroot() pro is_group balíky
+    7. Návrat staging cesty pro následné předání do installeru
+
+Modul podporuje tři režimy:
+    - Normální: build.sh běží s DESTDIR=staging, výsledek převezme
+      installer (commit_element → install_package_with_reason)
+    - is_group: balík obsahuje pouze závislosti, žádný kód se nestaví
+    - no_package: meta-balík bez archivu, vrací se NULL
+
+
+Klíčové funkce
+----
+
+void set_staging_enabled(int enabled);
+- Globální přepínač staging režimu. Při enabled=0 se build.sh spouští
+  s DESTDIR rovným cílovému kořenu (--no-staging volba CLI).
+
+void set_staging_dir(const char *dir);
+- Přebije výchozí staging adresář (z common.h: STAGING_DIR).
+  Volá se při --staging-dir=PATH.
+
+void set_build_tmp_dir(const char *dir);
+- Přebije výchozí dočasný build adresář (/tmp). Volá se při
+  --build-tmp-dir=PATH. Užitečné při omezeném prostoru v /tmp.
+
+int commit_element(Transaction *trans, Id p, FILE *fp, Pool *pool,
+                   int is_group, int no_package, json_t *extras);
+- Hlavní vstupní bod modulu. Sestaví jeden balík z otevřeného
+  archivu (fp) do staging adresáře. Volá se z cmd_install_or_build_execute()
+  pro každý balík v transakci.
+- Vrací 0 při úspěchu, ERR_BUILD_FAIL při chybě extrakce nebo selhání
+  build.sh.
+
+char *find_source_path(const char *tmp_dir);
+- Lokalizuje zdrojový kořen uvnitř rozbaleného archivu. Caller musí
+  uvolnit vrácený řetězec.
+
+void apply_extras(json_t *extras, const char *pkg_name,
+                  const char *source_dir);
+- Aplikuje extras (patche, dodatečné build skripty) na rozbalený
+  zdrojový strom. Patche se aplikují přes patch -p1.
+
+int run_with_chroot(const char *root, build_callback func, void *data);
+- Spustí callback uvnitř chroot prostředí. Použito pro is_group
+  balíky a pro instalace s --root, kde build.sh vyžaduje plné
+  prostředí cílového systému.
+
+
+Chybové kódy
+----
+ERR_BUILD_FAIL    Selhání rozbalení, aplikace patche nebo run_in_terminal build.sh
+ERR_BUILD_FAIL    Návratový kód build.sh různý od 0
+NULL              Vrácen z find_source_path() pokud nelze najít zdrojový strom
+
+
+Integrace v projektu
+----
+Volán z cmd_install_or_build_execute() (viz cmd_install.txt) přes
+ctx->subsystems.commit_element. Spotřebovává FILE* otevřený
+downloaderem (downloader.c: download_package). Výstupní staging
+adresář předává installeru (installer.c: install_package_with_reason).
+Konfiguruje se z main.c při parsování CLI options
+(--staging-dir, --build-tmp-dir, --no-staging).
+
+
+========================================
+                ENGLISH
+========================================
+
+builder
+=============
+
+Description
+----
+Source file: src/balikar/builder.c
+Header: src/balikar/includes/builder.h
+
+The builder module is responsible for compiling a package from its source
+archive into the staging directory (DESTDIR), or directly into the target
+root in "no-staging" mode. It forms the critical stage between archive
+download (downloader) and system installation (installer).
+
+commit_element() workflow:
+    1. Detect archive compression type (gzip, bzip2, xz) from magic bytes
+    2. Extract archive into a temporary build directory (g_build_tmp_dir,
+       default /tmp/balikar_build_<pkg>_XXXXXX)
+    3. Apply any extras (patches, build scripts) via apply_extras()
+    4. Locate the real source root inside the archive via
+       find_source_path() (heuristic: walk subdirectories up to depth 3
+       looking for build.sh, configure, Makefile.am or configure.ac)
+    5. If build.sh exists: run it with DESTDIR set (to staging dir or
+       target root depending on g_staging_enabled)
+    6. Optionally run inside chroot via run_with_chroot() for is_group
+       packages
+    7. Return staging path for handoff to the installer
+
+The module supports three modes:
+    - Normal: build.sh runs with DESTDIR=staging, installer takes over
+    - is_group: package contains dependencies only, nothing is built
+    - no_package: meta-package without an archive, returns NULL
+
+
+Key functions
+----
+
+void set_staging_enabled(int enabled);
+- Global staging-mode switch. With enabled=0 build.sh runs with
+  DESTDIR equal to the target root (--no-staging CLI flag).
+
+void set_staging_dir(const char *dir);
+- Override default staging dir (from common.h: STAGING_DIR).
+  Called for --staging-dir=PATH.
+
+void set_build_tmp_dir(const char *dir);
+- Override default temporary build dir (/tmp). Called for
+  --build-tmp-dir=PATH. Useful when /tmp space is limited.
+
+int commit_element(Transaction *trans, Id p, FILE *fp, Pool *pool,
+                   int is_group, int no_package, json_t *extras);
+- Main entry point. Builds a single package from the open archive
+  (fp) into the staging directory. Called from
+  cmd_install_or_build_execute() for each package in the transaction.
+- Returns 0 on success, ERR_BUILD_FAIL on extraction failure or
+  build.sh failure.
+
+char *find_source_path(const char *tmp_dir);
+- Locates the source root inside the extracted archive. Caller must
+  free the returned string.
+
+void apply_extras(json_t *extras, const char *pkg_name,
+                  const char *source_dir);
+- Applies extras (patches, extra build scripts) to the extracted
+  source tree. Patches are applied via patch -p1.
+
+int run_with_chroot(const char *root, build_callback func, void *data);
+- Runs callback inside a chroot environment. Used for is_group
+  packages and installs with --root where build.sh requires the
+  full target-system environment.
+
+
+Error codes
+----
+ERR_BUILD_FAIL    Extraction, patch application, or build.sh failure
+ERR_BUILD_FAIL    build.sh exit status non-zero
+NULL              Returned by find_source_path() if no source tree found
+
+
+Project integration
+----
+Called from cmd_install_or_build_execute() (see cmd_install.txt) via
+ctx->subsystems.commit_element. Consumes a FILE* opened by the
+downloader (downloader.c: download_package). The output staging
+directory is handed to the installer (installer.c:
+install_package_with_reason). Configured from main.c during CLI
+option parsing (--staging-dir, --build-tmp-dir, --no-staging).
