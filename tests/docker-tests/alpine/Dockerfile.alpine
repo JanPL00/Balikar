@@ -12,7 +12,7 @@
 #
 #   # Extrahujte binárku do aktuálního adresáře:
 #   docker create --name tmp balikar-static-builder
-#   docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
+#   docker cp tmp:/usr/local/bin/balikar ./balikar-static
 #   docker rm tmp
 #
 #   # Ověřte:
