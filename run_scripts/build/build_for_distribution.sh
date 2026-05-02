@@ -4,9 +4,12 @@
 set -e
 
 # Always run from the project root (where CMakeLists.txt lives)
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 echo "========= Building Balikar for Distribution (with bundled libs) ========="
+echo "Project root: $PROJECT_ROOT"
 echo ""
 
 # Check CONDA_PREFIX is set

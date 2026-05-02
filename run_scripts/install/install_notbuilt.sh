@@ -3,7 +3,13 @@
 
 set -e
 
+# Always run from the project root (where CMakeLists.txt lives)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
+
 echo "========= Balikar Package Manager - Installation ========="
+echo "Project root: $PROJECT_ROOT"
 echo ""
 
 # Check if running as root for system installation

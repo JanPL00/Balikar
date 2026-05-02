@@ -24,7 +24,11 @@ if(BUILD_STATIC)
         set(ENV{PKG_CONFIG_LIBDIR} "")
     endif()
 
-    # Pro statický build: hledej .a soubory přímo (full path, ne -lcurl)
+    # pkg_check_modules s STATIC variantou: vrátí v CURL_STATIC_LIBRARIES /
+    # CURL_STATIC_LDFLAGS všechny tranzitivní závislosti tak, jak je
+    # poskytuje pkg-config --static (tj. včetně gssapi, brotli, idn2,
+    # psl, zstd, nghttp2 atd.). Toto je klíčové pro Variantu B (bez
+    # Condy), kde systémová libcurl.a je sestavena se všemi rozšířeními.
     pkg_check_modules(CURL REQUIRED libcurl)
     pkg_check_modules(Jansson REQUIRED jansson)
     pkg_check_modules(LibArchive REQUIRED libarchive)
@@ -37,7 +41,7 @@ if(BUILD_STATIC)
     if(NOT CURL_LIBRARY_STATIC)
         find_library(CURL_LIBRARY_STATIC NAMES libcurl.a curl REQUIRED)
     endif()
-    
+
     # Přidej statické závislosti libcurl
     find_library(SSL_LIBRARY NAMES libssl.a ssl REQUIRED
         HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
@@ -45,12 +49,12 @@ if(BUILD_STATIC)
         HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
     find_library(ZLIB_LIBRARY NAMES libz.a z REQUIRED
         HINTS ${CONDA_PREFIX}/lib /usr/lib/x86_64-linux-gnu /usr/lib /usr/local/lib)
-    
+
     # Přidej statické závislosti libarchive
     find_library(LZMA_LIBRARY NAMES liblzma.a lzma)
     find_library(BZ2_LIBRARY NAMES libbz2.a bz2)
     find_library(ZSTD_LIBRARY NAMES libzstd.a zstd)
-    
+
     # Další potřebné knihovny
     find_library(NGHTTP2_LIBRARY NAMES libnghttp2.a nghttp2)
     find_library(PSL_LIBRARY NAMES libpsl.a psl)
@@ -61,45 +65,48 @@ if(BUILD_STATIC)
     find_library(BROTLI_COMMON_LIBRARY NAMES libbrotlicommon.a brotlicommon)
     # libunistring: potřeba pro libidn2-static na Alpine
     find_library(UNISTRING_LIBRARY NAMES libunistring.a unistring)
-    
-    set(STATIC_EXTRA_LIBS 
+
+    # GSS-API / Kerberos: Debian/Ubuntu libcurl.a je linkována proti libgssapi_krb5
+    # (Variant B). Conda libcurl.a je sestavena bez GSS, takže tyto symboly chybí.
+    find_library(GSSAPI_KRB5_LIBRARY NAMES libgssapi_krb5.a gssapi_krb5)
+    find_library(KRB5_LIBRARY NAMES libkrb5.a krb5)
+    find_library(K5CRYPTO_LIBRARY NAMES libk5crypto.a k5crypto)
+    find_library(KRB5SUPPORT_LIBRARY NAMES libkrb5support.a krb5support)
+    find_library(COMERR_LIBRARY NAMES libcom_err.a com_err)
+    # LDAP / SASL: další volitelné rozšíření systémové libcurl.a
+    find_library(LDAP_LIBRARY NAMES libldap.a ldap)
+    find_library(LBER_LIBRARY NAMES liblber.a lber)
+    find_library(SASL2_LIBRARY NAMES libsasl2.a sasl2)
+    # RTMP: ještě další možné rozšíření
+    find_library(RTMP_LIBRARY NAMES librtmp.a rtmp)
+
+    set(STATIC_EXTRA_LIBS
         ${SSL_LIBRARY}
         ${CRYPTO_LIBRARY}
         ${ZLIB_LIBRARY}
     )
-    
+
     # Přidej volitelné knihovny pokud byly nalezeny
-    if(LZMA_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${LZMA_LIBRARY})
+    foreach(_lib
+            LZMA_LIBRARY BZ2_LIBRARY ZSTD_LIBRARY
+            NGHTTP2_LIBRARY PSL_LIBRARY IDN2_LIBRARY
+            CARES_LIBRARY BROTLI_DEC_LIBRARY BROTLI_COMMON_LIBRARY
+            UNISTRING_LIBRARY
+            LDAP_LIBRARY LBER_LIBRARY SASL2_LIBRARY RTMP_LIBRARY
+            GSSAPI_KRB5_LIBRARY KRB5_LIBRARY K5CRYPTO_LIBRARY
+            KRB5SUPPORT_LIBRARY COMERR_LIBRARY)
+        if(${_lib})
+            list(APPEND STATIC_EXTRA_LIBS ${${_lib}})
+        endif()
+    endforeach()
+
+    # Pojistka: přidej --as-needed --start-group/--end-group pro tolerování
+    # cyklických závislostí mezi krb5 / gssapi / com_err / openssl
+    if(GSSAPI_KRB5_LIBRARY)
+        set(STATIC_EXTRA_LIBS
+            "-Wl,--start-group" ${STATIC_EXTRA_LIBS} "-Wl,--end-group")
     endif()
-    if(BZ2_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${BZ2_LIBRARY})
-    endif()
-    if(ZSTD_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${ZSTD_LIBRARY})
-    endif()
-    if(NGHTTP2_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${NGHTTP2_LIBRARY})
-    endif()
-    if(PSL_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${PSL_LIBRARY})
-    endif()
-    if(IDN2_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${IDN2_LIBRARY})
-    endif()
-    if(CARES_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${CARES_LIBRARY})
-    endif()
-    if(BROTLI_DEC_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${BROTLI_DEC_LIBRARY})
-    endif()
-    if(BROTLI_COMMON_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${BROTLI_COMMON_LIBRARY})
-    endif()
-    if(UNISTRING_LIBRARY)
-        list(APPEND STATIC_EXTRA_LIBS ${UNISTRING_LIBRARY})
-    endif()
-    
+
     message(STATUS "Static extra libraries: ${STATIC_EXTRA_LIBS}")
 else()
     # Pro dynamický build: použij pkg-config

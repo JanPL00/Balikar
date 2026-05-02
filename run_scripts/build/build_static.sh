@@ -5,9 +5,12 @@
 set -e
 
 # Always run from the project root (where CMakeLists.txt lives)
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$PROJECT_ROOT"
 
 echo "========= Building STATIC Balikar Binary ========="
+echo "Project root: $PROJECT_ROOT"
 echo ""
 
 # Check if running in conda environment
@@ -79,6 +82,52 @@ if [ -n "$MISSING_LIBS" ]; then
     echo "               libarchive-dev libarchive-static openssl-libs-static zlib-static"
     echo ""
     exit 1
+fi
+
+# Detekce tranzitivních závislostí systémové libcurl.a
+# Conda libcurl je sestavena minimalisticky (jen ssl/crypto/z), zatímco
+# systémová Debian/RHEL libcurl je sestavena s rozšířeními (gssapi, ldap,
+# brotli, idn2, psl, nghttp2, ssh2, rtmp, zstd). Tyto musí mít odpovídající
+# .a soubory, jinak linker selže s "undefined reference".
+if [ -z "$CONDA_PREFIX" ] || [ "$CONDA_PREFIX" = "/usr/local" ] || \
+   ! [ -f "$CONDA_PREFIX/lib/libcurl.a" ]; then
+    echo "Variant B detected (system libcurl.a) — auditing transitive deps..."
+    # Zeptáme se Debian/system pkg-config jaké závislosti libcurl vyžaduje
+    SYS_PC_PATH="/usr/lib/x86_64-linux-gnu/pkgconfig:/usr/lib/pkgconfig:/usr/lib64/pkgconfig"
+    CURL_DEPS=$(PKG_CONFIG_LIBDIR="$SYS_PC_PATH" pkg-config --static --libs libcurl 2>/dev/null \
+                | tr ' ' '\n' | sed -n 's/^-l//p' | sort -u)
+
+    EXTRA_MISSING=""
+    for dep in $CURL_DEPS; do
+        # přeskoč libs, které už pokrýváme jinde
+        case "$dep" in
+            curl|ssl|crypto|z|pthread|dl|m|c|gcc_s) continue ;;
+        esac
+        if ! find /usr/lib /usr/local/lib /usr/lib/x86_64-linux-gnu \
+                -name "lib${dep}.a" 2>/dev/null | grep -q .; then
+            EXTRA_MISSING="$EXTRA_MISSING lib${dep}.a"
+        fi
+    done
+
+    if [ -n "$EXTRA_MISSING" ]; then
+        echo ""
+        echo "ERROR: System libcurl.a requires extra static libraries that are missing:"
+        echo "  $EXTRA_MISSING"
+        echo ""
+        echo "Install on Debian/Ubuntu:"
+        echo "  sudo apt install libkrb5-dev libldap2-dev librtmp-dev libssh2-1-dev \\"
+        echo "                   libnghttp2-dev libidn2-dev libpsl-dev libzstd-dev libbrotli-dev"
+        echo ""
+        echo "Or rebuild libcurl from source without these features (like Conda does):"
+        echo "  wget https://curl.se/download/curl-8.5.0.tar.xz && tar xf curl-8.5.0.tar.xz"
+        echo "  cd curl-8.5.0 && ./configure --prefix=$CONDA_PREFIX --disable-shared --enable-static \\"
+        echo "      --without-libpsl --without-nghttp2 --without-libidn2 --without-brotli \\"
+        echo "      --without-zstd --disable-ldap --disable-ldaps --without-gssapi --without-librtmp"
+        echo "  make -j\$(nproc) && sudo make install"
+        echo ""
+        exit 1
+    fi
+    echo "All transitive libcurl dependencies satisfied."
 fi
 
 echo "All required static libraries found."

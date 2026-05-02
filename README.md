@@ -33,10 +33,10 @@ git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
 cd proj6_balikar
 
 # System-wide installation (recommended)
-sudo sh install_prebuilt.sh
+sudo sh run_scripts/install/install_prebuilt.sh
 
 # OR user installation
-sh install_prebuilt.sh
+sh run_scripts/install/install_prebuilt.sh
 ```
 
 #### Option 2: Static Binary (single file, works anywhere)
@@ -44,7 +44,7 @@ sh install_prebuilt.sh
 **Build static binary using Alpine Docker (recommended):**
 ```bash
 # Requires only Docker installed
-./build_static_alpine.sh
+./run_scripts/build/build_static_alpine.sh
 
 # Install
 sudo cp balikar-static /usr/local/bin/balikar
@@ -53,7 +53,7 @@ sudo cp balikar-static /usr/local/bin/balikar
 **Or build natively (requires static libraries):**
 ```bash
 # See doc/STATIC_BUILD.md for detailed instructions
-./build_static.sh
+./run_scripts/build/build_static.sh
 ```
 
 **Advantages of static build:**
@@ -164,9 +164,9 @@ sudo dnf install libcurl jansson libarchive patchelf
 git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
 cd proj6_balikar
 
-sudo sh install_prebuilt.sh   # systémová instalace (doporučeno)
+sudo sh run_scripts/install/install_prebuilt.sh   # systémová instalace (doporučeno)
 # nebo
-sh install_prebuilt.sh        # instalace pro aktuálního uživatele
+sh run_scripts/install/install_prebuilt.sh        # instalace pro aktuálního uživatele
 ```
 
 Instalační skript zkopíruje binárku do `/usr/local/bin/`, knihovny do `/usr/local/lib/balikar/` a pomocí `patchelf` nastaví RPATH tak, aby je binárka za běhu nalezla.
@@ -195,12 +195,11 @@ git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
 cd proj6_balikar
 
 conda activate <tvoje-prostředí>   # CONDA_PREFIX musí být nastaven
-./build_for_distribution.sh
-sudo sh install_prebuilt.sh
+./run_scripts/build/build_for_distribution.sh
+sudo sh run_scripts/install/install_prebuilt.sh
 ```
 
-Skript `build_for_distribution.sh` sestaví binárku, pomocí `ldd` detekuje všechny conda-specifické sdílené knihovny a zkopíruje je do `lib/`. Výsledek je identický s Cestou 1 – distribuce pak probíhá stejným skriptem `install_prebuilt.sh`.
-
+Skript `run_scripts/build/build_for_distribution.sh` sestaví binárku, pomocí `ldd` detekuje všechny conda-specifické sdílené knihovny a zkopíruje je do `lib/`. Výsledek je identický s Cestou 1 – distribuce pak probíhá stejným skriptem `run_scripts/install/install_prebuilt.sh`.
 > **Poznámka:** CMake tvrdě vyžaduje nastavenou proměnnou `CONDA_PREFIX`. Bez aktivního conda prostředí konfigurace selže.
 
 ---
@@ -232,7 +231,7 @@ sudo dnf install libcurl-devel jansson-devel libarchive-devel \
 **Postup:**
 ```bash
 conda activate <tvoje-prostředí>
-./build_static.sh
+./run_scripts/build/build_static.sh
 sudo cp balikar-static /usr/local/bin/balikar
 ```
 
@@ -244,13 +243,13 @@ Pokud Conda není k dispozici, je nutné libsolv zkompilovat ze zdrojů ručně 
 # Kompilace libsolv ze zdrojů
 git clone https://github.com/openSUSE/libsolv.git
 cd libsolv && mkdir build && cd build
-cmake .. -DBUILD_SHARED_LIBS=OFF -DENABLE_CONDA=ON \
+cmake .. -DBUILD_SHARED_LIBS=OFF -DENABLE_STATIC=ON -DENABLE_CONDA=ON \
          -DCMAKE_INSTALL_PREFIX=/usr/local -DCMAKE_BUILD_TYPE=Release
 make -j$(nproc) && sudo make install
 cd /cesta/k/proj6_balikar
 
 export CONDA_PREFIX=/usr/local
-./build_static.sh
+./run_scripts/build/build_static.sh
 sudo cp balikar-static /usr/local/bin/balikar
 ```
 

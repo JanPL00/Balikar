@@ -24,7 +24,7 @@ Výstup: `build/balikar` — vyžaduje mountování `libsolv.so.1` + `libsolvext
 **Varianta B — statický build** (doporučeno, bez závislostí):
 ```bash
 export CONDA_PREFIX=/usr/local
-./build_static.sh
+./run_scripts/build/build_static.sh
 ```
 Výstup: `./balikar-static` — plně statická binárka, při `docker run` stačí namountovat jen ji.
 

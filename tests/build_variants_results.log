@@ -151,3 +151,16 @@ Cesta 2  build_for_distribution  PASS (dynamic + bundled libs)
 Cesta 3A build_static.sh         PASS (statically linked binary)
 Cesta 3B static w/o Conda        SKIP (prereq missing)
 Cesta 3C Alpine Docker           SKIP (script does not exist; TODO)
+]633;E;echo;2f406a1e-519b-49dc-91ed-624575e0446e]633;C
+============================================================
+RE-TEST after run_scripts/ reorganization
+============================================================
+Cesta 3A static + Conda          PASS (7.0 MB, statically linked)
+Cesta 3B static + manual libsolv PASS (7.2 MB, statically linked)
+                                 (libcurl built from source into /tmp/varB/prefix)
+
+Build-static script vylepseni:
+ - cd projektového rootu nezávisle na lokaci skriptu (run_scripts/build/)
+ - detekce Variant B (system libcurl.a) + audit pkg-config --static deps
+ - cista chybova zprava s apt install navodem misto kryptickeho ld erroru
+ - CMakeLists rozsiren o GSS/krb5/ldap/sasl/rtmp + start-group/end-group

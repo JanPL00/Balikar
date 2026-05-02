@@ -170,7 +170,7 @@ Sestavení statické binárky pomocí Conda prostředí s předinstalovanou libs
 ```bash
 cd /path/to/proj6_balikar
 # CONDA_PREFIX musí být nastaven (např. /home/user/miniconda3)
-bash build_static.sh
+bash run_scripts/build/build_static.sh
 ```
 
 Výsledná statická binárka: `./balikar-static`
@@ -207,10 +207,10 @@ make -j$(nproc) && make install
 
 ```bash
 # Nastavit CONDA_PREFIX na vlastní prefix
-CONDA_PREFIX=/custom/prefix bash build_static.sh
+CONDA_PREFIX=/custom/prefix bash run_scripts/build/build_static.sh
 
 # Nebo použít LIBSOLV_PREFIX
-LIBSOLV_PREFIX=/custom/prefix bash build_static.sh
+LIBSOLV_PREFIX=/custom/prefix bash run_scripts/build/build_static.sh
 ```
 
 #### Manuální cmake příkaz
@@ -246,7 +246,7 @@ newgrp docker
 cd /path/to/proj6_balikar
 
 # Rychlé sestavení přes skript
-./build_static_alpine.sh
+./run_scripts/build/build_static_alpine.sh
 
 # Nebo ručně přes docker
 docker build -f tests/docker-tests/alpine/Dockerfile.alpine \
@@ -320,8 +320,13 @@ proj6_balikar/
 │   ├── libsolvext.so.1
 │   ├── libz.so.1
 │   └── libpcre2-posix.so.3
-├── install_prebuilt.sh       # Instalační skript (pre-built binárka)
-└── install_notbuilt.sh       # Build ze zdrojů, pak instalace
+├── run_scripts/
+│   ├── install/
+│   │   ├── install_prebuilt.sh   # Instalační skript (pre-built binárka)
+│   │   └── install_notbuilt.sh   # Build ze zdrojů, pak instalace
+│   └── build/
+│       ├── build_for_distribution.sh
+│       └── build_static.sh
 ```
 
 > Bundlované knihovny jsou nutné, protože balikar vyžaduje **conda's libsolv** (sestavenou s `ENABLE_CONDA=ON`), která není dostupná v systémových balíčcích.
@@ -343,7 +348,7 @@ sudo dnf install libcurl jansson libarchive patchelf bzip2 xz gzip
 ```bash
 git clone <repo-url>
 cd proj6_balikar
-sudo sh install_prebuilt.sh
+sudo sh run_scripts/install/install_prebuilt.sh
 ```
 
 Nainstaluje:
@@ -354,7 +359,7 @@ Nainstaluje:
 ### Uživatelská instalace (bez sudo)
 
 ```bash
-sh install_prebuilt.sh
+sh run_scripts/install/install_prebuilt.sh
 ```
 
 Nainstaluje:
@@ -366,7 +371,7 @@ Nainstaluje:
 
 ```bash
 conda activate balikar   # prostředí s libsolv
-sh build_for_distribution.sh
+sh run_scripts/build/build_for_distribution.sh
 ```
 
 Vytvoří:

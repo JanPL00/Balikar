@@ -23,7 +23,7 @@
 #  !!! POZOR !!!
 #   Tento kontajner slouží pouze pro extrakci statické binárky.
 #   Pro používání balikaru zde chybí gcc, make apod.
-#   (Za tímto účelem použijte standartní dockerfile)
+#   (Za tímto účelem použijte standartní Dockerfile)
 
 
 #  Stage 1: Builder 
