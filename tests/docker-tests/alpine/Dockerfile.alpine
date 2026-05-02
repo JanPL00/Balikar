@@ -3,7 +3,7 @@
 # Vytváří plně staticky linkovanou binárku pomocí Alpine + musl libc.
 # Výsledná binárka nemá žádné dynamické závislosti (.so soubory) —
 # spustitelná přímo na Alpine Linux i na jakémkoliv x86_64 Linux kernelu.
-#
+#(sestavení proti musl libc a nikoliv proti glibc)
 #  Sestavení a extrakce statické binárky 
 #
 #   Spouštěj z kořenového adresáře projektu:
