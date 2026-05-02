@@ -3,48 +3,62 @@
 Izolované testovací prostředí pro Balikar package manager.
 Jeden `Dockerfile` (Debian bookworm-slim) pokrývá všechny tři testovací skripty.
 
-## Obsah adresáře
-
-| Soubor | Popis |
-|---|---|
-| `Dockerfile` | Minimální Debian bookworm-slim image pro všechny testy |
-| `test1.sh` | Základní workflow (--help, repo-update, resolve, build, install, clean-cache) |
-| `test2.sh` | Sledování závislostí, remove, autoremove, install --root |
-| `test3.sh` | Pokročilé volby: --staging-dir, --build-tmp-dir, download, install chain |
-| `ALPINE.md` | Návod pro spuštění na Alpine Linux (glibc compat workaroundy) |
-
 ## Předpoklady
 
 **Docker** verze 20.10 nebo novější.
 
-**Sestavený balikar binary:**
+**Sestavený balikar binary** (jedna ze dvou variant):
 
+
+
+**Varianta A — dynamický build** (výchozí, rychlejší):
 ```bash
 cd /cesta/k/proj6_balikar
 mkdir -p build && cd build
 cmake .. && make balikar
 ```
+Výstup: `build/balikar` — vyžaduje mountování `libsolv.so.1` + `libsolvext.so.1` při každém `docker run`.
 
-Po úspěšném buildu existuje soubor `proj6_balikar/build/balikar` nebo `proj6_balikar/balikar` (prebuilt).
+
+
+**Varianta B — statický build** (doporučeno, bez závislostí):
+```bash
+export CONDA_PREFIX=/usr/local
+./build_static.sh
+```
+Výstup: `./balikar-static` — plně statická binárka, při `docker run` stačí namountovat jen ji.
 
 **Přístup k internetu** pro stažení balíčků z GitHub repository
 (`https://raw.githubusercontent.com/JanPL00/balikar-repository/main`).
 Alternativa: mount lokálního balikar-repository (viz sekce níže).
 
+
 ---
 
-## Sestavení Docker images
+## Sestavení Docker image
 
-Všechny příkazy spouštějte z adresáře `docker-tests/`:
+Příkaz spouštějte z **kořene projektu** (Dockerfile potřebuje `balikar` který je tam):
 
 ```bash
-PROJ_ROOT=/cesta/k/proj6_balikar
-cd "$PROJ_ROOT/tests/docker-tests"
+cd /cesta/k/proj6_balikar
 
-docker build -t balikar-alpine .
+# Pak sestavte image:
+docker build -f tests/docker-tests/Dockerfile -t balikar-test .
 ```
 
 ---
+
+---
+
+## Spuštění
+
+Binárka je zabudovaná v image — žádné mounts nejsou potřeba:
+```bash
+docker run --rm -it balikar-test
+```
+
+---
+
 
 ## Test 1 — Základní workflow (128 MB)
 
@@ -62,18 +76,6 @@ docker build -t balikar-alpine .
 - `balikar build hello`
 - `balikar install gzip`
 - `balikar clean-cache`
-
-**Spuštění:**
-
-```bash
-docker run --rm \
-    -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
-    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
-    -v "${PROJ_ROOT}/tests/docker-tests/test1.sh:/test/test1.sh:ro" \
-    balikar-alpine \
-    bash /test/test1.sh
-```
 
 **Očekávaný výsledek:** Všechny kroky projdou bez chyby. `hello` a `gzip` jsou úspěšně sestaveny a nainstalovány.
 
@@ -93,18 +95,6 @@ docker run --rm \
 - `balikar autoremove --root=/test_root`
 - `balikar install readline --root=/test_root`
 - `balikar remove ncurses --root=/test_root` — varování o závislosti
-
-**Spuštění:**
-
-```bash
-docker run --rm \
-    -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
-    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
-    -v "${PROJ_ROOT}/tests/docker-tests/test2.sh:/test/test2.sh:ro" \
-    balikar-alpine \
-    bash /test/test2.sh
-```
 
 **Očekávaný výsledek:**
 
@@ -135,18 +125,6 @@ docker run --rm \
 - `balikar install zlib` / `openssl` / `libpcap` / `libssh2` / `nmap`
 - `balikar clean-cache`
 
-**Spuštění:**
-
-```bash
-docker run --rm \
-    -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
-    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
-    -v "${PROJ_ROOT}/tests/docker-tests/test3.sh:/test/test3.sh:ro" \
-    balikar-alpine \
-    bash /test/test3.sh
-```
-
 **Očekávaný výsledek:**
 
 - `resolve nmap` zobrazí plný řetězec závislostí
@@ -158,61 +136,24 @@ docker run --rm \
 
 > **Poznámka:** Test 3 je nejdelší. Kompilace celé síťové sady (`zlib`, `openssl`, `libpcap`, `libssh2`, `nmap`) může trvat 20–60 minut. Pro ověření pouze resolveru použijte `--dry-run install nmap`.
 
----
 
-## Použití lokálního repository (offline režim)
-
-```bash
-REPO_PATH=/cesta/k/balikar-repository
-
-docker run --rm -it \
-    --memory=128m \
-    --memory-swap=128m \
-    -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
-    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
-    -v "${REPO_PATH}:/repo:ro" \
-    balikar-alpine \
-    /bin/bash -c "
-        printf '[local]\nurl = /repo\npriority = 100\nenabled = true\n' \
-            > /etc/balikar/repos.conf
-        /test/run_tests.sh
-    "
-```
-
----
-
-## Interaktivní spuštění (bez automatického skriptu)
-
-```bash
-docker run --rm -it \
-    -v "${PROJ_ROOT}/balikar:/usr/local/bin/balikar:ro" \
-    -v "${PROJ_ROOT}/lib/libsolv.so.1:/usr/lib/libsolv.so.1:ro" \
-    -v "${PROJ_ROOT}/lib/libsolvext.so.1:/usr/lib/libsolvext.so.1:ro" \
-    balikar-alpine \
-    /bin/bash
-```
-
----
-
-## Předinstalovaný SW v kontejnerech
-
-Všechny tři kontejnery sdílí společnou množinu minimálních balíčků. SW dostupný v balikar-repository (gzip, ncurses, bash, nmap, gettext, bison, ...) **není** předinstalován — instaluje ho balikar jako součást testovaného workflow.
+## Předinstalovaný SW v kontejneru
 
 | Balíček | Důvod předinstalace |
 |---|---|
-| `libcurl4` | Runtime balikar — libcurl.so.4 (přímá dep binárky) |
-| `libjansson4` | Runtime balikar — libjansson.so.4 (přímá dep binárky) |
-| `libpcre2-posix3` | Dep libsolv.so.1 — libpcre2-posix.so.3 (libsolv není v Debian repech) |
+| `bash` | Potřeba pro `build.sh` skripty z repozitáře (`#!/bin/bash`) |
+| `bzip2` | Potřeba pro extrakci `.tar.bz2` archivů (`tar xjf`) |
 | `ca-certificates` | Ověření HTTPS certifikátů při stahování balíčků |
-
-`libsolv.so.1` a `libsolvext.so.1` **nejsou** v Debian repech — mountují se z `proj/lib/` při každém `docker run` (viz příkazy výše).
+| `balikar` (statická) | Zabudovaná přímo v image (`COPY balikar-static`) |
 
 SW pro kompilaci (`gcc`, `make`, `autoconf`, …) **není** předinstalován — instaluje ho balikar sám z balikar-repository jako `no_package=true` závislosti.
 
+SW dostupný v balikar-repository (gzip, ncurses, bash, nmap, ...) **není** předinstalován — instaluje ho balikar jako součást testovaného workflow.
+
 ---
 
-## Řešení problémů
+
+## Řešení možných problémů
 
 **`balikar: command not found`**
 Zkontrolujte, že balikar binary je namountováno na `/usr/local/bin/balikar`.
