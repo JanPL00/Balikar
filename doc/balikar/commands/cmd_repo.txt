@@ -1,0 +1,55 @@
+cmd_repo
+=============
+
+Popis
+----
+Zdrojový soubor: commands/cmd_repo.c
+
+Modul implementuje příkaz repo, který spravuje individuální repozitáře prostřednictvím
+subpříkazů: list, add, remove, enable, disable.
+
+DŮLEŽITÁ POZNÁMKA: Ze subpříkazů je plně implementován pouze "list". Ostatní
+subpříkazy (add, remove, enable, disable) jsou rozpoznány a dispatchovány, ale jejich
+tělo vrací log_error s hlášením "not yet implemented" nebo podobné. Struktura kódu
+připravuje rozhraní pro budoucí implementaci.
+
+
+Subpříkazy
+----
+list    – vypíše všechny repozitáře z konfigurace (URL, jméno, stav enabled/disabled)
+add     – přidá nový repozitář do konfiguračního souboru (není implementováno)
+remove  – odstraní repozitář z konfigurace (není implementováno)
+enable  – aktivuje (enabled=true) existující repozitář (není implementováno)
+disable – deaktivuje (enabled=false) existující repozitář (není implementováno)
+
+
+Klíčové funkce
+----
+
+static int repo_list(CommandContext *ctx);
+- Načte konfiguraci repozitářů (read_repos_conf nebo ctx config).
+- Vypíše každý repozitář: jméno, URL, stav (enabled/disabled).
+- Označí hvězdičkou (*) aktuálně aktivní repozitář (pokud je definován).
+- Vrací 0 vždy (i při prázdném seznamu).
+
+static int repo_add(CommandContext *ctx, const char *url);
+static int repo_remove(CommandContext *ctx, const char *name);
+static int repo_enable(CommandContext *ctx, const char *name);
+static int repo_disable(CommandContext *ctx, const char *name);
+- Stub funkce – logují chybu a vrací 1.
+
+int cmd_repo_execute(CommandContext *ctx);
+- Parsuje první pozitivní argument jako subpříkaz (list/add/remove/enable/disable).
+- Dispatchuje na příslušnou static funkci.
+- Bez subpříkazu: vypíše nápovědu a vrátí 1.
+
+int cmd_repo_validate(CommandContext *ctx);
+- Ověří, že je zadán alespoň jeden pozicionální argument (subpříkaz).
+- Vrací 0 při úspěchu, 1 při selhání.
+
+
+Integrace v projektu
+----
+Pro podpříkaz "list" nepotřebuje pool/repo – čte přímo konfiguraci.
+Registrace v command_registry.c: "repo" → cmd_repo_execute
+s validátorem cmd_repo_validate.

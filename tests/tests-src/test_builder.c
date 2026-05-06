@@ -96,13 +96,13 @@ START_TEST(test_find_source_path_nested_with_build)
         ck_abort_msg("mkdtemp failed");
     }
     
-    // Vytvoř nested strukturu: tmp_dir/pkg-1.0/src/.build
+    // Vytvoř nested strukturu: tmp_dir/pkg-1.0/src/build.sh
     char subdir1[512], subdir2[512], build_file[512];
     snprintf(subdir1, sizeof(subdir1), "%s/pkg-1.0", tmp_dir);
     snprintf(subdir2, sizeof(subdir2), "%s/src", subdir1);
     mkdir(subdir1, 0755);
     mkdir(subdir2, 0755);
-    snprintf(build_file, sizeof(build_file), "%s/.build", subdir2);
+    snprintf(build_file, sizeof(build_file), "%s/build.sh", subdir2);
     
     FILE *fp = fopen(build_file, "w");
     if (fp) {
@@ -110,7 +110,7 @@ START_TEST(test_find_source_path_nested_with_build)
         fclose(fp);
     }
     
-    // find_source_path by měl najít subdir2 (obsahuje .build)
+    // find_source_path by měl najít subdir2
     char *found = find_source_path(tmp_dir);
     ck_assert_ptr_nonnull(found);
     ck_assert(strstr(found, "src") != NULL);
@@ -124,7 +124,7 @@ END_TEST
 
 START_TEST(test_apply_extras)
 {
-    // Minimální test - jen ověří že funkce nepadá
+    // Smoke test pro stabilitu funkce
     json_t *extras = json_array();
     json_array_append_new(extras, json_string("patch1.patch"));
     
@@ -137,8 +137,6 @@ END_TEST
 
 START_TEST(test_commit_element_simple)
 {
-    // Zjednodušený test - jen ověříme funkce existují
-    // Full integrační test by vyžadoval validní tar archiv
     set_staging_enabled(1);
     set_staging_dir("/tmp/test_staging");
     set_staging_dir(NULL);  // reset

@@ -15,9 +15,9 @@ url = ./repo
 priority = 50
 enabled = true
 
-# Příklad: LFS oficiální balíčky (zakázané)
+# Příklad: záložní upstream (zakázaný)
 [lfs-upstream]
-url = https://www.linuxfromscratch.org/lfs/packages
+url = https://ftp.example.com/lfs/packages
 priority = 30
 enabled = false
 

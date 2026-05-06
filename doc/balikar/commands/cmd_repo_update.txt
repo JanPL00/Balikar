@@ -1,0 +1,61 @@
+cmd_repo_update
+=============
+
+Popis
+----
+Zdrojový soubor: commands/cmd_repo_update.c
+
+Modul implementuje příkaz repo-update, který aktualizuje metadata repozitářů
+(repodata.json) stažením nových verzí ze vzdálených zdrojů. Po stažení uvolní
+aktuální pool/repo a znovu jej inicializuje z čerstvých dat.
+
+Příkaz:
+    1. Připraví cílový adresář metadat (standardně /var/cache/balikar/repodata/).
+    2. Stáhne repodata.json pro každý povolený (enabled) repozitář
+       přes ctx->subsystems.download_package nebo přímé HTTP volání.
+    3. Uvolní stávající pool a repo (pokud jsou inicializovány v ctx).
+    4. Nastaví ctx->resources.pool a ctx->resources.repo na NULL.
+    5. Znovu inicializuje pool/repo přes command_context_ensure_pool()
+       a command_context_ensure_repo() – načte čerstvá data.
+    6. Informuje uživatele o počtu aktualizovaných repozitářů a balíků.
+
+Příkaz nevyžaduje žádné povinné argumenty (aktualizuje všechny povolené repozitáře).
+
+
+Klíčové funkce
+----
+
+static int update_repository_metadata(CommandContext *ctx);
+- Jádro příkazu. Stáhne metadata, uvolní a znovu načte pool/repo.
+- Vrací 0 při úspěchu, 1 pokud selhal alespoň jeden repozitář.
+- Toleruje jednotlivá selhání (pokračuje s dalšími repozitáři).
+
+int cmd_repo_update_execute(CommandContext *ctx);
+- Vstupní bod příkazu.
+- Volá update_repository_metadata(ctx).
+- Vrací výsledek update_repository_metadata.
+
+(žádný validátor – validate=NULL v command_registry.c, protože příkaz nepotřebuje
+žádné argumenty)
+
+
+Pool/Repo životní cyklus při aktualizaci
+----
+Normálně: ctx->resources.pool a ctx->resources.repo jsou inicializovány jednou
+(lazy init) a přepisovány jen tehdy, pokud je explicitně uvolníme.
+
+repo-update provedení:
+    pool_free(ctx->resources.pool)  →  ctx->resources.pool = NULL
+    repo_free(ctx->resources.repo)  →  ctx->resources.repo = NULL
+    command_context_ensure_pool(ctx)   →  znovu vytvoří Pool ze sys. konf.
+    command_context_ensure_repo(ctx)   →  znovu vytvoří Repo z nového repodata.json
+
+Tím je zaručeno, že po repo-update jsou všechna data v paměti aktuální.
+
+
+Integrace v projektu
+----
+Závisí na downloader.c (stahování repodata.json), parser.c (načítání nových metadat),
+command_context.c (ensure_pool, ensure_repo, uvolnění pool/repo).
+Registrace v command_registry.c: "repo-update" → cmd_repo_update_execute,
+validate=NULL.

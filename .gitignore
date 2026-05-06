@@ -1,15 +1,21 @@
 # Build directories
 build/
 build-dist/
+build-static/
 dist/
 cmake-build-*/
+balikar_backup/
+doc/diagrams/
+
+balikar-static
+
+doc/balikar/TESTING_RESULTS.md
+doc/balikar/REFACTOR.txt.backup
+doc/balikar/REFACTOR.txt
 
 # IDE
 .idea/
 .vscode/
-
-# Binary - ALLOWED for distribution
-# /balikar is now tracked for pre-built releases
 
 # Temporary files
 *.tmp
@@ -23,5 +29,17 @@ repo/repodata.json
 # Structure exports
 structure_exports/
 
+
 # Implementation notes
 impl_builderu.txt
+BUILD_STATIC.txt
+
+# Testing help scripts
+tests/docker-tests/test1.sh
+tests/docker-tests/test2.sh
+tests/docker-tests/test3.sh
+
+tests/docker-tests/test_all_13.sh
+tests/docker-tests/test_real_software.sh
+
+tests/build_variants_results.log

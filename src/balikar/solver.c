@@ -1,21 +1,15 @@
-
-//
-// Created by placeja5 on 11/12/25.
-//
-
 #include "includes/solver.h"
-
 /**
- * Create a solver instance for the given pool.
- * 
- * Configures solver flags for the package management workflow:
- * - Allows uninstall operations for conflict resolution
- * - Allows vendor changes for LFS flexibility
- * - Disables downgrade for security
- * - Disables auto-targeting for explicit job control
- * 
- * @param pool The pool to create the solver for
- * @return Configured solver instance, or NULL on failure
+ * Vytvoří a nakonfiguruje instanci solveru pro daný pool.
+ *
+ * Nastaví příznaky solveru pro workflow správce balíků:
+ * - Povolí odinstalaci pro řešení konfliktů
+ * - Povolí změnu dodavatele (vendor) pro flexibilitu LFS
+ * - Zakáže downgrade z bezpečnostních důvodů
+ * - Zakáže auto-targeting pro explicitní řízení úloh
+ *
+ * @param pool Pool, pro který se solver vytváří
+ * @return Nakonfigurovaná instance solveru nebo NULL při selhání
  */
 Solver *create_solver(Pool *pool) {
     if (!pool) {
@@ -23,60 +17,61 @@ Solver *create_solver(Pool *pool) {
         return NULL;
     }
 
-    Solver *solv = solver_create(pool);  // Z libsolv-bindings.3: solver_create(pool)
+    Solver *solv = solver_create(pool);  // Viz libsolv-bindings.3: solver_create(pool)
     if (!solv) {
         log_error("Failed to create solver.");
         return NULL;
     }
 
-    // Set flags for our workflow (from constantids.3 and solv.c)
-    solver_set_flag(solv, SOLVER_FLAG_ALLOW_UNINSTALL, 1);     // Allow uninstall for conflicts
-    solver_set_flag(solv, SOLVER_FLAG_ALLOW_VENDORCHANGE, 1);  // Allow vendor changes (for LFS flexibility)
-    solver_set_flag(solv, SOLVER_FLAG_ALLOW_DOWNGRADE, 0);     // Disallow downgrade for security (adjust as needed)
+    // Nastav příznaky pro náš pracovní postup (z constantids.3 a solv.c)
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_UNINSTALL, 1);     // Povol odinstalaci při konfliktech
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_VENDORCHANGE, 1);  // Povol změny vendora (pro flexibilitu LFS)
+    solver_set_flag(solv, SOLVER_FLAG_ALLOW_DOWNGRADE, 0);     // Zakaz downgrade z bezpečnostních důvodů (upravit dle potřeby)
     solver_set_flag(solv, SOLVER_FLAG_NO_AUTOTARGET, 1);       // No auto-target for explicit jobs
 
-    // For Conda compatibility (from plan, even if not in constantids – assuming existence)
-    // pool_set_flag(pool, POOL_FLAG_WHATPROVIDESUSESCONDA, 1);  // If exists, set on pool
+    // Pro kompatibilitu s Conda (z plánu, i když není v constantids – předpokládáme existenci)
+    // pool_set_flag(pool, POOL_FLAG_WHATPROVIDESUSESCONDA, 1);  // Pokud existuje, nastav na poolu
 
-    // Note: Pool arch should already be set by caller (main.c)
-    // Do NOT call set_system_arch here as it reinitializes the pool
+    // Poznámka: Architektura poolu by již měla být nastavena volajícím (main.c)
+    // NEVOLEJ set_system_arch zde, protože by reinicializovalo pool
 
-    // Note: pool_createwhatprovides should already be called by load_repository
-    // Do NOT call it again here as it would invalidate the whatprovides mapping
+    // Poznámka: pool_createwhatprovides by již mělo být voláno pomocí load_repository
+    // NEVOLEJ ho znovu zde, protože by zneplatnilo mapování whatprovides
 
     log_info("Solver created with flags set and whatprovides indexed.");
     return solv;
 }
 
 /**
- * Recursively add makedeps to the job queue.
- * 
- * Separates build-time dependencies from runtime dependencies by extracting
- * custom makedeps metadata and adding them as install jobs. Includes depth
- * limiting to prevent infinite recursion from circular dependencies.
- * 
- * @param job The job queue to add makedeps to
- * @param p The solvable ID to process
- * @param pool The pool containing package information
- * @param repo The repository containing the solvable
- * @param depth Current recursion depth (starts at 0)
+ * Rekurzivně přidá build závislosti (mkdeps) do fronty úloh.
+ *
+ * Odděluje build-time závislosti od runtime závislostí extrakcí vlastních
+ * mkdeps metadat a jejich přidáním jako instalační úlohy. Obsahuje omezení
+ * hloubky rekurze pro prevenci nekonečné smyčky při kruhových závislostech.
+ *
+ * @param job Fronta úloh, do které se mkdeps přidávají
+ * @param p ID solvable ke zpracování
+ * @param pool Pool obsahující informace o balících
+ * @param repo Repozitář obsahující solvable
+ * @param depth Aktuální hloubka rekurze (začíná na 0)
+ * @param mkdeps_cb Callback pro načtení mkdeps z repodata
  */
-void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
-    // Check recursion depth to prevent infinite loops from circular dependencies
+void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth, json_t* (*mkdeps_cb)(Repodata*, Id, Pool*)) {
+    // Zkontroluj hloubku rekurze pro prevenci nekonečných smyček z cyklických závislostí
     if (depth > MAX_RECURSION_DEPTH) {
         log_error("Recursion depth exceeded (%d) – possible circular dependency.", depth);
         return;
     }
 
-    // Load repodata for this solvable (assumes repo has been internalized)
+    // Načti repodata pro tento solvable (předpokládá že repo bylo internalizováno)
     Repodata *data = repo_last_repodata(repo);
     if (!data) {
         log_warn("No repodata for solvable %d – skipping mkdeps.", p);
         return;
     }
 
-    // Get makedeps as JSON array from custom metadata
-    json_t *mkdeps = get_custom_mkdeps(data, p, pool);
+    // Získej makedeps jako JSON pole z vlastních metadat pomocí callbacku
+    json_t *mkdeps = mkdeps_cb ? mkdeps_cb(data, p, pool) : NULL;
     if (!mkdeps || !json_is_array(mkdeps)) {
         log_debug(2, "No mkdeps for solvable %d.", p);
         if (mkdeps) json_decref(mkdeps);
@@ -97,49 +92,50 @@ void add_mkdeps_to_queue(Queue *job, Id p, Pool *pool, Repo *repo, int depth) {
         if (!json_is_string(item)) continue;
 
         const char *pkg_name = json_string_value(item);
-        // Convert package name to pool ID (create=1 to add if not exists)
+        // Převeď název balíku na pool ID (create=1 pro přidání pokud neexistuje)
         Id pkg_id = pool_str2id(pool, pkg_name, 1);
 
-        // Add to job queue as install operation
+        // Přidej do fronty úloh jako operaci instalace
         queue_push2(job, SOLVER_INSTALL | SOLVER_SOLVABLE_NAME, pkg_id);
         log_debug(2, "Added mkdep '%s' to job queue at depth %d.", pkg_name, depth);
 
-        // Recursion: Find the solvable for this package and process its makedeps
+        // Rekurze: Najdi solvable pro tento balík a zpracuj jeho makedeps
         Id q;
         Solvable *s;
         FOR_REPO_SOLVABLES(repo, q, s) {
             if (s->name == pkg_id) {
-                // Recurse into this dependency's makedeps
-                add_mkdeps_to_queue(job, q, pool, repo, depth + 1);
-                break;  // Assume unique name in repo
+                // Rekurzivně vstup do makedeps této závislosti
+                add_mkdeps_to_queue(job, q, pool, repo, depth + 1, mkdeps_cb);
+                break;  // Předpokládej jedinečný název v repo
             }
         }
     }
 
-    json_decref(mkdeps);  // Cleanup (z jansson, jak v parser.c)
+    json_decref(mkdeps);  // Úklid (z jansson, jako v parser.c)
     log_debug(1, "Added %zu mkdeps for solvable %d at depth %d.", mkdep_count, p, depth);
 }
 
 /**
- * Resolve all dependencies for a package.
- * 
- * This is the main dependency resolution function that:
- * 1. Loads already installed packages from target root (if any)
- * 2. Finds the target package solvable
- * 3. Recursively processes all makedeps (build-time dependencies)
- * 4. Adds the main package as a runtime install job
- * 5. Runs the solver to compute the installation transaction
- * 6. Handles any solver problems that arise
- * 
- * @param solv The solver instance to use
- * @param pkg_name Name of the package to resolve dependencies for
- * @param pool The pool containing package information
- * @param repo The repository to search for packages
- * @param root_path Target installation root (e.g., "/" or "/tmp/test_root") to check for installed packages
- * @return Queue with success indicator (1) on success, NULL on failure
- *         Caller must free the returned queue with queue_free() and solv_free()
+ * Vyřeší všechny závislosti pro zadaný balík.
+ *
+ * Hlavní funkce pro rozlišení závislostí:
+ * 1. Načte nainstalované balíky z cílového rootu (pokud existují)
+ * 2. Najde cílový solvable balíku
+ * 3. Rekurzivně zpracuje všechny mkdeps (build-time závislosti)
+ * 4. Přidá hlavní balík jako runtime instalační úlohu
+ * 5. Spustí solver pro výpočet instalační transakce
+ * 6. Zpracuje případné problémy solveru
+ *
+ * @param solv Instance solveru k použití
+ * @param pkg_name Název balíku, jehož závislosti se řeší
+ * @param pool Pool obsahující informace o balících
+ * @param repo Repozitář pro vyhledávání balíků
+ * @param root_path Cílový instalační root (např. "/" nebo "/tmp/test_root")
+ * @param mkdeps_cb Callback pro načtení mkdeps (dependency injection pro testy)
+ * @return Queue s indikátorem úspěchu (1) nebo NULL při selhání.
+ *         Volající musí uvolnit frontu pomocí queue_free() a solv_free()
  */
-Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo, const char *root_path) {
+Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *repo, const char *root_path, json_t* (*mkdeps_cb)(Repodata*, Id, Pool*)) {
     if (!solv || !pool || !repo || !pkg_name) {
         log_error("Invalid arguments in solve_dependencies.");
         return NULL;
@@ -150,7 +146,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     }
 
     // Load list of installed packages from target root
-    // We'll skip packages that are already installed
+    // Přeskočíme balíky, které jsou již nainstalovány
     Queue installed_names;
     queue_init(&installed_names);
     
@@ -166,20 +162,20 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     if (access(installed_db, F_OK) == 0) {
         log_debug(1, "Loading installed packages from: %s", installed_db);
         
-        // Parse installed.json
+        // Parsuj installed.json
         json_error_t error;
         json_t *root = json_load_file(installed_db, 0, &error);
         if (root) {
             json_t *packages = json_object_get(root, "packages");
-            if (packages && json_is_object(packages)) {
-                const char *key;
+            if (packages && json_is_array(packages)) {
+                size_t pkg_idx;
                 json_t *pkg_obj;
                 
-                json_object_foreach(packages, key, pkg_obj) {
+                json_array_foreach(packages, pkg_idx, pkg_obj) {
                     const char *name = json_string_value(json_object_get(pkg_obj, "name"));
                     
                     if (name) {
-                        // Store package name ID in queue
+                        // Ulož ID názvu balíku do fronty
                         Id name_id = pool_str2id(pool, name, 1);
                         queue_push(&installed_names, name_id);
                         installed_count++;
@@ -197,15 +193,15 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         log_debug(1, "No installed packages database at: %s", installed_db);
     }
 
-    // Allocate result queue to return success status
+    // Alokuj výsledkovou frontu pro vrácení stavu úspěchu
     Queue *result = solv_calloc(1, sizeof(Queue));
     queue_init(result);
 
-    // Create job queue for solver operations
+    // Vytvoř frontu úloh pro operace solveru
     Queue job;
     queue_init(&job);
 
-    // Find the main solvable for the requested package name
+    // Najdi hlavní solvable pro požadovaný název balíku
     Id name_id = pool_str2id(pool, pkg_name, 0);  // create=0 (don't create if not exists)
     if (!name_id) {
         log_error("Package '%s' not found in pool string table.", pkg_name);
@@ -215,7 +211,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     Id main_p = 0;
     Solvable *s;
     FOR_REPO_SOLVABLES(repo, main_p, s) {
-        if (s->name == name_id) break;  // First match
+        if (s->name == name_id) break;  // První shoda
     }
     if (!main_p) {
         log_error("No solvable found for '%s' in repository.", pkg_name);
@@ -224,7 +220,7 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     
     log_debug(1, "Found solvable %d for package '%s'.", main_p, pkg_name);
 
-    // Check if main package is already installed
+    // Zkontroluj zda je hlavní balík již nainstalován
     int already_installed = 0;
     for (int i = 0; i < installed_names.count; i++) {
         if (installed_names.elements[i] == name_id) {
@@ -235,26 +231,26 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
     }
 
     if (!already_installed) {
-        // First, recursively process all makedeps (build-time dependencies)
-        // This ensures build dependencies are resolved before runtime dependencies
-        // TODO: Pass installed_names to skip already installed makedeps
-        add_mkdeps_to_queue(&job, main_p, pool, repo, 0);
+        // Nejprve rekurzivně zpracuj všechny makedeps (závislosti při sestavení)
+        // Tím se zajistí vyřešení závislostí sestavení před runtime závislostmi
+        // TODO: Předat installed_names pro přeskočení již nainstalovaných makedeps
+        add_mkdeps_to_queue(&job, main_p, pool, repo, 0, mkdeps_cb);
 
-        // Then add runtime dependencies: Add main package as SOLVER_INSTALL
-        // Use SOLVER_SOLVABLE with solvable ID, not SOLVER_SOLVABLE_NAME
+        // Pak přidej runtime závislosti: přidej hlavní balík jako SOLVER_INSTALL
+        // Použij SOLVER_SOLVABLE se solvable ID, ne SOLVER_SOLVABLE_NAME
         queue_push2(&job, SOLVER_INSTALL | SOLVER_SOLVABLE, main_p);
     } else {
-        // Package already installed, just set success
+        // Balík je již nainstalován, jen nastav úspěch
         queue_push(result, 1);
         queue_free(&installed_names);
         queue_free(&job);
         return result;
     }
 
-    // Run the solver to compute the installation transaction
+    // Spusť solver pro výpočet instalační transakce
     int problem_count = solver_solve(solv, &job);
     if (problem_count > 0) {
-        // Analyze problems to distinguish between runtime deps and build deps (mkdeps)
+        // Analyzuj problémy pro rozlišení runtime a build závislostí (mkdeps)
         int runtime_problems = 0;
         int mkdep_problems = 0;
         
@@ -263,18 +259,18 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
             queue_init(&problem_queue);
             solver_findallproblemrules(solv, prob, &problem_queue);
             
-            // Check if problem involves mkdeps by examining rule names
+            // Zkontroluj zda problém zahrnuje mkdeps prozkoumáním názvů pravidel
             int is_mkdep_problem = 0;
             for (int i = 0; i < problem_queue.count; i++) {
                 Id rule_id = problem_queue.elements[i];
                 SolverRuleinfo type = solver_ruleinfo(solv, rule_id, NULL, NULL, NULL);
-                // SOLVER_RULE_PKG_* are package-related rules
-                // For mkdeps, we'll check if the package name appears in mkdeps
-                // This is a heuristic - mkdep problems often involve build tools
-                (void)type; // Mark as used to avoid warning
-                // TODO: Better detection would require tracking which deps are mkdeps
-                // For now, assume all problems may include mkdeps
-                is_mkdep_problem = 1; // Conservative: treat as mkdep unless proven otherwise
+                // SOLVER_RULE_PKG_* jsou pravidla týkající se balíků
+                // Pro mkdeps zkontrolujeme zda se název balíku vyskytuje v mkdeps
+                // Toto je heuristika – problémy mkdep často zahrnují build nástroje
+                (void)type; // Označit jako použité pro zamezení varování
+                // TODO: Lepší detekce by vyžadovala sledování které závislosti jsou mkdeps
+                // Prozatím předpokládej že všechny problémy mohou zahrnovat mkdeps
+                is_mkdep_problem = 1; // Konzervativní: považuj za mkdep dokud není prokázán opak
             }
             queue_free(&problem_queue);
             
@@ -285,20 +281,20 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
             }
         }
         
-        // Display all problems with context
+        // Zobraz všechny problémy s kontextem
         log_warn("Solver found %d problems (%d may be build-time dependencies).", 
                  problem_count, mkdep_problems);
         for (int prob = 1; prob <= problem_count; prob++) {
             display_problem_proof(solv, prob);
         }
         
-        // If problems are likely mkdeps only, just warn
+        // Pokud jsou problémy pravděpodobně pouze mkdeps, jen varuj
         if (runtime_problems == 0 && mkdep_problems > 0) {
             log_info("Problems appear to be build-time dependencies (mkdeps) only.");
             log_info("Build will attempt to use bundled or fallback versions if needed.");
             log_info("Continuing with installation...");
         } else {
-            // In unit tests, continue despite problems; in production, ask user
+            // V unit testech pokračuj i přes problémy; v produkci se zeptej uživatele
             #ifndef UNIT_TESTS
             if (!user_confirm("Problems found. Continue anyway? [y/n]", 0)) {
                 goto cleanup;
@@ -310,8 +306,8 @@ Queue *solve_dependencies(Solver *solv, const char *pkg_name, Pool *pool, Repo *
         log_debug(1, "Solver completed successfully with no problems.");
     }
 
-    // Transaction creation is handled by caller (main.c)
-    // Set success flag in result to indicate solver completed
+    // Vytvoření transakce zpracovává volající (main.c)
+    // Nastav příznak úspěchu ve výsledku pro indikaci dokončení solveru
     queue_push(result, 1);
 
 cleanup:
@@ -326,16 +322,16 @@ cleanup:
 }
 
 /**
- * Internal helper to display proof information for solver decisions.
- * 
- * Adapted from doshowproof in solv.c. Traverses the decision list
- * and displays the reasoning chain that led to each decision or conflict.
- * Filters out "obvious" decisions to reduce noise in the output.
- * 
- * @param solv The solver instance
- * @param id The decision/problem ID to display
- * @param flags Control flags for decision list retrieval
- * @param lq Learnt rules queue for reference
+ * Interní pomocná funkce pro výpis informací o rozhodnutích solveru.
+ *
+ * Přizpůsobeno z doshowproof v solv.c. Prochází seznam rozhodnutí
+ * a zobrazuje řetězec důvodů vedoucích ke každému rozhodnutí nebo konfliktu.
+ * Filtruje "zřejmá" rozhodnutí pro snížení šumu ve výstupu.
+ *
+ * @param solv Instance solveru
+ * @param id ID rozhodnutí/problému k zobrazení
+ * @param flags Řídicí příznaky pro načtení seznamu rozhodnutí
+ * @param lq Fronta naučených pravidel pro referenci
  */
 static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq) {
     Pool *pool = solv->pool;
@@ -399,14 +395,14 @@ static void internal_display_proof(Solver *solv, Id id, int flags, Queue *lq) {
 }
 
 /**
- * Display detailed proof information for a solver problem.
- * 
- * Shows learnt rules and decision traces that led to the problem.
- * Adapted from solv.c (doshowproof + showproof) to help diagnose
- * why the solver could not find a valid solution.
- * 
- * @param solv The solver instance containing the problem
- * @param problem The problem number to display (1-indexed)
+ * Vypíše podrobné informace o problému solveru.
+ *
+ * Zobrazí naučená pravidla a trasování rozhodnutí, která vedla k problému.
+ * Přizpůsobeno z solv.c (doshowproof + showproof) pro diagnostiku
+ * proč solver nemohl najít platné řešení.
+ *
+ * @param solv Instance solveru obsahující problém
+ * @param problem Číslo problému k zobrazení (indexováno od 1)
  */
 void display_problem_proof(Solver *solv, int problem) {
     if (!solv) {

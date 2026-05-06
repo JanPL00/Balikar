@@ -1,0 +1,46 @@
+cmd_remove
+=============
+
+Popis
+----
+Zdrojový soubor: commands/cmd_remove.c
+
+Modul implementuje příkaz remove, který odinstaluje balík ze systému.
+Před samotným odinstalováním provede kontrolu reverzních závislostí – ověří, zda
+jiný nainstalovaný balík závisí na odstraňovaném. Pokud existují reverzní závislosti,
+příkaz je ve výchozím stavu odmítne a uživatele informuje.
+
+Volba --force-remove tuto kontrolu obejde a balík odinstaluje i s porušením závislostí:
+tato volba je určena pro opravné situace a měla by být používána opatrně.
+
+Příkaz respektuje --dry-run: zobrazí co by bylo odstraněno bez skutečné změny.
+
+
+Klíčové funkce
+----
+
+static int erase_package_with_checks(CommandContext *ctx, const char *pkg_name,
+                                     int check_deps);
+- Provede kontrolu (check_deps=1) nebo přeskočí (check_deps=0) reverzní závislosti.
+- Lazy inicializace pool/repo přes ctx.
+- Najde balík v pool, ověří zda je nainstalován.
+- check_deps=1: načte seznam reverzních závislostí, pokud existují – odmítne a vypíše.
+- Respektuje ctx->config.dry_run: vypíše akci ale neodinstaluje.
+- Volá ctx->subsystems.remove_package(pkg_name, root_dir) pro samotné odstranění.
+- Vrací 0 při úspěchu, 1 při selhání nebo odmítnutí.
+
+int cmd_remove_execute(CommandContext *ctx);
+- Parsuje přepínač --force-remove.
+- force_remove=0: volá erase_package_with_checks(ctx, pkg_name, 1)
+- force_remove=1: volá erase_package_with_checks(ctx, pkg_name, 0)
+
+int cmd_remove_validate(CommandContext *ctx);
+- Ověří, že je zadán package_name.
+- Vrací 0 při úspěchu, 1 při selhání.
+
+
+Integrace v projektu
+----
+Závisí na installer.c (remove_package, je_balík_nainstalován, get_reverse_deps).
+Registrace v command_registry.c: "remove" → cmd_remove_execute
+s validátorem cmd_remove_validate.

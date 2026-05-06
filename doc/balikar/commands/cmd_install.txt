@@ -1,0 +1,80 @@
+cmd_install / cmd_build
+=============
+
+Popis
+----
+Zdrojový soubor: commands/cmd_install.c
+
+Tento modul implementuje příkazy install a build – nejsložitější příkazy v aplikaci.
+Oba příkazy sdílejí společnou implementaci cmd_install_or_build_execute() a liší se
+pouze jedním parametrem (do_install): install provede kompletní workflow včetně
+instalace do systému, build zastaví před instalační fází.
+
+Workflow příkazu install:
+    1. Validace vstupů (package_name nebo --local-package)
+    2. Lazy inicializace Pool a Repo přes CommandContext
+    3. Vytvoření solveru (ctx->subsystems.create_solver)
+    4. Řešení závislostí (ctx->subsystems.solve_dependencies)
+    5. Vytvoření transakce (solver_create_transaction)
+    6. Zobrazení transakce uživateli (display_transaction)
+    7. Dry-run: ukončení po zobrazení transakce
+    8. Potvrzení uživatelem (user_confirm)
+    9. Pro každý balík v transakci:
+        a. Přeskočení pokud je již nainstalován (is_package_installed)
+        b. Získání URL zdroje z metadat (get_custom_source)
+        c. Stažení archivu (ctx->subsystems.download_package)
+        d. Stažení extras – patche, build skripty (ctx->subsystems.download_extras)
+        e. Sestavení do staging adresáře (ctx->subsystems.commit_element)
+        f. [pouze install] Instalace ze staging do cílového kořene
+           (ctx->subsystems.install_package_with_reason)
+        g. [pouze install] Vyčistění staging adresáře
+   10. Uvolnění transakce, fronty a solveru
+
+Příkaz build zastaví po kroku (e) – sestaví balík do staging adresáře,
+ale neprovede instalaci do systémového stromu.
+
+Důvody instalace jsou zaznamenány: přímý požadavek uživatele = "manual",
+závislosti = "dependency". Toto slouží pro pozdější autoremove analýzu.
+
+
+Klíčové funkce
+----
+
+static int cmd_install_or_build_execute(CommandContext *ctx, int do_install);
+- Sdílená implementace pro install i build.
+- do_install=1: kompletní workflow (solve → download → build → install)
+- do_install=0: pouze (solve → download → build)
+- Respektuje ctx->config.dry_run: zastaví po zobrazení transakce.
+- Respektuje ctx->config.no_deps: přeskočí solver, stáhne pouze zadaný balík.
+- Vrací 0 při úspěchu, ERR_SOLVE_FAIL/ERR_DOWNLOAD_FAIL/ERR_BUILD_FAIL při selhání.
+
+int cmd_install_execute(CommandContext *ctx);
+- Volá cmd_install_or_build_execute(ctx, 1).
+- Registrován jako execute pro příkaz "install".
+
+int cmd_build_execute(CommandContext *ctx);
+- Volá cmd_install_or_build_execute(ctx, 0).
+- Registrován jako execute pro příkaz "build".
+
+int cmd_install_validate(CommandContext *ctx);
+- Ověří, že je zadán package_name nebo --local-package.
+- Sdílen příkazy "install" i "build" v registru.
+- Vrací 0 pokud validace projde, 1 při selhání.
+
+
+Chybové kódy
+----
+ERR_SOLVE_FAIL    Selhání solveru nebo vytvoření transakce
+ERR_DOWNLOAD_FAIL Selhání stažení balíku
+ERR_BUILD_FAIL    Selhání sestavení nebo instalace
+
+
+Integrace v projektu
+----
+Používá solver.c (create_solver, solve_dependencies), downloader.c (download_package,
+download_extras), builder.c (commit_element), installer.c (install_package_with_reason,
+is_package_installed) a parser.c (get_custom_source, get_custom_extras,
+get_custom_is_group, get_custom_no_package, get_custom_mkdeps).
+Všechny závislé subsystémy jsou volány přes ctx->subsystems.* (Dependency Injection).
+Registrace v command_registry.c: "install" → cmd_install_execute,
+"build" → cmd_build_execute, oboje s validátorem cmd_install_validate.

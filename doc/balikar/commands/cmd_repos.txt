@@ -1,0 +1,47 @@
+cmd_repos
+=============
+
+Popis
+----
+Zdrojový soubor: commands/cmd_repos.c
+
+Modul implementuje příkaz repos, který poskytuje přehled všech nakonfigurovaných
+repozitářů. Na rozdíl od "repo list" zobrazuje i statistické informace – počet
+balíků v každém repozitáři, pokud jsou metadata dostupná (tj. pokud byl proveden
+repo-update).
+
+Příkaz nevyžaduje žádné argumenty.
+
+
+Klíčové funkce
+----
+
+static void list_repositories(CommandContext *ctx);
+- Načte seznam repozitářů ze souboru repos.conf (přes config mechanismus v ctx).
+- Pro každý repozitář vypíše:
+    - Jméno, URL, stav (enabled/disabled)
+    - Počet balíků (pokud je pool/repo načteno)
+    - Příznak aktuálního repozitáře (pokud je definován)
+- Lazy inicializace pool/repo se provede pouze pokud uživatel nevypnul načítání
+  metadat (např. prázdný nebo nenalezený repodata.json je tolerován).
+
+int cmd_repos_execute(CommandContext *ctx);
+- Vstupní bod příkazu.
+- Volá list_repositories(ctx).
+- Nevyžaduje pool/repo jako podmínku – pool/repo jsou volitelné pro statistiky.
+- Vrací 0 vždy (výpis proběhne i s prázdným seznamem).
+
+(žádný validátor – validate=NULL v command_registry.c, protože příkaz nepotřebuje
+žádné argumenty)
+
+
+Rozdíl od cmd_repo
+----
+cmd_repos: přehledový výpis všech repozitářů se statistikami, bez subpříkazů.
+cmd_repo:  správa repozitářů přes subpříkazy (list/add/remove/enable/disable).
+
+
+Integrace v projektu
+----
+Čte konfiguraci přes common/config.c. Pool/repo jsou volitelné (lazy init).
+Registrace v command_registry.c: "repos" → cmd_repos_execute, validate=NULL.

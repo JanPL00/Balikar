@@ -1,0 +1,125 @@
+command_context
+=============
+
+Popis
+----
+Zdrojový soubor: command_context.c
+Hlavičkový soubor: includes/command_context.h
+
+Tento modul implementuje centrální datovou strukturu CommandContext, která slouží jako
+jediný nosič stavu pro celou dobu běhu jednoho příkazu. Realizuje dva architektonické vzory:
+- Facade Pattern: skrývá inicializaci a životní cyklus všech subsystémů (parser, solver,
+  downloader, builder, installer) za jednotné rozhraní.
+- Dependency Injection: subsystémy nejsou volány přímo, ale přes ukazatele na funkce
+  uložené ve struktuře SubsystemFacade. Při testování lze tyto ukazatele nahradit
+  mock implementacemi bez zásahu do kódu příkazů.
+
+Struktura CommandContext se skládá ze tří částí:
+- CLIConfig: naparsované argumenty příkazové řádky (příkaz, jméno balíku, flagy, cesty)
+- RuntimeResources: lazy-loaded libsolv struktury (Pool, Repo); inicializují se pouze
+  při prvním vyžádání, příkazy které libsolv nepotřebují je vůbec nealokují
+- SubsystemFacade: ukazatele na funkce subsystémů; nastaveny na reálné implementace
+  při inicializaci, přepisovatelné pro testování
+
+CommandContext je alokován v main(), předáván všem obslužným funkcím příkazů jako
+parametr a uvolněn před návratem z main(). Existuje vždy právě jedna instance.
+
+
+Klíčové funkce
+----
+
+CommandContext* command_context_create(void);
+- Alokuje CommandContext pomocí calloc (všechna pole nulována).
+- Explicitně nastaví exit_code = 0.
+- Vrací ukazatel nebo NULL při selhání alokace.
+
+void command_context_init_subsystems(CommandContext *ctx);
+- Nastavuje ukazatele ve SubsystemFacade na reálné implementace ze subsystémů:
+    ctx->subsystems.load_repository = load_repository     (parser.c)
+    ctx->subsystems.generate_repodata = generate_repodata (parser.c)
+    ctx->subsystems.create_solver = create_solver         (solver.c)
+    ctx->subsystems.solve_dependencies = solve_dependencies (solver.c)
+    ctx->subsystems.download_package = download_package   (downloader.c)
+    ctx->subsystems.download_extras = download_extras     (downloader.c)
+    ctx->subsystems.commit_element = commit_element       (builder.c)
+    ctx->subsystems.install_package_with_reason = ...     (installer.c)
+    ctx->subsystems.erase_package = erase_package         (installer.c)
+    ctx->subsystems.is_package_installed = ...            (installer.c)
+- Pro testování: zavolat tuto funkci a poté přepsat vybrané ukazatele na mock funkce.
+
+int command_context_parse_args(CommandContext *ctx, int argc, char **argv);
+- Parsuje CLI argumenty pomocí getopt_long.
+- Podporované přepínače:
+    --help / -h         Tisk nápovědy
+    --debug / -d        Zvýšení úrovně ladění (lze kombinovat: -dd)
+    --dry-run           Simulace bez provedení změn
+    --no-deps           Stažení/instalace bez závislostí
+    --staging-dir <dir> Vlastní staging adresář
+    --root <path>       Cílový kořenový adresář (výchozí: /)
+    --build-tmp-dir <d> Vlastní dočasný adresář pro sestavení
+    --repo <path|url>   Explicitní repozitář
+    --local-package <f> Lokální soubor balíku
+    --pkg <name>        Jméno balíku pro clean-cache
+    --output-dir <dir>  Výstupní adresář pro download
+- Poziční argumenty: command (argv[optind]), package_name (argv[optind+1])
+- Nastaví globální DEBUG_LEVEL.
+- Pokud není --repo zadán, načte primární repozitář z repos.conf.
+- Vrací 0 při úspěchu.
+
+Pool* command_context_ensure_pool(CommandContext *ctx);
+- Lazy inicializace libsolv Pool.
+- Pokud ctx->resources.pool je NULL, vytvoří pool_create().
+- Při opakovaném volání vrátí existující pool (neinicializuje znovu).
+- Vrací Pool* nebo NULL při selhání.
+
+Repo* command_context_ensure_repo(CommandContext *ctx);
+- Lazy inicializace libsolv Repo.
+- Nejprve zajistí existenci Pool (volá command_context_ensure_pool).
+- Pokud ctx->resources.repo je NULL, načte repozitář přes
+  ctx->subsystems.load_repository(pool, repo_path).
+- Vrací Repo* nebo NULL při selhání.
+
+void command_context_destroy(CommandContext *ctx);
+- Uvolní zdroje v obráceném pořadí alokace:
+    1. repo_free(ctx->resources.repo, 1)
+    2. pool_free(ctx->resources.pool)
+    3. free() pro všechny alokované řetězce v CLIConfig
+    4. free(ctx) samotného kontextu
+- Bezpečné při ctx == NULL (no-op).
+
+const char* command_context_get_staging_dir(CommandContext *ctx);
+- Vrátí staging_dir_allocated pokud byl zadán, jinak STAGING_DIR z common.h.
+
+const char* command_context_get_root_path(CommandContext *ctx);
+- Vrátí root_path_allocated pokud byl zadán, jinak "/".
+
+const char* command_context_get_repo_path(CommandContext *ctx);
+- Vrátí repo_path_allocated nebo NULL pokud není nastaven.
+
+
+Struktura CLIConfig
+----
+Pole označená _allocated jsou alokována pomocí strdup a musí být uvolněna v destroy().
+Pole command a package_name ukazují přímo do argv (nealokují, neuvolňují).
+
+    int debug_level              Úroveň ladění (0=quiet, 1=debug, 2=verbose)
+    int dry_run                  Simulační režim (bez změn systému)
+    int no_deps                  Bez závislostí
+    char *staging_dir_allocated  Vlastní staging adresář
+    char *root_path_allocated    Cílový kořen pro instalaci/odebrání
+    char *build_tmp_dir_allocated Vlastní tmp adresář pro sestavení
+    char *repo_path_allocated    URL nebo cesta repozitáře
+    char *output_dir_allocated   Výstupní adresář pro download
+    char *local_package_allocated Cesta k lokálnímu souboru balíku
+    char *clean_cache_pkg_allocated Název balíku pro clean-cache
+    const char *command          Název příkazu (ukazuje do argv)
+    const char *package_name     Název balíku (ukazuje do argv)
+
+
+Integrace v projektu
+----
+Vytvořen v main() před voláním command_dispatch().
+Předáván jako parametr CommandContext* do každé obslužné funkce příkazu.
+Příkazy přistupují k datům přes ctx->config.* a volají subsystémy přes ctx->subsystems.*.
+Testovatelnost zajišťuje SubsystemFacade – testy podstrčí mock funkce místo reálných
+implementací, aniž by měnily kód příkazů.

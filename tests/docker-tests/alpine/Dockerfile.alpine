@@ -1,0 +1,115 @@
+# Dockerfile.alpine — Statický build balikaru pro Alpine Linux
+#
+# Vytváří plně staticky linkovanou binárku pomocí Alpine + musl libc.
+# Výsledná binárka nemá žádné dynamické závislosti (.so soubory) —
+# spustitelná přímo na Alpine Linux i na jakémkoliv x86_64 Linux kernelu.
+#(sestavení proti musl libc a nikoliv proti glibc)
+#  Sestavení a extrakce statické binárky 
+#
+#   Spouštěj z kořenového adresáře projektu:
+#
+#   cd /cesta/k/proj6_balikar
+#   docker build -f alpine/Dockerfile.alpine -t balikar-static-builder .
+#
+#   # Extrahujte binárku do aktuálního adresáře:
+#   docker create --name tmp balikar-static-builder
+#   docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
+#   docker rm tmp
+#
+#   # Ověřte:
+#   ldd ./balikar-alpine-static    # → "not a dynamic executable"
+#   ./balikar-alpine-static --help
+#
+#  !!! POZOR !!!
+#   Tento kontajner slouží pouze pro extrakci statické binárky.
+#   Pro používání balikaru zde chybí gcc, make apod.
+#   (Za tímto účelem použijte standartní Dockerfile)
+
+
+#  Stage 1: Builder 
+FROM alpine:3.21 AS builder
+
+# Proč každý balíček:
+RUN apk add --no-cache \
+    build-base \
+    cmake \
+    pkgconf \
+    git \
+    curl-dev \
+    curl-static \
+    openssl-dev \
+    openssl-libs-static \
+    nghttp2-dev \
+    nghttp2-static \
+    jansson-dev \
+    jansson-static \
+    libarchive-dev \
+    libarchive-static \
+    xz-dev \
+    xz-static \
+    bzip2-dev \
+    bzip2-static \
+    zlib-dev \
+    zlib-static \
+    zstd-dev \
+    zstd-static \
+    expat-dev \
+    expat-static \
+    c-ares-dev \
+    brotli-dev \
+    brotli-static \
+    libpsl-dev \
+    libpsl-static \
+    libidn2-dev \
+    libidn2-static \
+    libunistring-dev \
+    libunistring-static \
+    check-dev
+
+# Statický build libsolv ze zdrojového kódu
+#
+# Proč ze zdroje a ne z Alpine repozitáře:
+#   apk install libsolv-dev → obsahuje jen libsolv.so, libsolv.a chybí
+#   CMakeLists.txt při BUILD_STATIC=ON hledá libsolv.a (CMAKE_FIND_LIBRARY_SUFFIXES=".a")
+#   ENABLE_CONDA=ON → zapíná conda package formát (balikar ho potřebuje pro solver)
+#
+# Výsledek v /usr/lib: libsolv.a, libsolvext.a
+# Hlavičky v /usr/include/solv/
+RUN git clone --depth=1 https://github.com/openSUSE/libsolv.git /tmp/libsolv \
+    && cmake -B /tmp/libsolv/build /tmp/libsolv \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DENABLE_STATIC=ON \
+        -DENABLE_CONDA=ON \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+    && cmake --build /tmp/libsolv/build -j$(nproc) \
+    && cmake --install /tmp/libsolv/build \
+    && rm -rf /tmp/libsolv
+
+# Zkopíruj zdrojový kód projektu (spouštěj docker build z kořene projektu)
+WORKDIR /src
+COPY . .
+
+# Statický build balikaru — pouze binárka balikar, ne testy
+RUN cmake -B build-static \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_STATIC=ON \
+        -DCONDA_PREFIX=/usr \
+    && cmake --build build-static -j$(nproc) --target balikar
+
+#  Stage 2: Minimální Alpine runtime 
+FROM alpine:3.21
+
+# Statická binárka — žádné runtime .so závislosti
+COPY --from=builder /src/build-static/balikar /usr/local/bin/balikar
+
+# Adresářová struktura balikar
+RUN mkdir -p /var/cache/balikar/downloads \
+             /var/lib/balikar \
+             /etc/balikar \
+    && printf '[default]\nname = Balikar Repository\nurl = https://raw.githubusercontent.com/JanPL00/balikar-repository/main\n' \
+       > /etc/balikar/repos.conf
+
+ENV PATH=/usr/local/bin:$PATH
+WORKDIR /test
+CMD ["/bin/sh"]

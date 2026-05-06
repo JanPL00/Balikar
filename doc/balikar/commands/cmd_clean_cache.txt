@@ -1,0 +1,44 @@
+cmd_clean_cache
+=============
+
+Popis
+----
+Zdrojový soubor: commands/cmd_clean_cache.c
+
+Modul implementuje příkaz clean-cache, který maže dočasné soubory v cache
+adresáři balíkového správce (/var/cache/balikar/downloads/ a extras/). Příkaz
+podporuje dvě varianty:
+
+    1. Vymazání cache konkrétního balíku (--pkg PKG_NAME):
+       smaže pouze stažené archivy a extras pro daný balík.
+    2. Vymazání celé cache (bez --pkg):
+       smaže veškerý obsah downloads/ a extras/; vyžaduje potvrzení
+       uživatelem (user_confirm), protože jde o destruktivní operaci.
+
+Příkaz respektuje --dry-run: zobrazí co by bylo smazáno bez skutečné akce.
+
+
+Klíčové funkce
+----
+
+static const char *get_cache_dir(void);
+- Vrátí cestu ke kořenovému cache adresáři.
+- Výchozí hodnota: /var/cache/balikar/downloads/
+- Adresář extras/ je vždy na stejné úrovni jako downloads/.
+
+int cmd_clean_cache_execute(CommandContext *ctx);
+- Parsuje --pkg pro filtrování na konkrétní balík.
+- Pokud --pkg: smaže pouze soubory odpovídající vzoru PKG_NAME* v downloads/ a extras/.
+- Bez --pkg: user_confirm → smaže vše v downloads/ a extras/ rekurzivně.
+- Respektuje --dry-run v obou větvích.
+- Vypíše celkový počet smazaných souborů a uvolněné místo.
+- Vrací 0 při úspěchu, 1 při selhání nebo odmítnutí potvrzení.
+
+(žádný validátor – validate=NULL v command_registry.c, protože --pkg je volitelné)
+
+
+Integrace v projektu
+----
+Nepotřebuje pool/repo ani žádný ze subsystémů (solver, downloader, builder, installer).
+Pracuje přímo se souborovým systémem přes standardní C API (opendir/readdir/unlink/rmdir).
+Registrace v command_registry.c: "clean-cache" → cmd_clean_cache_execute, validate=NULL.

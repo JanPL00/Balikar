@@ -1,190 +1,86 @@
-========================================
-                 CZECH
-========================================
-
 downloader
 =============
-(English below)
 
 Popis
 ----
-Zdrojový soubor: downloader.c
+Zdrojový soubor: src/balikar/downloader.c
+Hlavičkový soubor: src/balikar/includes/downloader.h
 
-Tento modul poskytuje funkce pro stahování balíčků (lokální copy nebo remote HTTP/HTTPS pomocí libcurl),
-cachování stažených balíčků, a stahování extras (patche/skripty).
-Integruje se s parser.c (get_custom_source, get_custom_extras) a používá Repodata pro získání source[] pole.
-Podporuje multi-source fallback pro vysokou dostupnost balíčků.
+Modul downloader zajišťuje stahování balíkových archivů (tar.bz2 z balikar
+repozitáře) a zdrojových archivů (tar.gz/tar.xz z upstream serverů) přes
+libcurl. Pro každý balík se nejprve stáhne repository tar.bz2 obsahující
+metadata + extras (patche, build.sh), z něj se získá URL skutečného
+zdrojového archivu, ten se stáhne a předá do builderu jako otevřený FILE*.
+
+Workflow funkce download_package():
+    1. Sestavení cílové cesty v lokální cache (/var/cache/balikar/downloads
+       nebo ~/.cache/balikar/downloads pro user instalaci)
+    2. Pokud archiv již existuje a má nenulovou velikost: znovupoužití
+    3. Jinak stažení přes CURL z URL získaného z metadat (loc parametr)
+    4. Pokud byl předán source_array: pokus o extrakci embedded zdrojového
+       archivu z repository tar.bz2 (extract_and_check_embedded_source) –
+       umožňuje fallback pro mirrors, které již zmizely
+    5. Postupný pokus o stažení každého URL ze source_array (mirror list)
+    6. Otevření výsledného souboru a vrácení FILE* volajícímu
+
+Modul implementuje progress bar (progress_callback) zobrazující procenta
+a velikost v MB. Pro libcurl jsou nastaveny hooks write_data
+(writer do FILE*) a progress_callback (UI feedback).
+
+Druhý vstupní bod download_package_to_directory() ukládá archiv do
+uživatelem zvoleného adresáře (--output-dir) a používá ho příkaz
+balikar download.
+
 
 Klíčové funkce
 ----
-static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream);
-- Callback funkce pro libcurl; zapisuje stažená data do FILE stream pomocí fwrite;
-  vrací počet zapsaných bytů; používá se v curl_easy_setopt(CURLOPT_WRITEFUNCTION).
 
-static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
-- Progress callback pro libcurl; zobrazuje progress bar během stahování;
-  formát: [=====>     ] 45% (5.2MB/11.5MB);
-  používá stderr pro output aby neinterferoval s logováním;
-  automaticky přejde na nový řádek po dokončení (dlnow >= dltotal);
-  vrací 0 pro pokračování, nenulovou hodnotu pro abort;
-  používá se v curl_easy_setopt(CURLOPT_XFERINFOFUNCTION).
+FILE *download_package(Solvable *s, const char *loc, Pool *pool,
+                       json_t *source_array, const char *repo_path);
+- Hlavní stahovací funkce. Vrací otevřený FILE* na hotový archiv,
+  připravený pro builder.commit_element(). Caller musí soubor zavřít.
+- Implementuje cache (znovupoužití), fallback přes mirror list a
+  embedded source extraction.
+- Vrací NULL při selhání všech zdrojů.
+
+int download_package_to_directory(Solvable *s, const char *loc,
+                                  Pool *pool, json_t *source_array,
+                                  const char *output_dir, ...);
+- Varianta pro příkaz balikar download. Uloží archiv do output_dir
+  místo cache. Zachovává původní jméno souboru.
+- Vrací 0 při úspěchu, ERR_DOWNLOAD_FAIL při selhání.
+
+void download_extras(json_t *extras, const char *pkg_name,
+                     const char *version, const char *repo_base_url,
+                     const char *tmp_dir);
+- Stáhne extras (patche, dodatečné build skripty) z extras/ podadresáře
+  repozitáře do dočasného build adresáře. Volá se před commit_element().
+
+int download_url_to_file(const char *url, const char *output_path);
+- Nízkoúrovňová pomocná funkce: stažení libovolného URL do souboru.
+  Použito pro repodata.json fetch z parser.c.
+
+static int extract_and_check_embedded_source(...);
+- Pokud je v balikar tar.bz2 vložený zdrojový tarball (např. když
+  byl source URL nedostupný v době přípravy), rozbalí ho a předá dál.
+
+static size_t write_data(...);
+static int progress_callback(...);
+- libcurl hooks pro zápis dat a UI progress.
 
 
+Chybové kódy
+----
+NULL                Vrácen z download_package() při selhání všech zdrojů
+ERR_DOWNLOAD_FAIL   Síťové chyby (timeout, HTTP 404), selhání cache write
+                    Návratový kód CURL různý od CURLE_OK
 
-static int extract_and_check_embedded_source(const char *repo_archive_path, const char *pkg_name, 
-                                              const char *version, char *output_path);
-- Nová funkce pro detekci embedded source v repository archivu:
-  Extrahuje repository archive (.tar.bz2) do dočasného adresáře, načte index.json, 
-  zkontroluje zda source[0].url je lokální soubor (neobsahuje "://"), pokud ano:
-  - Ověří existenci embedded source souboru v extrahovaném repository archivu
-  - Zkopíruje embedded source do cache (output_path)
-  - Vrací 1 při úspěchu (embedded source nalezen a zkopírován), 0 pokud nenalezen
-  Tato funkce řeší problém kdy packages mají source zabalený přímo v repository archivu
-  místo remote URL (např. gzip-1.14.tar.xz uvnitř gzip-1.14.tar.bz2).
-  Extrakce probíhá do /tmp/balikar_extract_<pkg>_<pid>/, cleanup po dokončení.
-
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
-- Hlavní funkce pro stažení balíčku: Alokuje cache_dir (CACHE_DIR macro -> get_cache_dir inline funkce),
-  načte source[] pole z metadat (get_custom_source_array), vytvoří cache path ("<cache_dir>/<name>-<version><ext>"),
-  zkontroluje cache existence (access) -> pokud OK, vrátí fopen(cache_path, "r");
-  
-  EMBEDDED SOURCE DETECTION (NOVÉ): Pro remote URL (obsahuje "://"):
-    - Nejprve stáhne repository archive (.tar.bz2) pokud není v cache
-    - Zavolá extract_and_check_embedded_source() pro detekci embedded source
-    - Pokud je embedded source nalezen → zkopíruje do cache a vrátí FILE pointer
-    - Pokud embedded source není nalezen → pokračuje na remote download
-    
-  MULTI-SOURCE FALLBACK: iteruje přes všechny URL v source[] poli:
-    - Pro každou URL (source[i].url) zkusí stáhnout/zkopírovat
-    - Detekuje lokální vs remote (lokální = cesta nezačíná "http://", "https://", "ftp://", "file://")
-    - LOKÁLNÍ: cp příkazem kopíruje do cache, při úspěchu nastaví download_success=1
-    - REMOTE: fopen(cache_path, "wb"), inicializuje CURL (curl_easy_init), nastaví URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
-      stáhne (curl_easy_perform), při úspěchu nastaví download_success=1, při chybě odstraní částečný download (remove)
-    - Pokud stažení z aktuální URL selže, automaticky zkusí další URL v poli (log_warn)
-    - Ukončí se při prvním úspěšném stažení
-  LOKÁLNÍ FALLBACK: pokud všechny source[] URL selžou, zkusí lokální strukturu repozitáře:
-    "<repo_path>/<first_char>/<name>/<name>-<version>.tar.bz2"
-  cleanup: free(cache_dir); vrací fopen(cache_path, "rb") pro builder nebo NULL pokud všechny zdroje selhaly (log_error).
-  
-NOVÉ: Automatický fallback na další URL při selhání stahování zajišťuje vysokou dostupnost balíčků.
-NOVÉ: Podpora embedded source souborů v repository archivech - eliminuje duplicitní remote downloads.
-
-void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
-- Stáhne extra soubory (patche) z JSON array extras (pole URL stringů);
-  vytvoří extras_subdir ("<CACHE_DIR>/extras/<pkg_name>"), pro každý extra URL:
-  extrahuje extra_name (basename z URL), vytvoří extra_path, zkontroluje cache (access), pokud cached: skip,
-  jinak: fopen(extra_path, "wb"), inicializuje CURL, stáhne (curl_easy_perform), loguje úspěch/chybu;
-  žádná verifikace hash (extras nemají metadata SHA); používá se v builderu pro aplikaci patchů před buildem;
-  parameter tmp_dir je nepoužitý (legacy, mohlo by se odstranit).
 
 Integrace v projektu
 ----
-Používá se v builderu (build.c): po solve_dependencies, pro každý Solvable v transaction:
-načte download_url (get_custom_source z parser.c), volá download_package(s, url, pool, data),
-získá FILE* s tar.bz2 obsahem (v cache), extrahuje do build dir, aplikuje extras (download_extras),
-spustí build skript. Cache ("/var/cache/balikar/downloads/") přetrvává mezi buildy, SHA sidecar soubory
-umožňují verify i bez metadata v repo. Testováno v test_downloader.c (Check framework) s mock soubory;
-~80% coverage včetně local/remote, SHA match/mismatch, cache reuse.
-
-Poznámky
-----
-- CACHE_DIR macro: Expanze pomocí inline get_cache_dir() funkce (alokuje buffer, caller free);
-  výchozí cesta je pevně "/var/cache/balikar/downloads/".
-- Dočasné session adresáře (tmp_session_*) se již nevytvářejí; stahování probíhá přímo do finální cache cesty.
-- Detekce přípony archivu pro název v cache zachovává vícenásobné přípony: podporováno .tar.xz, .tar.gz, .tar.bz2 i .tgz.
-- Multi-source fallback zvyšuje robustnost systému při výpadcích mirror serverů.
-
-========================================
-                ENGLISH
-========================================
-
-downloader
-=============
-
-Description
-----
-Source file: downloader.c
-
-This module provides functions for downloading packages (local copy or remote HTTP/HTTPS using libcurl),
-caching of downloaded packages, and downloading extras (patches/scripts).
-Integrates with parser.c (get_custom_source, get_custom_extras) and uses Repodata to retrieve source[] array.
-Supports multi-source fallback for high package availability.
-
-Key functions
-----
-static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream);
-- Callback function for libcurl; writes downloaded data to FILE stream using fwrite;
-  returns number of bytes written; used in curl_easy_setopt(CURLOPT_WRITEFUNCTION).
-
-static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow);
-- Progress callback for libcurl; displays progress bar during download;
-  format: [=====>     ] 45% (5.2MB/11.5MB);
-  uses stderr for output to not interfere with logging;
-  automatically adds newline after completion (dlnow >= dltotal);
-  returns 0 to continue, non-zero to abort;
-  used in curl_easy_setopt(CURLOPT_XFERINFOFUNCTION).
-
-
-
-static int extract_and_check_embedded_source(const char *repo_archive_path, const char *pkg_name, 
-                                              const char *version, char *output_path);
-- New function for detecting embedded source in repository archives:
-  Extracts repository archive (.tar.bz2) to temporary directory, loads index.json, 
-  checks if source[0].url is a local file (does not contain "://"), if yes:
-  - Verifies existence of embedded source file in extracted repository archive
-  - Copies embedded source to cache (output_path)
-  - Returns 1 on success (embedded source found and copied), 0 if not found
-  This function solves the problem where packages have source embedded directly in repository archive
-  instead of remote URL (e.g., gzip-1.14.tar.xz inside gzip-1.14.tar.bz2).
-  Extraction happens to /tmp/balikar_extract_<pkg>_<pid>/, cleanup after completion.
-
-FILE *download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data, const char *repo_path);
-- Main function for package download: Allocates cache_dir (CACHE_DIR macro -> get_cache_dir inline function),
-  loads source[] array from metadata (get_custom_source_array), creates cache path ("<cache_dir>/<name>-<version><ext>"),
-  checks cache existence (access) -> if OK, returns fopen(cache_path, "r");
-  
-  EMBEDDED SOURCE DETECTION (NEW): For remote URLs (contains "://"):
-    - First downloads repository archive (.tar.bz2) if not in cache
-    - Calls extract_and_check_embedded_source() to detect embedded source
-    - If embedded source found → copies to cache and returns FILE pointer
-    - If embedded source not found → continues to remote download
-    
-  MULTI-SOURCE FALLBACK: iterates through all URLs in source[] array:
-    - For each URL (source[i].url) attempts to download/copy
-    - Detects local vs remote (local = path does not start with "http://", "https://", "ftp://", "file://")
-    - LOCAL: copies to cache using cp command, on success sets download_success=1
-    - REMOTE: fopen(cache_path, "wb"), initializes CURL (curl_easy_init), sets URL/WRITEFUNCTION/WRITEDATA/FOLLOWLOCATION/FAILONERROR,
-      downloads (curl_easy_perform), on success sets download_success=1, on failure removes partial download (remove)
-    - If download from current URL fails, automatically tries next URL in array (log_warn)
-    - Stops at first successful download
-  LOCAL FALLBACK: if all source[] URLs fail, tries local repository structure:
-    "<repo_path>/<first_char>/<name>/<name>-<version>.tar.bz2"
-  cleanup: free(cache_dir); returns fopen(cache_path, "rb") for builder or NULL if all sources failed (log_error).
-  
-NEW: Automatic fallback to next URL on download failure ensures high package availability.
-NEW: Support for embedded source files in repository archives - eliminates duplicate remote downloads.
-
-void download_extras(json_t *extras, const char *pkg_name, const char *tmp_dir);
-- Downloads extra files (patches) from JSON array extras (array of URL strings);
-  creates extras_subdir ("<CACHE_DIR>/extras/<pkg_name>"), for each extra URL:
-  extracts extra_name (basename from URL), creates extra_path, checks cache (access), if cached: skip,
-  otherwise: fopen(extra_path, "wb"), initializes CURL, downloads (curl_easy_perform), logs success/error;
-  no hash verification (extras have no metadata SHA); used in builder for applying patches before build;
-  parameter tmp_dir is unused (legacy, could be removed).
-
-Project integration
-----
-Used in builder (build.c): after solve_dependencies, for each Solvable in transaction:
-loads download_url (get_custom_source from parser.c), calls download_package(s, url, pool, data),
-gets FILE* with tar.bz2 content (in cache), extracts to build dir, applies extras (download_extras),
-runs build script. Cache ("/var/cache/balikar/downloads/") persists between builds, SHA sidecar files
-allow verify even without metadata in repo. Tested in test_downloader.c (Check framework) with mock files;
-~80% coverage including local/remote, SHA match/mismatch, cache reuse.
-
-Notes
-----
-- CACHE_DIR macro: Expands via inline get_cache_dir() function (allocates buffer, caller free);
-  default path is fixed to "/var/cache/balikar/downloads/".
-- Temporary session directories (tmp_session_*) are no longer created; downloads are written directly to the final cache path.
-- Archive extension detection for cache naming preserves multi-dot extensions: recognized .tar.xz, .tar.gz, .tar.bz2 and .tgz.
-- Multi-source fallback increases system robustness during mirror server outages.
+Volán z cmd_install_or_build_execute() (viz cmd_install.txt) přes
+ctx->subsystems.download_package a download_extras. URL zdrojů
+získává parser.c (get_custom_source, get_custom_source_array,
+get_custom_extras). Cache adresář je nakonfigurován v common.h
+(DOWNLOAD_DIR / per-user equivalent). Použit také příkazem balikar
+download (cmd_download.c) pro samostatné stahování bez instalace.

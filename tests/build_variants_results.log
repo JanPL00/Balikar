@@ -1,0 +1,166 @@
+============================================================
+Cesta 2: Dynamic build (build_for_distribution.sh)
+============================================================
+Verify dependencies:
+	linux-vdso.so.1 (0x00007ffccfdfd000)
+	libsolv.so.1 => /home/placeja5/Balikar/proj6_balikar/./lib/libsolv.so.1 (0x000074e6bc27f000)
+	libsolvext.so.1 => /home/placeja5/Balikar/proj6_balikar/./lib/libsolvext.so.1 (0x000074e6bc267000)
+	libcurl.so.4 => /lib/x86_64-linux-gnu/libcurl.so.4 (0x000074e6bc1af000)
+	libjansson.so.4 => /lib/x86_64-linux-gnu/libjansson.so.4 (0x000074e6bc19f000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x000074e6bbfbd000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x000074e6bbf9c000)
+	libnghttp2.so.14 => /lib/x86_64-linux-gnu/libnghttp2.so.14 (0x000074e6bbf6d000)
+	libidn2.so.0 => /lib/x86_64-linux-gnu/libidn2.so.0 (0x000074e6bbf3c000)
+	librtmp.so.1 => /lib/x86_64-linux-gnu/librtmp.so.1 (0x000074e6bbf1d000)
+
+To distribute:
+1. Commit ./balikar and ./lib/ to git:
+   git add balikar lib/
+   git commit -m 'Update pre-built distribution'
+2. On target system: git clone, then sh install_prebuilt.sh
+
+To test locally:
+  cd dist && ./balikar --help
+--- ldd of new dist binary ---
+	linux-vdso.so.1 (0x00007fffdcbe5000)
+	libsolv.so.1 => /home/placeja5/Balikar/proj6_balikar/dist/lib/libsolv.so.1 (0x00007311dc9f0000)
+	libsolvext.so.1 => /home/placeja5/Balikar/proj6_balikar/dist/lib/libsolvext.so.1 (0x00007311dc9d8000)
+	libcurl.so.4 => /lib/x86_64-linux-gnu/libcurl.so.4 (0x00007311dc920000)
+	libjansson.so.4 => /lib/x86_64-linux-gnu/libjansson.so.4 (0x00007311dc910000)
+	libc.so.6 => /lib/x86_64-linux-gnu/libc.so.6 (0x00007311dc72e000)
+	libz.so.1 => /lib/x86_64-linux-gnu/libz.so.1 (0x00007311dc70d000)
+	libnghttp2.so.14 => /lib/x86_64-linux-gnu/libnghttp2.so.14 (0x00007311dc6de000)
+	libidn2.so.0 => /lib/x86_64-linux-gnu/libidn2.so.0 (0x00007311dc6ad000)
+	librtmp.so.1 => /lib/x86_64-linux-gnu/librtmp.so.1 (0x00007311dc68e000)
+	libssh2.so.1 => /lib/x86_64-linux-gnu/libssh2.so.1 (0x00007311dc64d000)
+	libpsl.so.5 => /lib/x86_64-linux-gnu/libpsl.so.5 (0x00007311dc639000)
+	libssl.so.3 => /lib/x86_64-linux-gnu/libssl.so.3 (0x00007311dc58e000)
+	libcrypto.so.3 => /lib/x86_64-linux-gnu/libcrypto.so.3 (0x00007311dc000000)
+	libgssapi_krb5.so.2 => /lib/x86_64-linux-gnu/libgssapi_krb5.so.2 (0x00007311dc53b000)
+--- functional test ---
+Usage: balikar [OPTIONS] COMMAND [ARGS]
+
+Commands:
+  install <pkg>         Install package with deps resolution
+  build <pkg>           Build from source (with mkdeps)
+
+============================================================
+Cesta 3A: Static build with Conda (build_static.sh)
+============================================================
+  -d                    Increase debug level
+  --staging-dir=PATH    Set staging directory (default: /tmp/balikar_staging)
+  --root=PATH           Set target root for install/remove (default: /)
+  --no-staging          Disable staging, install directly (stable mode)
+  --dry-run             Simulate without changes
+  --no-deps             Download without dependencies
+  --repo=PATH           Override repository path
+  --output-dir=PATH     Output directory for download command
+  --local-package=PATH  Install from local tar.bz2 (out of repo)
+  --pkg=NAME            Package name for clean-cache command
+  -h, --help            Show this help
+
+Examples:
+  balikar install glibc
+  balikar build gcc --staging-dir=/tmp/stage
+  balikar download nmap --output-dir=/tmp/downloads
+  balikar download gzip --no-deps
+  balikar repo list
+  balikar repo add myrepo https://example.com/repo
+  balikar clean-cache --pkg=glibc
+  balikar install --local-package=/path/to/gzip.tar.bz2
+
+To install:
+  sudo cp ./balikar-static /usr/local/bin/balikar
+  sudo chmod +x /usr/local/bin/balikar
+--- file/ldd of balikar-static ---
+balikar-static: ELF 64-bit LSB executable, x86-64, version 1 (GNU/Linux), statically linked, BuildID[sha1]=4f512823be8221b920fe8c0f5fbe0030e5c5c154, for GNU/Linux 3.2.0, with debug_info, not stripped
+	not a dynamic executable
+--- functional test ---
+Usage: balikar [OPTIONS] COMMAND [ARGS]
+
+Commands:
+  install <pkg>         Install package with deps resolution
+  build <pkg>           Build from source (with mkdeps)
+
+============================================================
+Cesta 1: install_prebuilt.sh (user install, no sudo)
+============================================================
+========= Balikar Package Manager - Pre-built Installation =========
+
+Checking system dependencies...
+All system dependencies found.
+
+Installing for current user...
+Creating configuration directory: /home/placeja5/.config/balikar
+Creating package database directory: /home/placeja5/.local/share/balikar
+Database directory created: /home/placeja5/.local/share/balikar
+Creating cache directory: /home/placeja5/.cache/balikar
+Cache directory created: /home/placeja5/.cache/balikar
+Configuration already exists at /home/placeja5/.config/balikar/repos.conf (keeping existing)
+
+Installing bundled libraries...
+'lib/libpcre2-posix.so.3' -> '/home/placeja5/.local/lib/balikar/libpcre2-posix.so.3'
+'lib/libsolv.so.1' -> '/home/placeja5/.local/lib/balikar/libsolv.so.1'
+'lib/libsolvext.so.1' -> '/home/placeja5/.local/lib/balikar/libsolvext.so.1'
+'lib/libz.so.1' -> '/home/placeja5/.local/lib/balikar/libz.so.1'
+Libraries installed to: /home/placeja5/.local/lib/balikar
+total 936K
+-rwxr-xr-x 1 placeja5 placeja5  17K May  2 11:25 libpcre2-posix.so.3
+-rwxr-xr-x 1 placeja5 placeja5 108K May  2 11:25 libsolvext.so.1
+-rwxr-xr-x 1 placeja5 placeja5 697K May  2 11:25 libsolv.so.1
+-rwxr-xr-x 1 placeja5 placeja5 107K May  2 11:25 libz.so.1
+
+Installing binary to /home/placeja5/.local/bin
+'balikar' -> '/home/placeja5/.local/bin/balikar'
+Setting RPATH with patchelf...
+patchelf: cannot find section '.dynamic'. The input file is most likely statically linked
+--- result ---
+-rwxr-xr-x 1 placeja5 placeja5 7252656 May  2 11:25 /home/placeja5/.local/bin/balikar
+
+/home/placeja5/.local/lib/balikar/:
+total 944
+drwxr-xr-x 2 placeja5 placeja5   4096 May  2 11:25 .
+drwxr-xr-x 3 placeja5 placeja5   4096 May  2 11:25 ..
+-rwxr-xr-x 1 placeja5 placeja5  16400 May  2 11:25 libpcre2-posix.so.3
+-rwxr-xr-x 1 placeja5 placeja5 109704 May  2 11:25 libsolvext.so.1
+-rwxr-xr-x 1 placeja5 placeja5 713096 May  2 11:25 libsolv.so.1
+-rwxr-xr-x 1 placeja5 placeja5 108688 May  2 11:25 libz.so.1
+Usage: balikar [OPTIONS] COMMAND [ARGS]
+
+Commands:
+
+============================================================
+Cesta 3B: Static without Conda — manual libsolv
+============================================================
+SKIPPED: requires manually built /usr/local/lib/libsolv.a
+         (test would clobber system; not run)
+         Build script supports it via LIBSOLV_PREFIX/CONDA_PREFIX env.
+
+============================================================
+Cesta 3C: Alpine Docker (build_static_alpine.sh)
+============================================================
+SKIPPED: build_static_alpine.sh not present in repository.
+         README marks Cesta 3C as TODO ('možná odstranit tuto možnost').
+ls: cannot access '/home/placeja5/Balikar/proj6_balikar/build_static_alpine.sh': No such file or directory
+
+============================================================
+FINAL SUMMARY
+============================================================
+Cesta 1  install_prebuilt.sh     PASS (user install ~/.local/)
+Cesta 2  build_for_distribution  PASS (dynamic + bundled libs)
+Cesta 3A build_static.sh         PASS (statically linked binary)
+Cesta 3B static w/o Conda        SKIP (prereq missing)
+Cesta 3C Alpine Docker           SKIP (script does not exist; TODO)
+]633;E;echo;2f406a1e-519b-49dc-91ed-624575e0446e]633;C
+============================================================
+RE-TEST after run_scripts/ reorganization
+============================================================
+Cesta 3A static + Conda          PASS (7.0 MB, statically linked)
+Cesta 3B static + manual libsolv PASS (7.2 MB, statically linked)
+                                 (libcurl built from source into /tmp/varB/prefix)
+
+Build-static script vylepseni:
+ - cd projektového rootu nezávisle na lokaci skriptu (run_scripts/build/)
+ - detekce Variant B (system libcurl.a) + audit pkg-config --static deps
+ - cista chybova zprava s apt install navodem misto kryptickeho ld erroru
+ - CMakeLists rozsiren o GSS/krb5/ldap/sasl/rtmp + start-group/end-group

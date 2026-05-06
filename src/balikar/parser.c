@@ -1,27 +1,27 @@
 #include "includes/parser.h"
 
 /**
- * Trim leading and trailing whitespace from a string.
- * 
- * Creates a new string with whitespace removed from both ends.
- * Caller must free the returned string.
- * 
- * @param str String to trim
- * @return New trimmed string, or NULL on error
+ * Ořízne mezery na začátku a konci řetězce.
+ *
+ * Vytvoří nový řetězec bez mezer na obou koncích.
+ * Volající musí vrácený řetězec uvolnit.
+ *
+ * @param str Vstupní řetězec
+ * @return Nový oříznutý řetězec nebo NULL při chybě
  */
 static char* trim_str(const char* str) {
     if (!str) return NULL;
 
-    // Skip leading whitespace
+    // Přeskoč úvodní bílé znaky
     while (isspace((unsigned char)*str)) str++;
 
-    if (*str == 0) return strdup("");  // Empty string
+    if (*str == 0) return strdup("");  // Prázdný řetězec
 
-    // Find end and trim trailing whitespace
+    // Najdi konec a ořízni koncové bílé znaky
     const char* end = str + strlen(str) - 1;
     while (end > str && isspace((unsigned char)*end)) end--;
 
-    // Create new string with trimmed content
+    // Vytvoř nový řetězec s oříznutým obsahem
     size_t len = (end - str) + 1;
     char* trimmed = malloc(len + 1);
     if (trimmed) {
@@ -34,28 +34,28 @@ static char* trim_str(const char* str) {
 }
 
 /**
- * Load JSON from file without error logging.
- * 
- * Silently returns NULL if the file doesn't exist or has parse errors.
- * Used for optional file checks where absence is normal.
- * 
- * @param filepath Path to JSON file
- * @return Parsed JSON object or NULL
+ * Načte JSON ze souboru bez logování chyb.
+ *
+ * Tiše vrátí NULL pokud soubor neexistuje nebo obsahuje chyby parsování.
+ * Používá se pro volitelné kontroly souborů, kde absence je normální.
+ *
+ * @param filepath Cesta k JSON souboru
+ * @return Parsovaný JSON objekt nebo NULL
  */
 static json_t* load_json_quiet(const char* filepath) {
     json_error_t error;
     json_t* root = json_load_file(filepath, 0, &error);
-    return root;  // NULL if failed, no logging
+    return root;  // NULL při selhání, bez logování
 }
 
 /**
- * Load JSON from file with error logging.
- * 
- * Parses JSON file and logs errors if loading fails.
- * Caller must decref the returned JSON object.
- * 
- * @param filepath Path to JSON file
- * @return Parsed JSON object or NULL on error
+ * Načte JSON ze souboru s logováním chyb.
+ *
+ * Parsuje JSON soubor a loguje chyby při selhání načtení.
+ * Volající musí vrácený JSON objekt uvolnit pomocí json_decref.
+ *
+ * @param filepath Cesta k JSON souboru
+ * @return Parsovaný JSON objekt nebo NULL při chybě
  */
 json_t* load_json(const char* filepath) {
     json_error_t error;
@@ -68,13 +68,13 @@ json_t* load_json(const char* filepath) {
 }
 
 /**
- * Recursively find and load the first index.json file in a directory.
- * 
- * Searches directory tree for index.json, checking both root and info/ subdirectories.
- * Used for tar.bz2 structures with nested subdirectories.
- * 
- * @param dir_path Directory to search
- * @return Parsed JSON object or NULL if not found
+ * Rekurzivně najde a načte první soubor index.json v adresáři.
+ *
+ * Prohledá adresářový strom pro index.json, kontroluje kořenový adresář
+ * i podadresář info/. Používá se pro struktury tar.bz2 s vnořenými podadresáři.
+ *
+ * @param dir_path Adresář k prohledání
+ * @return Parsovaný JSON objekt nebo NULL pokud nenalezeno
  */
 static json_t* find_and_load_index(const char* dir_path) {
     if (!dir_path) return NULL;
@@ -87,16 +87,16 @@ static json_t* find_and_load_index(const char* dir_path) {
 
     struct dirent* entry;
     while ((entry = readdir(d)) != NULL) {
-        // Skip . and ..
+        // Přeskoč . a ..
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
 
-        char full_path[2048];  // Enlarged for safety
+        char full_path[2048];  // Zvětšeno pro bezpečnost
         snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
 
         if (entry->d_type == DT_DIR) {
-            // First try directly in this subdirectory (root/info pattern)
+            // Nejprve zkus přímo v tomto podadresáři (vzor root/info)
             char index_path[2048];
             snprintf(index_path, sizeof(index_path), "%s/index.json", full_path);
             json_t* index = load_json_quiet(index_path);
@@ -110,7 +110,7 @@ static json_t* find_and_load_index(const char* dir_path) {
                 return index;
             }
 
-            // If not found, continue recursive search
+            // Pokud nenalezeno, pokračuj v rekurzivním vyhledávání
             index = find_and_load_index(full_path);
             if (index) {
                 closedir(d);
@@ -130,23 +130,23 @@ static json_t* find_and_load_index(const char* dir_path) {
 }
 
 /**
- * Load JSON from directory structure.
- * 
- * Tries to find index.json in root directory first, then in info/ subdirectory.
- * Used for plain directory packages (not tar archives).
- * 
- * @param dir_path Directory path to search
- * @return Parsed JSON object or NULL if not found
+ * Načte JSON z adresářové struktury.
+ *
+ * Nejprve zkusí najít index.json v kořenovém adresáři, pak v podadresáři info/.
+ * Používá se pro balíky jako adresář (ne tar archivy).
+ *
+ * @param dir_path Cesta k adresáři k prohledání
+ * @return Parsovaný JSON objekt nebo NULL pokud nenalezeno
  */
 static json_t* load_json_from_directory(const char* dir_path) {
     char index_path[2048];
 
-    // Try root directory first (quietly - no error logging)
+    // Nejprve zkus kořenový adresář (tiše – bez logování chyb)
     snprintf(index_path, sizeof(index_path), "%s/index.json", dir_path);
     json_t* index = load_json_quiet(index_path);
 
     if (!index) {
-        // Try info/ subdirectory
+        // Zkus podadresář info/
         snprintf(index_path, sizeof(index_path), "%s/info/index.json", dir_path);
         index = load_json_quiet(index_path);
     }
@@ -155,12 +155,12 @@ static json_t* load_json_from_directory(const char* dir_path) {
 }
 
 /**
- * Add default fields to package index JSON if missing.
- * 
- * Ensures required fields (build_number, license, md5, sha256, size, subdir, timestamp)
- * are present in package metadata with sensible defaults.
- * 
- * @param index JSON object to populate with defaults
+ * Doplní výchozí pole do JSON metadat balíku pokud chybí.
+ *
+ * Zajistí, že povinná pole (build_number, license, md5, sha256, size, subdir, timestamp)
+ * jsou přítomna v metadatech balíku s rozumnými výchozími hodnotami.
+ *
+ * @param index JSON objekt k doplnění výchozími hodnotami
  */
 static void add_default_fields(json_t* index) {
     if (!json_object_get(index, "build_number")) {
@@ -188,17 +188,17 @@ static void add_default_fields(json_t* index) {
 }
 
 /**
- * Find a solvable by name and optionally by version.
- * 
- * Searches repository for a package matching the given name and version.
- * If version is NULL, returns the first match by name only.
- * Used for matching solvables after repo_add_conda.
- * 
- * @param pool Package pool
- * @param repo Repository to search
- * @param name Package name to find
- * @param version Package version to match (NULL to match any version)
- * @return Solvable ID or 0 if not found
+ * Najde solvable podle názvu a volitelně podle verze.
+ *
+ * Prohledá repozitář pro balík odpovídající zadanému názvu a verzi.
+ * Pokud je version NULL, vrátí první shodu pouze podle názvu.
+ * Používá se pro párování solvables po repo_add_conda.
+ *
+ * @param pool Pool balíků
+ * @param repo Repozitář k prohledání
+ * @param name Název balíku k nalezení
+ * @param version Verze balíku ke shodě (NULL pro libovolnou verzi)
+ * @return ID solvable nebo 0 pokud nenalezeno
  */
 static Id find_solvable_by_name_version(Pool *pool, Repo *repo, const char *name, const char *version) {
     if (!pool || !repo || !name) return 0;
@@ -210,10 +210,10 @@ static Id find_solvable_by_name_version(Pool *pool, Repo *repo, const char *name
     Id p;
     FOR_REPO_SOLVABLES(repo, p, s) {
         if (s->name == name_id) {
-            // If no version specified, return first match
+            // Pokud není zadána verze, vrať první shodu
             if (!version) return p;
 
-            // Otherwise check EVR
+            // Jinak zkontroluj EVR
             const char *evr_str = pool_id2str(pool, s->evr);
             if (evr_str && strcmp(evr_str, version) == 0) {
                 return p;
@@ -224,22 +224,22 @@ static Id find_solvable_by_name_version(Pool *pool, Repo *repo, const char *name
 }
 
 /**
- * Add custom metadata fields to repodata for a solvable.
- * 
- * Extracts custom fields from package JSON (makedeps, source array, download_url,
- * extras, is_group, no_package) and stores them in libsolv repodata for later retrieval.
- * Includes fallback handling for legacy source formats.
- * 
- * @param index Package JSON metadata
- * @param data Repodata to add fields to
- * @param p Solvable ID
- * @param pool Package pool
- * @param fallback_source Fallback download URL if not in JSON
+ * Přidá vlastní metadata pole do repodata pro solvable.
+ *
+ * Extrahuje vlastní pole z JSON balíku (makedeps, pole source, download_url,
+ * extras, is_group, no_package) a uloží je do libsolv repodata pro pozdější načtení.
+ * Obsahuje záložní zpracování pro starší formáty source.
+ *
+ * @param index JSON metadata balíku
+ * @param data Repodata, do které se pole přidávají
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @param fallback_source Záložní URL ke stažení pokud není v JSON
  */
 static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, Pool *pool, const char* fallback_source) {
     if (!index || !data) return;
 
-    // Store makedeps as JSON string for build-time dependency resolution
+    // Ulož makedeps jako JSON řetězec pro řešení závislostí při sestavení
     json_t *mkdeps = json_object_get(index, "mkdeps");
     if (mkdeps && json_is_array(mkdeps)) {
         char *str = json_dumps(mkdeps, JSON_COMPACT);
@@ -249,7 +249,7 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
         }
     }
 
-    // Store source array (new format) as JSON string for multi-source support
+    // Ulož pole zdrojů (nový formát) jako JSON řetězec pro podporu více zdrojů
     json_t *source_array = json_object_get(index, "source");
     if (source_array && json_is_array(source_array)) {
         char *str = json_dumps(source_array, JSON_COMPACT);
@@ -260,7 +260,7 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
         }
     }
 
-    // Store download_url with fallback chain: explicit URL -> legacy source -> fallback
+    // Ulož download_url s řetězcem zálohy: explicitní URL -> starý zdroj -> záloha
     json_t *download_url_json = json_object_get(index, "download_url");
     int source_set = 0;
     if (download_url_json && json_is_string(download_url_json)) {
@@ -270,7 +270,7 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
             source_set = 1;
         }
     }
-    // Legacy: support old format where source was a string instead of array
+    // Zpětná kompatibilita: podpora starého formátu kde zdroj byl řetězec místo pole
     if (!source_set && source_array && json_is_string(source_array)) {
         const char* source_val = json_string_value(source_array);
         if (source_val && source_val[0] != '\0') {
@@ -283,7 +283,7 @@ static void add_custom_fields_to_repodata(json_t *index, Repodata *data, Id p, P
         log_info("Set fallback download_url: %s", fallback_source);
     }
 
-    // Extras
+    // Doplňky
     json_t *extras = json_object_get(index, "extras");
     if (extras && json_is_array(extras)) {
         char *str = json_dumps(extras, JSON_COMPACT);
@@ -338,7 +338,7 @@ static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo *
         return 0;
     }
 
-    // Create deep copy to modify depends -> requires conversion
+    // Vytvoř hlubokou kopii pro konverzi depends -> requires
     json_t *index_copy = json_deep_copy(index);
     json_t *depends = json_object_get(index_copy, "depends");
 
@@ -367,7 +367,7 @@ static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo *
     snprintf(dummy_key, sizeof(dummy_key), "%s-%s-%s.tar.bz2", name, version ? version : "0", build ? build : "0");
     json_object_set(tmp_packages, dummy_key, index_copy);
     json_object_set(tmp_repodata, "packages", tmp_packages);
-    json_decref(index_copy); // index_copy is now owned by tmp_packages
+    json_decref(index_copy); // index_copy je nyní vlastněno tmp_packages
 
     char tmp_path[2048];
     strcpy(tmp_path, "/tmp/tmp_repodata_XXXXXX.json");
@@ -405,13 +405,13 @@ static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo *
         Solvable *s = pool_id2solvable(pool, p);
         Repodata *data = repo_last_repodata(repo);
 
-        // repo_add_conda should have added requires from the JSON, but if it didn't work,
-        // manually add them from the original depends array
+        // repo_add_conda měl přidat requires z JSON, ale pokud nefungovalo,
+        // přidej je ručně z původního pole depends
         json_t *original_depends = json_object_get(index, "depends");
         if (original_depends && json_is_array(original_depends)) {
             size_t num_deps = json_array_size(original_depends);
             if (num_deps > 0) {
-                // Use libsolv Queue for dependency IDs
+                // Použij libsolv Queue pro ID závislostí
                 Queue q;
                 queue_init(&q);
 
@@ -419,25 +419,25 @@ static Id process_index_json(json_t *index, json_t *packages, Pool *pool, Repo *
                     json_t *dep_json = json_array_get(original_depends, i);
                     if (json_is_string(dep_json)) {
                         const char *dep_str = json_string_value(dep_json);
-                        // Create ID for dependency name
+                        // Vytvoř ID pro název závislosti
                         Id dep_name_id = pool_str2id(pool, dep_str, 1);
                         queue_push(&q, dep_name_id);
                     }
                 }
 
                 if (q.count > 0) {
-                    // Add dependency array from queue to repodata
+                    // Přidej pole závislostí z fronty do repodata
                     repodata_set_idarray(data, p, SOLVABLE_REQUIRES, &q);
                     log_info("Manually set %d requires for solvable %d", q.count, p);
                 }
 
-                // Free queue memory
+                // Uvolni paměť fronty
                 queue_free(&q);
             }
         }
 
-        // Ensure solvable provides itself (self-provide) - critical for solver
-        // Add to repodata before internalize
+        // Zajisti že solvable poskytuje sám sebe (self-provide) – kritické pro solver
+        // Přidej do repodata před internalize
         repodata_add_idarray(data, p, SOLVABLE_PROVIDES, s->name);
         log_debug(1, "Added self-provide for solvable %d (%s)", p, name);
 
@@ -474,29 +474,29 @@ json_t* generate_default_metadata(const char* filename) {
     json_t* index = json_object();
     if (!index) return NULL;
 
-    // Get basename
+    // Získej basename
     const char *basename = strrchr(filename, '/');
     basename = basename ? basename + 1 : filename;
 
-    // Extract filename without path and .tar.bz2 extension
+    // Extrahuj název souboru bez cesty a přípony .tar.bz2
     char name_buf[256] = {0};
     strncpy(name_buf, basename, sizeof(name_buf) - 1);
     char *ext = strstr(name_buf, ".tar.bz2");
     if (ext) *ext = '\0';
 
-    // Parse: name-version-build (find LAST two dashes)
+    // Parsuj: name-version-build (najdi POSLEDNÍ dvě pomlčky)
     char *last_dash = strrchr(name_buf, '-');
     char *second_last_dash = NULL;
     if (last_dash) {
         *last_dash = '\0';
         second_last_dash = strrchr(name_buf, '-');
-        *last_dash = '-';  // Restore temporarily
+        *last_dash = '-';  // Dočasně obnov
     }
 
     char name[256] = {0}, version[256] = {0}, build[256] = {0};
 
     if (second_last_dash && last_dash) {
-        // Found name-version-build
+        // Nalezeno name-version-build
         size_t name_len = second_last_dash - name_buf;
         strncpy(name, name_buf, name_len);
         name[name_len] = '\0';
@@ -507,14 +507,14 @@ json_t* generate_default_metadata(const char* filename) {
 
         strcpy(build, last_dash + 1);
     } else if (last_dash) {
-        // Only name-version
+        // Pouze name-version
         size_t name_len = last_dash - name_buf;
         strncpy(name, name_buf, name_len);
         name[name_len] = '\0';
         strcpy(version, last_dash + 1);
         strcpy(build, "0");
     } else {
-        // Just name
+        // Pouze name
         strcpy(name, name_buf);
         strcpy(version, "0");
         strcpy(build, "0");
@@ -531,16 +531,16 @@ json_t* generate_default_metadata(const char* filename) {
 }
 
 /**
- * Recursively collect packages from directory structure.
- * 
- * Traverses directory tree looking for packages (directories with index.json
- * or .tar.bz2 archives). Processes each package and adds to repository.
- * Computes SHA256 for packages when possible.
- * 
- * @param current_path Current directory path being processed
- * @param packages JSON object to collect package metadata
- * @param pool Package pool
- * @param repo Repository to add packages to
+ * Rekurzivně shromáždí balíky z adresářové struktury.
+ *
+ * Prochází adresářový strom a hledá balíky (adresáře s index.json
+ * nebo archivy .tar.bz2). Zpracuje každý balík a přidá do repozitáře.
+ * Pokud je to možné, vypočítá SHA256 pro balíky.
+ *
+ * @param current_path Aktuálně zpracovávaná cesta adresáře
+ * @param packages JSON objekt pro shromáždění metadat balíků
+ * @param pool Pool balíků
+ * @param repo Repozitář pro přidání balíků
  */
 static void collect_packages_recursive(const char* current_path, json_t* packages, Pool *pool, Repo *repo) {
     DIR* dir = opendir(current_path);
@@ -551,7 +551,7 @@ static void collect_packages_recursive(const char* current_path, json_t* package
 
     struct dirent* entry;
     while ((entry = readdir(dir)) != NULL) {
-        // Skip . and ..
+        // Přeskoč . a ..
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -560,53 +560,19 @@ static void collect_packages_recursive(const char* current_path, json_t* package
         snprintf(full_path, sizeof(full_path), "%s/%s", current_path, entry->d_name);
 
         if (entry->d_type == DT_DIR) {
-            // Try to load index.json from this directory
+            // Zkus načíst index.json z tohoto adresáře
             json_t* index = load_json_from_directory(full_path);
             if (index) {
-                // Found a package with index.json
+                // Nalezen balík s index.json
                 log_info("Found package at: %s", full_path);
-                
-                // For directory packages, try to compute SHA if there's a source tarball
-                // Look for <name>-<version>.tar.* in current or parent directory
-                const char *pkg_name = json_string_value(json_object_get(index, "name"));
-                const char *pkg_version = json_string_value(json_object_get(index, "version"));
-                
-                if (pkg_name && pkg_version) {
-                    // Try various patterns: name-version.tar.gz, name-version.tar.bz2, name-version-build.tar.*
-                    const char *extensions[] = {".tar.gz", ".tar.bz2", ".tar.xz", NULL};
-                    char tar_candidate[2048];
-                    int found = 0;
-                    
-                    for (int i = 0; extensions[i] && !found; i++) {
-                        // Try in current directory first
-                        snprintf(tar_candidate, sizeof(tar_candidate), "%s/%s-%s%s", 
-                                 full_path, pkg_name, pkg_version, extensions[i]);
-                        if (access(tar_candidate, F_OK) == 0) {
-                            found = 1;
-                            break;
-                        }
-                        
-                        // Try with build number if available
-                        const char *pkg_build = json_string_value(json_object_get(index, "build"));
-                        if (pkg_build) {
-                            snprintf(tar_candidate, sizeof(tar_candidate), "%s/%s-%s-%s%s", 
-                                     full_path, pkg_name, pkg_version, pkg_build, extensions[i]);
-                            if (access(tar_candidate, F_OK) == 0) {
-                                found = 1;
-                                break;
-                            }
-                        }
-                    }
-                }
-                
                 process_index_json(index, packages, pool, repo, NULL);
                 json_decref(index);
             } else {
-                // Recursively search subdirectories
+                // Rekurzivně prohledej podadresáře
                 collect_packages_recursive(full_path, packages, pool, repo);
             }
         } else if (entry->d_type == DT_REG && strstr(entry->d_name, ".tar.bz2")) {
-            // Process .tar.bz2 file
+            // Zpracuj soubor .tar.bz2
             char tmp_dir[2048];
             snprintf(tmp_dir, sizeof(tmp_dir), "/tmp/balikar_extract_%d", (int)time(NULL));
 
@@ -631,7 +597,7 @@ static void collect_packages_recursive(const char* current_path, json_t* package
                 index = generate_default_metadata(entry->d_name);
             }
 
-            process_index_json(index, packages, pool, repo, full_path);  // fallback_source = full_path
+            process_index_json(index, packages, pool, repo, full_path);  // fallback_source = záložní zdroj
 
             json_decref(index);
 
@@ -643,15 +609,15 @@ static void collect_packages_recursive(const char* current_path, json_t* package
 }
 
 /**
- * Collect packages from repository path.
- * 
- * Wrapper function that initiates recursive package collection from repository root.
- * Used during repodata generation to discover all packages.
- * 
- * @param repo_path Repository root path
- * @param packages JSON object to collect package metadata
- * @param pool Package pool (can be NULL for metadata-only collection)
- * @param repo Repository (can be NULL for metadata-only collection)
+ * Shromáždí balíky z cesty repozitáře.
+ *
+ * Obalová funkce spouštějící rekurzivní shromažďování balíků z kořene repozitáře.
+ * Používá se při generování repodata pro zjištění všech balíků.
+ *
+ * @param repo_path Kořenová cesta repozitáře
+ * @param packages JSON objekt pro shromáždění metadat balíků
+ * @param pool Pool balíků (může být NULL pro shromažďování pouze metadat)
+ * @param repo Repozitář (může být NULL pro shromažďování pouze metadat)
  */
 void collect_packages(const char* repo_path, json_t* packages, Pool *pool, Repo *repo) {
     log_info("Collecting packages from: %s", repo_path);
@@ -679,7 +645,7 @@ int generate_repodata(const char* repo_path) {
     json_object_set_nocheck(repodata, "info", info);
 
     json_t* packages = json_object();
-    collect_packages(repo_path, packages, NULL, NULL);  // Only for packages, no pool/repo
+    collect_packages(repo_path, packages, NULL, NULL);  // Pouze pro balíky, bez pool/repo
     json_object_set_nocheck(repodata, "packages", packages);
 
     json_t* packages_conda = json_object();
@@ -699,14 +665,14 @@ int generate_repodata(const char* repo_path) {
 }
 
 /**
- * Check if any index.json files are newer than repodata.json.
- * 
- * Recursively checks modification times to determine if repository
- * metadata needs regeneration. Used for incremental updates.
- * 
- * @param repo_path Repository path to check
- * @param repodata_mtime Modification time of current repodata.json
- * @return 1 if newer files found, 0 otherwise
+ * Zkontroluje zda jsou soubory index.json novější než repodata.json.
+ *
+ * Rekurzivně kontroluje časy změn pro zjištění zda je nutná regenerace
+ * metadat repozitáře. Používá se pro přírůstkové aktualizace.
+ *
+ * @param repo_path Cesta repozitáře ke kontrole
+ * @param repodata_mtime Čas změny aktuálního repodata.json
+ * @return 1 pokud byly nalezeny novější soubory, 0 jinak
  */
 static int check_index_newer_than_repodata(const char *repo_path, time_t repodata_mtime) {
     DIR *dir = opendir(repo_path);
@@ -724,7 +690,7 @@ static int check_index_newer_than_repodata(const char *repo_path, time_t repodat
         snprintf(full_path, sizeof(full_path), "%s/%s", repo_path, entry->d_name);
         
         if (entry->d_type == DT_DIR) {
-            // Check for index.json in this directory
+            // Zkontroluj zda je index.json v tomto adresáři
             char index_paths[3][2048];
             snprintf(index_paths[0], sizeof(index_paths[0]), "%s/index.json", full_path);
             snprintf(index_paths[1], sizeof(index_paths[1]), "%s/info/index.json", full_path);
@@ -740,7 +706,7 @@ static int check_index_newer_than_repodata(const char *repo_path, time_t repodat
                 }
             }
             
-            // Recursively check subdirectories
+            // Rekurzivně zkontroluj podadresáře
             if (!found_newer && check_index_newer_than_repodata(full_path, repodata_mtime)) {
                 found_newer = 1;
             }
@@ -800,12 +766,12 @@ static int download_repodata(const char *repo_url, const char *dest_path) {
 }
 
 /**
- * Check if path is a remote URL.
- * 
- * Simple check for http:// or https:// prefixes.
- * 
- * @param path Path or URL to check
- * @return 1 if remote URL, 0 if local path
+ * Zkontroluje zda je cesta vzdálená URL.
+ *
+ * Jednoduché ověření předpon http:// nebo https://.
+ *
+ * @param path Cesta nebo URL ke kontrole
+ * @return 1 pokud je vzdálená URL, 0 pokud je lokální cesta
  */
 static int is_remote_url(const char *path) {
     return (strncmp(path, "http://", 7) == 0 || 
@@ -832,23 +798,42 @@ static int is_remote_url(const char *path) {
 Repo *load_repository(Pool *pool, const char *repo_path) {
     if (!pool || !repo_path) return NULL;
 
-    // Set arch before loading any repos
+    // Nastav arch před načtením jakýchkoliv repozitářů
     set_system_arch(pool);
 
     char repodata_path[2048];
     int is_remote = is_remote_url(repo_path);
     
     if (is_remote) {
-        // Remote repository: download to cache location
+        // Vzdálený repozitář: stáhni do umístění cache
         snprintf(repodata_path, sizeof(repodata_path), "/var/cache/balikar/downloads/repodata.json");
         
-        // Always download fresh repodata.json for remote repos
-        if (download_repodata(repo_path, repodata_path) != 0) {
-            log_error("Failed to download repodata.json from remote repository");
-            return NULL;
+        // Stáhni repodata.json pouze pokud neexistuje nebo je starší než 1 hodinu.
+        // Příkazy jako remove/autoremove nepotřebují čerstvou kopii – pouze používají
+        // pool/repo pro vyhledávání v grafu závislostí, který se nemění často.
+        int needs_download = 1;
+        struct stat cache_st;
+        if (stat(repodata_path, &cache_st) == 0) {
+            time_t age = time(NULL) - cache_st.st_mtime;
+            if (age < 3600) {
+                log_debug(1, "Using cached repodata.json (age: %lds < 1h)", (long)age);
+                needs_download = 0;
+            }
+        }
+        
+        if (needs_download) {
+            if (download_repodata(repo_path, repodata_path) != 0) {
+                // Pokud stahování selže ale cache existuje, použij záložní verzi z cache
+                if (access(repodata_path, F_OK) == 0) {
+                    log_warn("Download failed, using existing cached repodata.json");
+                } else {
+                    log_error("Failed to download repodata.json from remote repository");
+                    return NULL;
+                }
+            }
         }
     } else {
-        // Local repository
+        // Lokální repozitář
         snprintf(repodata_path, sizeof(repodata_path), "%s/repodata.json", repo_path);
         
         struct stat st;
@@ -858,7 +843,7 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
             log_info("No repodata.json – generating...");
             needs_regen = 1;
         } else {
-            // Check if any index.json is newer than repodata.json
+            // Zkontroluj zda je nějaký index.json novější než repodata.json
             if (check_index_newer_than_repodata(repo_path, st.st_mtime)) {
                 log_info("Detected changes in index.json files – regenerating repodata.json...");
                 needs_regen = 1;
@@ -885,21 +870,21 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
     repo_add_conda(repo, fp, 0);
     fclose(fp);
 
-    // Load JSON again to add custom fields that repo_add_conda ignores
+    // Načti JSON znovu pro přidání vlastních polí která repo_add_conda ignoruje
     json_error_t error;
     json_t *root = json_load_file(repodata_path, 0, &error);
     if (root) {
         json_t *packages = json_object_get(root, "packages");
         if (packages && json_is_object(packages)) {
-            // Use the main repodata from repo (created by repo_add_conda)
-            // We need to add fields before internalize
-            Repodata *data = repo_id2repodata(repo, 1);  // ID 1 is typically the main repodata
+            // Použij hlavní repodata z repo (vytvořenou repo_add_conda)
+            // Je nutné přidat pole před internalize
+            Repodata *data = repo_id2repodata(repo, 1);  // ID 1 je typicky hlavní repodata
             if (!data) {
                 log_warn("No repodata found, cannot add custom fields");
                 json_decref(root);
             } else {
             
-            // Iterate through all solvables and add custom fields
+            // Iteruj přes všechny solvable a přidej vlastní pole
             Id p;
             Solvable *s;
             FOR_REPO_SOLVABLES(repo, p, s) {
@@ -910,7 +895,7 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
                 
                                 log_debug(2, "Looking for custom fields for solvable %d: %s-%s", p, name, evr);
                 
-                // Find matching package in JSON
+                // Najdi odpovídající balík v JSON
                 const char *key;
                 json_t *pkg_json;
                                 int found_match = 0;
@@ -926,7 +911,7 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
                                                 found_match = 1;
                                                 log_debug(1, "Found match for %s-%s in JSON", name, evr);
                         
-                        // Add source array (new format)
+                        // Přidej pole zdrojů (nový formát)
                         json_t *source_array = json_object_get(pkg_json, "source");
                         if (source_array && json_is_array(source_array)) {
                             char *str = json_dumps(source_array, JSON_COMPACT);
@@ -937,21 +922,21 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
                             }
                         }
                         
-                        // Add download_url (for backward compatibility or standalone use)
+                        // Přidej download_url (pro zpětnou kompatibilitu nebo samostatné použití)
                         json_t *download_url = json_object_get(pkg_json, "download_url");
                         if (download_url && json_is_string(download_url)) {
                             const char *download_val = json_string_value(download_url);
                             log_debug(1, "Set download_url for %s to: %s", name, download_val);
                             repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), download_val);
                         }
-                        // Legacy: source as string (old format)
+                        // Starý formát: zdroj jako řetězec (starý formát)
                         else if (source_array && json_is_string(source_array)) {
                             const char *source_val = json_string_value(source_array);
                             repodata_set_str(data, p, pool_str2id(pool, "download_url", 1), source_val);
                             log_debug(1, "Set download_url (legacy) for %s to: %s", name, source_val);
                         }
                         
-                        // Add mkdeps
+                        // Přidej mkdeps
                 
                                         if (!found_match) {
                                             log_debug(2, "No JSON match found for solvable %d (%s-%s)", p, name, evr);
@@ -965,7 +950,7 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
                             }
                         }
                         
-                        // Add extras
+                        // Přidej extras
                         json_t *extras = json_object_get(pkg_json, "extras");
                         if (extras && json_is_array(extras)) {
                             char *str = json_dumps(extras, JSON_COMPACT);
@@ -975,14 +960,14 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
                             }
                         }
                         
-                        // Add is_group
+                        // Přidej is_group
                         json_t *is_group = json_object_get(pkg_json, "is_group");
                         if (is_group && json_is_boolean(is_group)) {
                             repodata_set_str(data, p, pool_str2id(pool, "is_group", 1),
                                            json_is_true(is_group) ? "true" : "false");
                         }
                         
-                        // Add no_package
+                        // Přidej no_package
                         json_t *no_package = json_object_get(pkg_json, "no_package");
                         if (no_package && json_is_boolean(no_package)) {
                             repodata_set_str(data, p, pool_str2id(pool, "no_package", 1),
@@ -1000,19 +985,19 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
     
     repo_internalize(repo);
     
-    // Ensure all solvables have self-provides (critical for solver)
-    // Must be done AFTER internalize but BEFORE pool_createwhatprovides
-    // repo_add_conda sometimes sets provides to invalid values (like 1), so overwrite it
+    // Zajisti že všechny solvable mají self-provides (kritické pro solver)
+    // Musí být provedeno PO internalize ale PŘED pool_createwhatprovides
+    // repo_add_conda někdy nastavuje provides na neplatné hodnoty (jako 1), proto přepiš
     Id p;
     Solvable *s;
     FOR_REPO_SOLVABLES(repo, p, s) {
         if (s->name) {
-            // Always set self-provide, even if provides is non-zero (may be invalid)
+            // Vždy nastav self-provide, i pokud provides není nula (může být neplatné)
             s->provides = repo_addid_dep(repo, 0, s->name, 0);
             log_debug(1, "Set self-provide for solvable %d (%s)", p, pool_id2str(pool, s->name));
             
-            // Fix arch if it's not set properly - use noarch for compatibility
-            // noarch packages should be installable on any architecture
+            // Oprav arch pokud není správně nastaveno – použij noarch pro kompatibilitu
+            // balíky noarch by měly být instalovatelné na jakékoliv architektuře
             if (!s->arch || s->arch == 0 || s->arch == 1) {
                 s->arch = pool_str2id(pool, "noarch", 1);
                 log_debug(1, "Set arch for solvable %d to noarch", p);
@@ -1020,7 +1005,7 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
         }
     }
     
-    // Create whatprovides index AFTER adding all provides
+    // Vytvoř index whatprovides PO přidání všech provides
     pool_createwhatprovides(pool);
 
     log_info("Repository loaded from %s", repodata_path);
@@ -1028,15 +1013,15 @@ Repo *load_repository(Pool *pool, const char *repo_path) {
 }
 
 /**
- * Lookup custom makedeps metadata from repodata.
- * 
- * Retrieves build-time dependencies stored as JSON string in repodata.
- * Caller must decref the returned JSON array.
- * 
- * @param data Repodata containing metadata
- * @param p Solvable ID
- * @param pool Package pool
- * @return JSON array of makedeps or NULL if not found
+ * Vyhledá vlastní metadata makedeps z repodata.
+ *
+ * Načte závislosti pro sestavení uložené jako JSON řetězec v repodata.
+ * Volající musí vrácené JSON pole uvolnit pomocí decref.
+ *
+ * @param data Repodata obsahující metadata
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @return JSON pole makedeps nebo NULL pokud nenalezeno
  */
 json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool) {
     Id key = pool_str2id(pool, "makedeps", 0);
@@ -1059,15 +1044,15 @@ json_t* get_custom_mkdeps(Repodata *data, Id p, Pool *pool) {
 }
 
 /**
- * Lookup custom download URL metadata from repodata.
- * 
- * Retrieves the download_url field stored in repodata.
- * String is owned by libsolv, do not free.
- * 
- * @param data Repodata containing metadata
- * @param p Solvable ID
- * @param pool Package pool
- * @return Download URL string or NULL if not found
+ * Vyhledá vlastní metadata URL ke stažení z repodata.
+ *
+ * Načte pole download_url uložené v repodata.
+ * Řetězec vlastní libsolv – neuvolňovat.
+ *
+ * @param data Repodata obsahující metadata
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @return Řetězec URL ke stažení nebo NULL pokud nenalezeno
  */
 const char* get_custom_source(Repodata *data, Id p, Pool *pool) {
     Id key = pool_str2id(pool, "download_url", 0);
@@ -1082,15 +1067,15 @@ const char* get_custom_source(Repodata *data, Id p, Pool *pool) {
 }
 
 /**
- * Lookup custom source array metadata from repodata.
- * 
- * Retrieves source array (new format) stored as JSON string in repodata.
- * Supports multiple source URLs with checksums. Caller must decref.
- * 
- * @param data Repodata containing metadata
- * @param p Solvable ID
- * @param pool Package pool
- * @return JSON array of sources or NULL if not found
+ * Vyhledá vlastní metadata pole zdrojů z repodata.
+ *
+ * Načte pole zdrojů (nový formát) uložené jako JSON řetězec v repodata.
+ * Podporuje více zdrojových URL se součty. Volající musí provést decref.
+ *
+ * @param data Repodata obsahující metadata
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @return JSON pole zdrojů nebo NULL pokud nenalezeno
  */
 json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool) {
     Id key = pool_str2id(pool, "source", 0);
@@ -1113,15 +1098,15 @@ json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool) {
 }
 
 /**
- * Lookup custom extras metadata from repodata.
- * 
- * Retrieves extras (patches, additional files) stored as JSON string.
- * Caller must decref the returned JSON array.
- * 
- * @param data Repodata containing metadata
- * @param p Solvable ID
- * @param pool Package pool
- * @return JSON array of extras or NULL if not found
+ * Vyhledá vlastní metadata extras z repodata.
+ *
+ * Načte extras (záplaty, doplňkové soubory) uložené jako JSON řetězec.
+ * Volající musí vrácené JSON pole uvolnit pomocí decref.
+ *
+ * @param data Repodata obsahující metadata
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @return JSON pole extras nebo NULL pokud nenalezeno
  */
 json_t* get_custom_extras(Repodata *data, Id p, Pool *pool) {
     Id key = pool_str2id(pool, "extras", 0);
@@ -1144,15 +1129,15 @@ json_t* get_custom_extras(Repodata *data, Id p, Pool *pool) {
 }
 
 /**
- * Lookup custom is_group flag from repodata.
- * 
- * Checks if package is a meta-package (group) that only provides data
- * without actual build. Returns boolean value.
- * 
- * @param data Repodata containing metadata
- * @param p Solvable ID
- * @param pool Package pool
- * @return 1 if group, 0 otherwise
+ * Vyhledá vlastní příznak is_group z repodata.
+ *
+ * Zkontroluje zda je balík meta-balík (skupina) poskytující pouze data
+ * bez skutečného sestavení. Vrátí booleovskou hodnotu.
+ *
+ * @param data Repodata obsahující metadata
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @return 1 pokud je skupina, 0 jinak
  */
 int get_custom_is_group(Repodata *data, Id p, Pool *pool) {
     Id key = pool_str2id(pool, "is_group", 0);
@@ -1167,15 +1152,15 @@ int get_custom_is_group(Repodata *data, Id p, Pool *pool) {
 }
 
 /**
- * Lookup custom no_package flag from repodata.
- * 
- * Checks if package is virtual (no actual package file to build/install).
- * Used for dependency-only or meta packages.
- * 
- * @param data Repodata containing metadata
- * @param p Solvable ID
- * @param pool Package pool
- * @return 1 if virtual, 0 otherwise
+ * Vyhledá vlastní příznak no_package z repodata.
+ *
+ * Zkontroluje zda je balík virtuální (žádný skutečný soubor k sestavení/instalaci).
+ * Používá se pro balíky sloužící pouze jako závislosti nebo meta-balíky.
+ *
+ * @param data Repodata obsahující metadata
+ * @param p ID solvable
+ * @param pool Pool balíků
+ * @return 1 pokud je virtuální, 0 jinak
  */
 int get_custom_no_package(Repodata *data, Id p, Pool *pool) {
     Id key = pool_str2id(pool, "no_package", 0);
@@ -1190,12 +1175,12 @@ int get_custom_no_package(Repodata *data, Id p, Pool *pool) {
 }
 
 /**
- * Internalize repository for efficient lookups.
- * 
- * Calls libsolv's repo_internalize to create internal indexes.
- * Must be called after adding packages and before querying metadata.
- * 
- * @param repo Repository to internalize
+ * Internalizuje repozitář pro efektivní vyhledávání.
+ *
+ * Volá repo_internalize z libsolv pro vytvoření interních indexů.
+ * Musí být voláno po přidání balíků a před dotazováním metadat.
+ *
+ * @param repo Repozitář k internalizaci
  */
 void internalize_repo(Repo *repo) {
     repo_internalize(repo);
@@ -1203,16 +1188,16 @@ void internalize_repo(Repo *repo) {
 }
 
 /**
- * Add a tar.bz2 package file to repository.
- * 
- * Extracts package archive, loads/generates metadata, computes SHA256,
- * and adds to repository using process_index_json. Used for local
- * package installation.
- * 
- * @param tar_path Path to .tar.bz2 package file
- * @param pool Package pool
- * @param repo Repository to add package to
- * @return Solvable ID or 0 on error
+ * Přidá soubor balíku tar.bz2 do repozitáře.
+ *
+ * Rozbalí archiv balíku, načte/vygeneruje metadata, vypočítá SHA256
+ * a přidá do repozitáře pomocí process_index_json. Používá se pro
+ * lokální instalaci balíků.
+ *
+ * @param tar_path Cesta k souboru balíku .tar.bz2
+ * @param pool Pool balíků
+ * @param repo Repozitář pro přidání balíku
+ * @return ID solvable nebo 0 při chybě
  */
 Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
     if (!tar_path || !pool || !repo) {
@@ -1229,7 +1214,7 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
     }
 
     log_debug(1, "Extracting %s to %s", tar_path, tmp_dir);
-    // Extract tar.bz2 archive to temporary directory
+    // Rozbal archiv tar.bz2 do dočasného adresáře
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "tar xjf \"%s\" -C \"%s\" 2>/dev/null", tar_path, tmp_dir);
     int extract_ret = system(cmd);
@@ -1239,7 +1224,7 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
     }
     log_info("Extracted %s to %s successfully", tar_path, tmp_dir);
 
-    // Load index.json recursively from extracted directory
+    // Načti index.json rekurzivně z rozbaleného adresáře
     json_t* index = find_and_load_index(tmp_dir);
     if (!index) {
         log_warn("No index.json in %s – generating default", tar_path);
@@ -1250,12 +1235,12 @@ Id add_package_tar_bz2(const char *tar_path, Pool *pool, Repo *repo) {
         }
     }
 
-    // Process (repo_add_conda + custom)
+    // Zpracuj (repo_add_conda + vlastní)
     p = process_index_json(index, NULL, pool, repo, tar_path);
     json_decref(index);
 
     if (p != 0) {
-        // Finalize the repository state
+        // Finalizuj stav repozitáře
         repo_internalize(repo);
         pool_createwhatprovides(pool);
         log_info("Added %s as solvable %d", tar_path, p);
@@ -1295,7 +1280,7 @@ int update_repository_metadata(const char *repo_path) {
     int is_remote = is_remote_url(repo_path);
     
     if (is_remote) {
-        // Remote repository: download fresh repodata.json
+        // Vzdálený repozitář: stáhni čerstvý repodata.json
         char repodata_path[2048];
         snprintf(repodata_path, sizeof(repodata_path), "/var/cache/balikar/downloads/repodata.json");
         
@@ -1311,7 +1296,7 @@ int update_repository_metadata(const char *repo_path) {
         return 0;
         
     } else {
-        // Local repository: regenerate from index.json files
+        // Lokální repozitář: regeneruj ze souborů index.json
         log_info("Regenerating local repository metadata from: %s", repo_path);
         
         int rc = generate_repodata(repo_path);

@@ -92,7 +92,7 @@ Parser → Načte source[] → Downloader → Zkouší source[0].url
                                     ↓
                             ...další URL...
                                     ↓
-                        Cache do /var/cache/balikar/
+                        Cache do /var/cache/balikar/downloads/
 ```
 
 **Multi-source fallback:**
@@ -107,7 +107,6 @@ Parser → Načte source[] → Downloader → Zkouší source[0].url
 - Více mirror URL zajišťuje dostupnost i při výpadku serveru
 - Automatický fallback bez zásahu uživatele
 
-
 ---
 
 ## CLI Příkazy
@@ -115,14 +114,14 @@ Parser → Načte source[] → Downloader → Zkouší source[0].url
 ### Zobrazení Repozitářů
 
 ```bash
-# Zobrazit všechny nakonfigurované repozitáře
+# Zobrazit všechny nakonfigurované repozitáře a aktuálně aktivní
 balikar repos
 
-# Alternativní příkaz
+# Alternativní příkaz (zobrazí pouze seznam nakonfigurovaných repozitářů)
 balikar repo list
 ```
 
-**Výstup:**
+**Výstup `balikar repos`:**
 ```
 Configured repositories:
 NAME                 PRIORITY   ENABLED    URL
@@ -149,37 +148,25 @@ balikar repo-update --repo=https://example.com/packages
 - **Remote repozitáře** (http/https): Stáhne `repodata.json` z URL do cache (`/var/cache/balikar/downloads/`)
 - **Lokální repozitáře**: Vygeneruje `repodata.json` ze všech `index.json` souborů v adresářové struktuře
 
-### Přidání Repozitáře
+### Správa Repozitářů (CLI)
+
+> **Poznámka:** Subpříkazy `add`, `remove`, `enable`, `disable` jsou definovány v CLI, ale jejich implementace v `cmd_repo.c` je neúplná, aktuálně funguje pouze `balikar repo list`. Pro správu repozitářů upravte konfigurační soubor ručně.
 
 ```bash
-# Přidat nový repozitář s prioritou
+# Přidat nový repozitář s prioritou (neimplementováno)
 balikar repo add <name> <url> [priority]
 
-# Příklad: Přidat testing repozitář s prioritou 80
-balikar repo add testing https://testing.example.com/packages 80
-```
-
-Změny se ukládají do uživatelské konfigurace (`~/.config/balikar/repos.conf`).
-
-### Odebrání Repozitáře
-
-```bash
-# Odebrat repozitář podle jména
+# Odebrat repozitář (neimplementováno)
 balikar repo remove <name>
 
-# Příklad
-balikar repo remove testing
-```
-
-### Aktivace/Deaktivace
-
-```bash
-# Dočasně vypnout repozitář (zůstane v konfiguraci)
+# Dočasně vypnout repozitář (neimplementováno)
 balikar repo disable <name>
 
-# Znovu zapnout repozitář
+# Znovu zapnout repozitář (neimplementováno)
 balikar repo enable <name>
 ```
+
+Změny konfiguraci provádějte ručně v `~/.config/balikar/repos.conf` nebo `/etc/balikar/repos.conf`.
 
 ## Workflow Příklady
 
@@ -199,8 +186,8 @@ balikar build hello
 ### Vývoj s Lokálním Repozitářem
 
 ```bash
-# 1. Přepnout na lokální repozitář (vyšší priorita)
-balikar repo add local-dev ./repo 150
+# 1. Přidat lokální repozitář do repos.conf s vyšší prioritou
+# Editujte ~/.config/balikar/repos.conf
 
 # 2. Po změnách v index.json regenerovat metadata
 balikar repo-update --repo=./repo
@@ -212,22 +199,14 @@ balikar build mypackage --repo=./repo
 ### Správa Více Repozitářů
 
 ```bash
-# Přidat production repozitář
-balikar repo add production https://prod.example.com/packages 100
-
-# Přidat testing repozitář s nižší prioritou
-balikar repo add testing https://testing.example.com/packages 50
-
 # Seznam všech repozitářů
 balikar repos
 
-# Dočasně přepnout na testing
-balikar repo disable production
-balikar repo enable testing
-balikar repos  # testing je nyní primární
+# Přepnutí na jiný repozitář pomocí --repo override
+balikar build mypackage --repo=https://example.com/packages
 
-# Vrátit zpět
-balikar repo enable production
+# Dočasné použití lokálního repo
+balikar install gzip --repo=./local-dev
 ```
 
 ### Publikování Vlastního Repozitáře
@@ -293,8 +272,11 @@ git commit -m "Initial repository"
 git remote add origin https://github.com/user/myrepo.git
 git push -u origin main
 
-# 5. Uživatelé mohou přidat váš repozitář
-balikar repo add myrepo https://raw.githubusercontent.com/user/myrepo/main 90
+# 5. Uživatelé mohou přidat váš repozitář do repos.conf
+# [myrepo]
+# url = https://raw.githubusercontent.com/user/myrepo/main
+# priority = 90
+# enabled = true
 ```
 
 #### 4. Použití Remote Repozitáře
@@ -304,8 +286,8 @@ balikar repo add myrepo https://raw.githubusercontent.com/user/myrepo/main 90
 balikar install gzip
 
 # Override repozitáře
-balikar --repo=https://example.com/packages install bash
-balikar --repo=./local-dev install mypackage
+balikar install bash --repo=https://example.com/packages
+balikar install mypackage --repo=./local-dev
 
 # Dry-run (zobrazí co by se stáhlo)
 balikar install gcc --dry-run
@@ -319,7 +301,7 @@ balikar install gcc --dry-run
 [INFO] Package cached at: /var/cache/balikar/downloads/bash-5.3.tar.gz
 ```
 
-**Pří fallback na další URL:**
+**Při fallback na další URL:**
 ```
 [INFO] Trying source[0].url: https://down-mirror.example.com/bash-5.3.tar.gz
 [WARN] Download failed from source[0]: https://down-mirror.example.com/bash-5.3.tar.gz (Connection failed)
@@ -344,7 +326,7 @@ Balikar vybírá repozitář s **nejvyšší prioritou** mezi aktivními (`enabl
 Doporučené priority:
 - **150+**: Lokální development repozitáře
 - **100**: Production remote repozitáře
-- **50-90**: Testing/staging repozitáře  
+- **50-90**: Testing/staging repozitáře
 - **10-40**: Fallback repozitáře
 - **10**: Výchozí lokální ./repo
 
@@ -364,29 +346,14 @@ balikar clean-cache
 balikar repo-update
 ```
 
-### Konflikt priorit
-
-```bash
-# Zobrazit všechny repozitáře s prioritami
-balikar repos
-
-# Upravit priority ručně v ~/.config/balikar/repos.conf
-# nebo použít CLI příkazy
-balikar repo remove lower-priority-repo
-balikar repo add higher-priority-repo <url> 150
-```
-
 ### Remote repozitář není dostupný
 
 ```bash
-# Dočasně vypnout remote repozitář
-balikar repo disable balikar-official
-
-# Přepnout na lokální fallback
-balikar repo enable local-dev
-
-# Ověřit
+# Zkontrolovat aktivní repozitáře
 balikar repos
+
+# Dočasně přepnout na lokální repozitář pomocí --repo
+balikar build mypackage --repo=./local-dev
 ```
 
 ---
@@ -404,30 +371,29 @@ balikar repos
 
 ```c
 // Repository Configuration (config.c)
-int init_repo_config(void);
+void init_repo_config(void);
 const char* get_primary_repo_url(void);
+repo_config_t* get_enabled_repos(void);
 int add_repository(const char *name, const char *url, int priority);
 int remove_repository(const char *name);
+int enable_repository(const char *name, int enabled);
+int save_repo_config(void);
 void list_repositories(void);
+void free_repo_config(void);
 
 // Parser (parser.c)
-json_t* get_custom_source_array(Repodata *data, Id p, Pool *pool);
 int update_repository_metadata(const char *repo_path);
 Repo* load_repository(Pool *pool, const char *repo_path);
-
-// Downloader (downloader.c)
-FILE* download_package(Solvable *s, const char *loc, Pool *pool, Repodata *data);
 ```
 
 ### Datové Struktury
 
 ```c
-// Repository configuration
 typedef struct repo_config {
-    char *name;              // Repository name
-    char *url;               // URL or path
-    int priority;            // Priority (higher = preferred)
-    int enabled;             // 1 = enabled, 0 = disabled
+    char *name;              // Název repozitáře
+    char *url;               // URL nebo cesta
+    int priority;            // Priorita (vyšší = preferovaný)
+    int enabled;             // 1 = aktivní, 0 = zakázaný
     struct repo_config *next; // Linked list
 } repo_config_t;
 ```
@@ -436,11 +402,8 @@ typedef struct repo_config {
 
 ## Budoucí Vylepšení
 
-- [ ] Podpora více zdrojů v `source[]` array (fallback URLs)
+- [ ] Plná implementace CLI subpříkazů `repo add/remove/enable/disable`
 - [ ] GPG signature verification
-- [ ] Podpora mirrors (automatické přepínání při selhání)
-- [ ] Delta updates (stahování pouze změn)
-- [ ] Proxy/cache server podpora
 - [ ] Repository snapshots pro reproducibility
 
 ---
@@ -448,7 +411,6 @@ typedef struct repo_config {
 ## Související Dokumentace
 
 - **[repos.conf.example](repos.conf.example)** - Anotovaný příklad konfigurace
-- **[Architecture & Workflow](../balikar/README.md)** - Detailní workflow diagramy
 - **[Parser Documentation](../balikar/parser.txt)** - Implementace parsování
 - **[Downloader Documentation](../balikar/downloader.txt)** - Stahování a cache
 - **[Main README](../../README.md)** - Přehled projektu
@@ -460,14 +422,14 @@ typedef struct repo_config {
 Oficiální Balikar repozitář obsahuje balíčky z Linux From Scratch 12.4:
 
 ```bash
-# Zobrazit dostupné balíčky
+# Zobrazit dostupné repozitáře
 balikar repos
 
 # Stáhnout a sestavit GCC 15.2.0
 balikar build gcc
 
-# Zobrazit metadata včetně source URL
-balikar show gcc
+# Aktualizovat metadata repozitáře
+balikar repo-update
 ```
 
 **Oficiální repozitář:** https://github.com/JanPL00/balikar-repository  

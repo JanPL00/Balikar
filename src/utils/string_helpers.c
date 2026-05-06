@@ -1,16 +1,14 @@
-//
-// Created by placeja5 on 11/5/25.
-//
-
 #include "includes/string_helpers.h"
 
 /**
- * Converts a solvable to a human-readable string.
- * Format: "name-version.architecture" (e.g., "glibc-2.35.x86_64")
- * Caller must free the returned string.
- * @param pool Pool containing the solvable
- * @param p Solvable ID
- * @return Allocated string representation, or NULL on error
+ * Převede solvable na čitelný řetězec.
+ *
+ * Formát: "název-verze.architektura" (např. "glibc-2.35.x86_64").
+ * Volající musí vrácený řetězec uvolnit.
+ *
+ * @param pool Pool obsahující solvable
+ * @param p ID solvable
+ * @return Alokovaný řetězec nebo NULL při chybě
  */
 char *solvable_to_string(Pool *pool, Id p) {
     if (!pool || p <= 0) {
@@ -18,24 +16,24 @@ char *solvable_to_string(Pool *pool, Id p) {
         return NULL;
     }
 
-    // Get solvable from pool
+    // Načti solvable z poolu
     Solvable *s = pool_id2solvable(pool, p);
     if (!s) {
         log_error("Solvable not found for ID %d.", p);
         return NULL;
     }
 
-    // Extract package components
-    const char *name = pool_id2str(pool, s->name);  // Package name
-    const char *evr = pool_id2evr(pool, s->evr);    // Epoch:Version-Release
-    const char *arch = pool_id2str(pool, s->arch);  // Architecture
+    // Extrahuj komponenty balíku
+    const char *name = pool_id2str(pool, s->name);  // Název balíku
+    const char *evr = pool_id2evr(pool, s->evr);    // Epocha:Verze-Release
+    const char *arch = pool_id2str(pool, s->arch);  // Architektura
 
     if (!name || !evr || !arch) {
         log_error("Missing name, evr, or arch for solvable ID %d.", p);
         return NULL;
     }
 
-    // Allocate memory for formatted string: "name-evr.arch\0"
+    // Alokuj paměť pro formátovaný řetězec: "název-evr.arch\0"
     size_t len = strlen(name) + strlen(evr) + strlen(arch) + 3;
     char *str = malloc(len);
     if (!str) {
@@ -43,19 +41,21 @@ char *solvable_to_string(Pool *pool, Id p) {
         return NULL;
     }
 
-    // Format: name-version.architecture
+    // Formát: název-verze.architektura
     snprintf(str, len, "%s-%s.%s", name, evr, arch);
     return str;
 }
 
 /**
- * Converts a dependency ID to a human-readable string.
- * Formats dependency with name, version constraints, and operators.
- * Examples: "glibc >= 2.35", "bash", "libssl.so.1.1"
- * Caller must free the returned string.
- * @param pool Pool containing the dependency
- * @param dep Dependency ID
- * @return Allocated string representation, or NULL on error
+ * Převede ID závislosti na čitelný řetězec.
+ *
+ * Formátuje závislost s názvem, verزیávislostmi a operátory.
+ * Příklady: "glibc >= 2.35", "bash", "libssl.so.1.1".
+ * Volající musí vrácený řetězec uvolnit.
+ *
+ * @param pool Pool obsahující závislost
+ * @param dep ID závislosti
+ * @return Alokovaný řetězec nebo NULL při chybě
  */
 char *dep_to_string(Pool *pool, Id dep) {
     if (!pool || dep <= 0) {
@@ -63,15 +63,15 @@ char *dep_to_string(Pool *pool, Id dep) {
         return NULL;
     }
 
-    // Get dependency string from pool
-    // pool_dep2str returns internal string, must be duplicated
+    // Načti řetězec závislosti z poolu
+    // pool_dep2str vrací interní řetězec, musí být duplikován
     const char *dep_str = pool_dep2str(pool, dep);
     if (!dep_str) {
         log_error("Dependency not found for ID %d.", dep);
         return NULL;
     }
 
-    // Duplicate string for caller (pool_dep2str returns internal pointer)
+    // Duplikuj řetězec pro volajícího (pool_dep2str vrací interní ukazatel)
     char *str = strdup(dep_str);
     if (!str) {
         log_error("Memory allocation failed in dep_to_string.");
