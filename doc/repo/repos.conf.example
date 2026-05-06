@@ -1,0 +1,28 @@
+# Příklad konfigurace repozitářů pro Balikar
+# Zkopírujte do ~/.config/balikar/repos.conf nebo /etc/balikar/repos.conf
+
+# Oficiální Balikar repozitář na GitHubu
+# Nejvyšší priorita - používá se jako primární zdroj metadat
+[balikar-official]
+url = https://raw.githubusercontent.com/JanPL00/balikar-repository/main
+priority = 100
+enabled = true
+
+# Lokální vývojový repozitář
+# Nižší priorita - používá se při vývoji nových balíčků
+[local-dev]
+url = ./repo
+priority = 50
+enabled = true
+
+# Příklad: záložní upstream (zakázaný)
+[lfs-upstream]
+url = https://ftp.example.com/lfs/packages
+priority = 30
+enabled = false
+
+# Příklad: Mirror (záložní repozitář)
+[balikar-mirror]
+url = https://mirror.example.com/balikar-repo/main
+priority = 90
+enabled = false

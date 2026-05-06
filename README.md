@@ -269,7 +269,7 @@ sudo cp balikar-static /usr/local/bin/balikar
 
 Pokud by uživatel zapomněl na krok 2 a nasměroval `CONDA_PREFIX` na prefix s distribuční `libcurl.a`, `build_static.sh` selže s čitelnou chybou a vypíše přesně tento postup.
 
-#### Varianta C: Alpine Docker (bez Condy, bez ručního nastavení)
+#### Varianta C: Alpine Docker (bez Condy, bez ručního nastavení), DOPORUČENÉ
 
 Doporučená cesta pro reprodukovatelný build nezávislý na host systému. Alpine Linux používá musl libc, pro které je statické linkování standardní praxí a nevznikají problémy s DNS (na rozdíl od glibc). Uvnitř kontejneru se libsolv automaticky zkompiluje ze zdrojů.
 Jde o sestavení na základě dockerfile proj6_balikar/tests/docker-tests/alpine.
@@ -287,26 +287,10 @@ docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
 docker rm tmp
 ```
 
----
-
-### Přehled cest
-
-| Cesta | Conda nutná | Kompilátor nutný | Výsledek | Vhodné pro |
-|---|---|---|---|---|
-| 1 – Předkompilovaná | Ne | Ne | Binárka + `lib/` | Koncové uživatele |
-| 2 – Dynamická kompilace | **Ano** | Ano | Binárka + `lib/` | Vývoj |
-| 3A – Statická s Condou | **Ano** | Ano | Jediný soubor | Distribuce |
-| 3B – Statická bez Condy | Ne | Ano | Jediný soubor | Systémy bez Condy |
-| 3C – Alpine Docker | Ne | Ne (Docker) | Jediný soubor | Přenositelnost |
-
----
 
 ## Repozitář balíčků
 
 Oficiální balíčky: [github.com/JanPL00/balikar-repository](https://github.com/JanPL00/balikar-repository)
-
-Obsahuje 11 balíčků z Linux From Scratch 12.4:
-- bash, binutils, coreutils, gcc, glibc, gmp, gzip, hello, iana-etc, tar, zlib
 
 ## Dokumentace
 
@@ -323,7 +307,3 @@ Obsahuje 11 balíčků z Linux From Scratch 12.4:
 - **[Implementace solveru](doc/balikar/solver.txt)** – Řešení závislostí
 - **[Downloader](doc/balikar/downloader.txt)** – Stahování a ověřování balíčků
 - **[Manuál](doc/manual.txt)** – Obecná dokumentace
-
-
-# TODO
-- split download command for downloading source tar.xz files (fetch-source) a balikar files ve formatu tar.bz2 (download)

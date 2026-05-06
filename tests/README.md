@@ -14,10 +14,7 @@ moduly: `system_helpers`, `cli_helpers`, `parser`, `solver`, `downloader`, `buil
 cmake -B build
 cmake --build build
 
-# Spuštění všech unit testů přes CTest:
-cd build && ctest --output-on-failure
-
-# Nebo přímo spustit testovací binárku:
+# Spustit testovací binárku:
 ./build/tests
 ```
 
