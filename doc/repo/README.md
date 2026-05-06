@@ -150,7 +150,7 @@ balikar repo-update --repo=https://example.com/packages
 
 ### Správa Repozitářů (CLI)
 
-> **Poznámka:** Subpříkazy `add`, `remove`, `enable`, `disable` jsou definovány v CLI, ale jejich implementace v `cmd_repo.c` je neúplná — aktuálně funguje pouze `balikar repo list`. Pro správu repozitářů upravte konfigurační soubor ručně.
+> **Poznámka:** Subpříkazy `add`, `remove`, `enable`, `disable` jsou definovány v CLI, ale jejich implementace v `cmd_repo.c` je neúplná, aktuálně funguje pouze `balikar repo list`. Pro správu repozitářů upravte konfigurační soubor ručně.
 
 ```bash
 # Přidat nový repozitář s prioritou (neimplementováno)
@@ -404,8 +404,6 @@ typedef struct repo_config {
 
 - [ ] Plná implementace CLI subpříkazů `repo add/remove/enable/disable`
 - [ ] GPG signature verification
-- [ ] Delta updates (stahování pouze změn)
-- [ ] Proxy/cache server podpora
 - [ ] Repository snapshots pro reproducibility
 
 ---

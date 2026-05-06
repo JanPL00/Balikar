@@ -287,7 +287,6 @@ docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
 docker rm tmp
 ```
 
-
 ## Repozitář balíčků
 
 Oficiální balíčky: [github.com/JanPL00/balikar-repository](https://github.com/JanPL00/balikar-repository)
@@ -296,14 +295,52 @@ Oficiální balíčky: [github.com/JanPL00/balikar-repository](https://github.co
 
 ### Uživatelské příručky
 
-- **[Správa repozitářů](doc/repo/README.md)** – Kompletní průvodce: konfigurace, vzdálené repozitáře, CLI příkazy
-- **[Příklad konfigurace](doc/repo/repos.conf.example)** – Okomentovaná konfigurace repozitáře
+- **[Uživatelský manuál](doc/manual.txt)** – Přehled příkazů, options, use cases, troubleshooting
+- **[Správa repozitářů](doc/repo/README.md)** – Konfigurace, vzdálené repozitáře, multi-source fallback, CLI příkazy
+- **[Příklad konfigurace repos.conf](doc/repo/repos.conf.example)** – Okomentovaný příklad konfiguračního souboru
 
 ### Dokumentace pro vývojáře
 
-- **[Architektura a workflow](doc/balikar/README.md)** – Systémová architektura, diagramy workflow, přehled modulů
 - **[Implementace builderu](doc/balikar/builder.txt)** – Podrobnosti build systému
 - **[Podrobnosti parseru](doc/balikar/parser.txt)** – Parsování metadat a načítání repozitářů
 - **[Implementace solveru](doc/balikar/solver.txt)** – Řešení závislostí
 - **[Downloader](doc/balikar/downloader.txt)** – Stahování a ověřování balíčků
-- **[Manuál](doc/manual.txt)** – Obecná dokumentace
+- **[Testování](tests/README.md)** – Možnosti testování programu
+
+### Organizace zdrojových souborů
+
+```
+src/
+├── balikar/
+│   ├── main.c                    # dispatcher
+│   ├── command_context.c         # Context lifecycle
+│   ├── command_registry.c        # Registry + dispatch
+│   ├── builder.c                 # BUILD fáze
+│   ├── downloader.c              # DOWNLOAD fáze
+│   ├── installer.c               # INSTALL fáze
+│   ├── parser.c                  # PARSE fáze
+│   ├── solver.c                  # SOLVE fáze
+│   ├── commands/
+│   │   ├── cmd_install.c         # install + build
+│   │   ├── cmd_download.c        # download
+│   │   ├── cmd_resolve.c         # resolve
+│   │   ├── cmd_remove.c          # remove
+│   │   ├── cmd_autoremove.c      # autoremove
+│   │   ├── cmd_repos.c           # repos
+│   │   ├── cmd_repo.c            # repo subpříkazy
+│   │   ├── cmd_repo_update.c     # repo-update
+│   │   └── cmd_clean_cache.c     # clean-cache
+│   └── includes/
+│       ├── command_context.h
+│       ├── command_registry.h
+│       └── command.h
+├── common/
+│   ├── common.c / common.h       # Sdílené typy, log_*, error codes
+│   ├── config.c / config.h       # Správa konfigurace repozitářů
+└── utils/
+    ├── cli_helpers.c             # user_confirm(), CLI utilities
+    ├── print.c                   # display_transaction(), progress bar
+    ├── string_helpers.c          # String utilities
+    └── system_helpers.c          # set_system_arch(), systémové helpers
+```
+
