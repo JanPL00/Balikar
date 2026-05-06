@@ -1,5 +1,5 @@
 //
-// Command Context Implementation
+// Implementace kontextu příkazu
 //
 
 #include "includes/command_context.h"
@@ -13,8 +13,9 @@
 #include <string.h>
 
 /**
- * Create new command context with defaults.
- * All pointers initialized to NULL, flags to 0.
+ * Vytvoří nový kontext příkazu s výchozími hodnotami.
+ *
+ * Všechny ukazatele inicializovány na NULL, příznaky na 0.
  */
 CommandContext* command_context_create(void) {
     CommandContext *ctx = calloc(1, sizeof(CommandContext));
@@ -23,44 +24,46 @@ CommandContext* command_context_create(void) {
         return NULL;
     }
     
-    // All fields zero-initialized by calloc
-    // Explicitly set exit_code to 0 for clarity
+    // Všechna pole nulována pomocí calloc
+    // Explicitně nastav exit_code na 0 pro přehlednost
     ctx->exit_code = 0;
     
     return ctx;
 }
 
 /**
- * Initialize subsystem facade with real implementations.
- * Default wiring - can be replaced with mocks for testing.
+ * Inicializuje fasádu subsystému s reálnými implementacemi.
+ *
+ * Výchozí zapojení – lze nahradit mocky pro testování.
  */
 void command_context_init_subsystems(CommandContext *ctx) {
     if (!ctx) return;
     
-    // Parser subsystem
+    // Subsystém parseru
     ctx->subsystems.load_repository = load_repository;
     ctx->subsystems.generate_repodata = generate_repodata;
     
-    // Solver subsystem
+    // Subsystém solveru
     ctx->subsystems.create_solver = create_solver;
     ctx->subsystems.solve_dependencies = solve_dependencies;
     
-    // Downloader subsystem
+    // Subsystém downloaderu
     ctx->subsystems.download_package = download_package;
     ctx->subsystems.download_extras = download_extras;
     
-    // Builder subsystem
+    // Subsystém builderu
     ctx->subsystems.commit_element = commit_element;
     
-    // Installer subsystem
+    // Subsystém installeru
     ctx->subsystems.install_package_with_reason = install_package_with_reason;
     ctx->subsystems.erase_package = erase_package;
     ctx->subsystems.is_package_installed = is_package_installed;
 }
 
 /**
- * Parse CLI arguments into context config.
- * Uses getopt_long for standard option parsing.
+ * Parsuje argumenty příkazové řádky do konfigurace kontextu.
+ *
+ * Používá getopt_long pro standardní parsování argumentů.
  */
 int command_context_parse_args(CommandContext *ctx, int argc, char **argv) {
     if (!ctx) return -1;
@@ -121,19 +124,19 @@ int command_context_parse_args(CommandContext *ctx, int argc, char **argv) {
         }
     }
     
-    // Parse positional arguments: command and package name
+    // Parsuj poziční argumenty: příkaz a název balíku
     if (optind < argc) {
-        ctx->config.command = argv[optind++];  // Points to argv - no alloc
+        ctx->config.command = argv[optind++];  // Ukazuje na argv – bez alokace
     }
     
     if (optind < argc) {
-        ctx->config.package_name = argv[optind];  // Points to argv - no alloc
+        ctx->config.package_name = argv[optind];  // Ukazuje na argv – bez alokace
     }
     
-    // Set global debug level for logging functions
+    // Nastav globální úroveň ladění pro logovací funkce
     DEBUG_LEVEL = ctx->config.debug_level;
     
-    // Set default repository path if not specified
+    // Nastav výchozí cestu repozitáře pokud není zadána
     if (!ctx->config.repo_path_allocated) {
         init_repo_config();
         ctx->config.repo_path_allocated = strdup(get_primary_repo_url());
@@ -143,8 +146,9 @@ int command_context_parse_args(CommandContext *ctx, int argc, char **argv) {
 }
 
 /**
- * Lazy-load pool if not already initialized.
- * Only allocates when first requested.
+ * Lazy-inicializuje pool pokud ještě není inicializován.
+ *
+ * Alokuje jen při prvním požadavku.
  */
 Pool* command_context_ensure_pool(CommandContext *ctx) {
     if (!ctx) return NULL;
@@ -162,13 +166,14 @@ Pool* command_context_ensure_pool(CommandContext *ctx) {
 }
 
 /**
- * Lazy-load repository if not already initialized.
- * Requires pool to exist first.
+ * Lazy-inicializuje repozitář pokud ještě není inicializován.
+ *
+ * Vyžaduje aby pool existoval jako první.
  */
 Repo* command_context_ensure_repo(CommandContext *ctx) {
     if (!ctx) return NULL;
     
-    // Ensure pool exists first
+    // Nejprve zajisti existenci poolu
     Pool *pool = command_context_ensure_pool(ctx);
     if (!pool) return NULL;
     
@@ -188,13 +193,14 @@ Repo* command_context_ensure_repo(CommandContext *ctx) {
 }
 
 /**
- * Destroy context and free all allocated resources.
- * Frees in reverse order of allocation.
+ * Zničí kontext a uvolní všechny alokované prostředky.
+ *
+ * Uvolňuje v opačném pořadí alokace.
  */
 void command_context_destroy(CommandContext *ctx) {
     if (!ctx) return;
     
-    // Free runtime resources (if loaded)
+    // Uvolni runtime prostředky (pokud byly načteny)
     if (ctx->resources.repo) {
         repo_free(ctx->resources.repo, 1);
         ctx->resources.repo = NULL;
@@ -205,7 +211,7 @@ void command_context_destroy(CommandContext *ctx) {
         ctx->resources.pool = NULL;
     }
     
-    // Free allocated CLI config strings
+    // Uvolni alokované řetězce CLI konfigurace
     free(ctx->config.staging_dir_allocated);
     free(ctx->config.root_path_allocated);
     free(ctx->config.build_tmp_dir_allocated);
@@ -214,12 +220,12 @@ void command_context_destroy(CommandContext *ctx) {
     free(ctx->config.clean_cache_pkg_allocated);
     free(ctx->config.output_dir_allocated);
     
-    // Free context itself
+    // Uvolni samotný kontext
     free(ctx);
 }
 
 /**
- * Get staging directory (from config or default).
+ * Vrátí staging adresář (z konfigurace nebo výchozí).
  */
 const char* command_context_get_staging_dir(CommandContext *ctx) {
     if (!ctx) return STAGING_DIR;
@@ -228,7 +234,7 @@ const char* command_context_get_staging_dir(CommandContext *ctx) {
 }
 
 /**
- * Get root path (from config or default "/").
+ * Vrátí kořenovou cestu (z konfigurace nebo výchozí "/").
  */
 const char* command_context_get_root_path(CommandContext *ctx) {
     if (!ctx) return "/";
@@ -237,7 +243,7 @@ const char* command_context_get_root_path(CommandContext *ctx) {
 }
 
 /**
- * Get repository path (from config).
+ * Vrátí cestu k repozitáři (z konfigurace).
  */
 const char* command_context_get_repo_path(CommandContext *ctx) {
     if (!ctx || !ctx->config.repo_path_allocated) return NULL;

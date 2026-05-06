@@ -1,17 +1,14 @@
-//
-// Created by placeja5 on 11/20/25.
-//
-
 #include "includes/installer.h"
 
 
 /**
- * Builds the database directory path for a given chroot.
- * Creates path: {chroot}/var/lib/balikar
- * 
- * @param chroot_path Root directory (e.g., "/" or "/tmp/test_root")
- * @param buffer Buffer to store the result
- * @param buffer_size Size of the buffer
+ * Sestaví cestu k adresáři databáze pro daný chroot.
+ *
+ * Vytvoří cestu: {chroot}/var/lib/balikar
+ *
+ * @param chroot_path Kořenový adresář (např. "/" nebo "/tmp/test_root")
+ * @param buffer Buffer pro uložení výsledku
+ * @param buffer_size Velikost bufferu
  */
 static void get_db_dir_path(const char *chroot_path, char *buffer, size_t buffer_size) {
     if (strcmp(chroot_path, "/") == 0) {
@@ -22,12 +19,13 @@ static void get_db_dir_path(const char *chroot_path, char *buffer, size_t buffer
 }
 
 /**
- * Builds the database file path for a given chroot.
- * Creates path: {chroot}/var/lib/balikar/installed.json
- * 
- * @param chroot_path Root directory (e.g., "/" or "/tmp/test_root")
- * @param buffer Buffer to store the result
- * @param buffer_size Size of the buffer
+ * Sestaví cestu k souboru databáze pro daný chroot.
+ *
+ * Vytvoří cestu: {chroot}/var/lib/balikar/installed.json
+ *
+ * @param chroot_path Kořenový adresář (např. "/" nebo "/tmp/test_root")
+ * @param buffer Buffer pro uložení výsledku
+ * @param buffer_size Velikost bufferu
  */
 static void get_db_file_path(const char *chroot_path, char *buffer, size_t buffer_size) {
     if (strcmp(chroot_path, "/") == 0) {
@@ -38,10 +36,11 @@ static void get_db_file_path(const char *chroot_path, char *buffer, size_t buffe
 }
 
 /**
- * Ensures the database directory exists.
- * Creates {chroot}/var/lib/balikar if it doesn't exist.
- * 
- * @param chroot_path Root directory for the installation
+ * Zajistí existenci adresáře databáze.
+ *
+ * Vytvoří {chroot}/var/lib/balikar pokud neexistuje.
+ *
+ * @param chroot_path Kořenový adresář instalace
  */
 static int ensure_db_dir(const char *chroot_path) {
     char db_dir[PATH_MAX];
@@ -49,7 +48,7 @@ static int ensure_db_dir(const char *chroot_path) {
     
     struct stat st;
     if (stat(db_dir, &st) != 0) {
-        // Create parent directories recursively
+        // Vytvoř nadřazené adresáře rekurzivně
         char mkdir_cmd[PATH_MAX + 20];
         snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p '%s'", db_dir);
         if (system(mkdir_cmd) != 0) {
@@ -62,12 +61,13 @@ static int ensure_db_dir(const char *chroot_path) {
 }
 
 /**
- * Loads the installed packages database.
- * Creates an empty database if it doesn't exist.
- * 
- * @param chroot_path Root directory for the installation
- * @return JSON object containing packages, or NULL on error
- *         Caller must json_decref() the returned object
+ * Načte databázi nainstalovaných balíků.
+ *
+ * Vytvoří prázdnou databázi pokud neexistuje.
+ *
+ * @param chroot_path Kořenový adresář instalace
+ * @return JSON objekt obsahující balíky nebo NULL při chybě.
+ *         Volající musí vrácený objekt uvolnit pomocí json_decref()
  */
 json_t* load_installed_db(const char *chroot_path) {
     if (ensure_db_dir(chroot_path) != 0) {
@@ -79,7 +79,7 @@ json_t* load_installed_db(const char *chroot_path) {
     
     FILE *fp = fopen(db_path, "r");
     if (!fp) {
-        // Database doesn't exist yet - create empty one
+        // Databáze ještě neexistuje – vytvoř prázdnou
         log_debug(1, "Database doesn't exist, creating empty one");
         json_t *root = json_object();
         json_object_set_new(root, "packages", json_array());
@@ -99,11 +99,11 @@ json_t* load_installed_db(const char *chroot_path) {
 }
 
 /**
- * Saves the installed packages database to disk.
- * 
- * @param root JSON object to save
- * @param chroot_path Root directory for the installation
- * @return 0 on success, -1 on error
+ * Uloží databázi nainstalovaných balíků na disk.
+ *
+ * @param root JSON objekt k uložení
+ * @param chroot_path Kořenový adresář instalace
+ * @return 0 při úspěchu, -1 při chybě
  */
 static int save_installed_db(json_t *root, const char *chroot_path) {
     if (ensure_db_dir(chroot_path) != 0) {
@@ -123,11 +123,11 @@ static int save_installed_db(json_t *root, const char *chroot_path) {
 }
 
 /**
- * Collects all files in a directory recursively.
- * 
- * @param dir_path Directory to scan
- * @param files JSON array to append file paths to
- * @param base_len Length of base path to strip from results
+ * Rekurzivně shromáždí všechny soubory v adresáři.
+ *
+ * @param dir_path Adresář k prohledání
+ * @param files JSON pole pro přidávání cest k souborům
+ * @param base_len Délka základní cesty pro oříznutí výsledků
  */
 static void collect_files_recursive(const char *dir_path, json_t *files, size_t base_len) {
     DIR *dir = opendir(dir_path);
@@ -138,7 +138,7 @@ static void collect_files_recursive(const char *dir_path, json_t *files, size_t 
     
     struct dirent *entry;
     while ((entry = readdir(dir)) != NULL) {
-        // Skip . and ..
+        // Přeskoč . a ..
         if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
             continue;
         }
@@ -152,10 +152,10 @@ static void collect_files_recursive(const char *dir_path, json_t *files, size_t 
         }
         
         if (S_ISDIR(st.st_mode)) {
-            // Recurse into subdirectory
+            // Rekurzivně vstup do podadresáře
             collect_files_recursive(full_path, files, base_len);
         } else if (S_ISREG(st.st_mode) || S_ISLNK(st.st_mode)) {
-            // Add file or symlink to list (strip base path)
+            // Přidej soubor nebo symlink do seznamu (ořízni základní cestu)
             const char *relative_path = full_path + base_len;
             json_array_append_new(files, json_string(relative_path));
         }
@@ -165,12 +165,13 @@ static void collect_files_recursive(const char *dir_path, json_t *files, size_t 
 }
 
 /**
- * Collects file manifest from staging directory.
- * Returns paths relative to staging dir (e.g., /usr/bin/gzip).
- * 
- * @param staging_dir Path to staging directory
- * @return JSON array of file paths, or NULL on error
- *         Caller must json_decref() the returned object
+ * Shromáždí manifest souborů ze staging adresáře.
+ *
+ * Vrátí cesty relativní ke staging adresáři (např. /usr/bin/gzip).
+ *
+ * @param staging_dir Cesta ke staging adresáři
+ * @return JSON pole cest k souborům nebo NULL při chybě.
+ *         Volající musí vrácený objekt uvolnit pomocí json_decref()
  */
 static json_t* collect_file_manifest(const char *staging_dir) {
     json_t *files = json_array();
@@ -179,7 +180,7 @@ static json_t* collect_file_manifest(const char *staging_dir) {
         return NULL;
     }
     
-    // Strip trailing slash for consistent path handling
+    // Odstraň závěrečné lomítko pro konzistentní práci s cestami
     char staging_clean[PATH_MAX];
     snprintf(staging_clean, sizeof(staging_clean), "%s", staging_dir);
     size_t len = strlen(staging_clean);
@@ -197,15 +198,16 @@ static json_t* collect_file_manifest(const char *staging_dir) {
 }
 
 /**
- * Finds and executes .install/install.sh script if it exists.
- * Searches recursively up to depth 3 (similar to find_source_path in builder).
- * 
- * @param staging_dir Path to staging directory
- * @param chroot_path Path to chroot (passed as env variable)
- * @return 0 if script executed or doesn't exist, -1 on script failure
+ * Najde a spustí skript .install/install.sh pokud existuje.
+ *
+ * Prohledá rekurzivně do hloubky 3 (podobně jako find_source_path v builderu).
+ *
+ * @param staging_dir Cesta ke staging adresáři
+ * @param chroot_path Cesta ke chroot (předána jako proměnná prostředí)
+ * @return 0 pokud byl skript spuštěn nebo neexistuje, -1 při selhání skriptu
  */
 static int execute_install_script(const char *staging_dir, const char *chroot_path) {
-    // Try common locations for .install/install.sh
+    // Zkus běžná umístění pro .install/install.sh
     const char *search_paths[] = {
         "%s/.install/install.sh",
         "%s/*/. install/install.sh",
@@ -216,7 +218,7 @@ static int execute_install_script(const char *staging_dir, const char *chroot_pa
     char script_path[PATH_MAX];
     int found = 0;
     
-    // Simple search - check direct path first
+    // Jednoduché vyhledávání – nejprve zkontroluj přímou cestu
     snprintf(script_path, sizeof(script_path), "%s/.install/install.sh", staging_dir);
     if (access(script_path, X_OK) == 0) {
         found = 1;
@@ -224,16 +226,16 @@ static int execute_install_script(const char *staging_dir, const char *chroot_pa
     
     if (!found) {
         log_debug(1, "No .install/install.sh script found (optional)");
-        return 0;  // Not an error - script is optional
+        return 0;  // Není chyba – skript je volitelný
     }
     
     log_info("Executing post-install script: %s", script_path);
     
-    // Set environment variables for the script
+    // Nastav proměnné prostředí pro skript
     setenv("DESTDIR", chroot_path, 1);
     setenv("CHROOT", chroot_path, 1);
     
-    // Execute the script
+    // Spusť skript
     char cmd[PATH_MAX + 50];
     snprintf(cmd, sizeof(cmd), "bash -e '%s' > /dev/null 2>&1", script_path);
     
@@ -241,7 +243,7 @@ static int execute_install_script(const char *staging_dir, const char *chroot_pa
     if (rc != 0) {
         log_warn("Post-install script failed with code %d", rc);
         
-        // Ask user if they want to continue despite script failure
+        // Zeptej se uživatele zda chce pokračovat i přes selhání skriptu
         if (!user_confirm("Continue installation despite script failure?", 1)) {
             return -1;
         }
@@ -253,14 +255,15 @@ static int execute_install_script(const char *staging_dir, const char *chroot_pa
 }
 
 /**
- * Validates chroot environment structure.
- * Checks for basic directories like /usr, /lib, /bin.
- * Warns if structure looks suspicious.
+ * Ověří strukturu chroot prostředí.
+ *
+ * Zkontroluje základní adresáře jako /usr, /lib, /bin.
+ * Varuje pokud struktura vypadá podezřele.
  */
 int validate_chroot(const char *chroot_path) {
     struct stat st;
     
-    // Check if chroot path exists, create if it doesn't
+    // Zkontroluj zda cesta chroot existuje, pokud ne vytvoř ji
     if (stat(chroot_path, &st) != 0) {
         log_info("Creating root directory: %s", chroot_path);
         char mkdir_cmd[PATH_MAX + 32];
@@ -269,7 +272,7 @@ int validate_chroot(const char *chroot_path) {
             log_error("Failed to create root directory: %s", chroot_path);
             return 0;
         }
-        // Verify it was created
+        // Ověř že byla vytvořena
         if (stat(chroot_path, &st) != 0) {
             log_error("Root path still does not exist after creation: %s", chroot_path);
             return 0;
@@ -281,7 +284,7 @@ int validate_chroot(const char *chroot_path) {
         return 0;
     }
     
-    // Check for basic FHS directories
+    // Zkontroluj základní adresáře FHS
     const char *required_dirs[] = {"/usr", "/lib", "/bin", NULL};
     int warnings = 0;
     
@@ -308,19 +311,20 @@ int validate_chroot(const char *chroot_path) {
 }
 
 /**
- * Merges staging directory to chroot using cp -a.
- * Preserves permissions, timestamps, and symbolic links.
- * 
- * @param staging_dir Path to staging directory
- * @param chroot_path Path to chroot environment
- * @return 0 on success, -1 on error
+ * Sloučí staging adresář do chroot pomocí cp -a.
+ *
+ * Zachová oprávnění, časová razítka a symbolické odkazy.
+ *
+ * @param staging_dir Cesta ke staging adresáři
+ * @param chroot_path Cesta k chroot prostředí
+ * @return 0 při úspěchu, -1 při chybě
  */
 static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_path) {
     log_info("Merging staging directory to chroot...");
     log_debug(1, "From: %s", staging_dir);
     log_debug(1, "To: %s", chroot_path);
     
-    // Validate inputs
+    // Validuj vstupy
     struct stat st;
     if (stat(staging_dir, &st) != 0 || !S_ISDIR(st.st_mode)) {
         log_error("Staging directory does not exist or is not a directory: %s", staging_dir);
@@ -332,7 +336,7 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
         return -1;
     }
     
-    // Check if staging dir has any content
+    // Zkontroluj zda staging adresář obsahuje nějaký obsah
     DIR *dir = opendir(staging_dir);
     if (!dir) {
         log_error("Cannot open staging directory: %s", staging_dir);
@@ -354,10 +358,10 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
         return -1;
     }
     
-    // Execute merge: cp -a staging/* chroot/
-    // -a = archive mode (preserve permissions, timestamps, symlinks, recursive)
+    // Proveď sloučení: cp -a staging/* chroot/
+    // -a = archivní mód (zachová oprávnění, časová razítka, symlinky, rekurzivně)
     char cmd[PATH_MAX * 2 + 50];
-    // Handle root path "/" specially to avoid double slash
+    // Ošetři kořenovou cestu "/" zvláštně pro zamezení dvojitého lomítka
     if (strcmp(chroot_path, "/") == 0) {
         snprintf(cmd, sizeof(cmd), "cp -a '%s'/* / 2>&1", staging_dir);
     } else {
@@ -372,11 +376,11 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
         return -1;
     }
     
-    // Capture any output from cp (errors/warnings)
+    // Zachyť veškerý výstup z cp (chyby/varování)
     char output[1024];
     int has_errors = 0;
     while (fgets(output, sizeof(output), fp) != NULL) {
-        // Remove trailing newline
+        // Odstraň závěrečný odřádkování
         size_t len = strlen(output);
         if (len > 0 && output[len-1] == '\n') {
             output[len-1] = '\0';
@@ -393,8 +397,8 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
     
     log_info("Successfully merged staging to chroot");
     
-    // Update dynamic linker cache so newly installed .so files are found immediately.
-    // Use full path because /sbin and /usr/sbin may not be in PATH.
+    // Aktualizuj cache dynamického linkeru, aby nově nainstalované .so soubory byly ihned nalezeny.
+    // Použij plnou cestu protože /sbin a /usr/sbin nemusí být v PATH.
     if (system("/sbin/ldconfig 2>/dev/null") != 0) {
         system("/usr/sbin/ldconfig 2>/dev/null");
     }
@@ -403,13 +407,13 @@ static int merge_staging_to_chroot(const char *staging_dir, const char *chroot_p
 }
 
 /**
- * Adds a package to the installed packages database.
- * 
- * @param pkg_name Package name
- * @param pkg_version Package version
- * @param files JSON array of installed files
- * @param chroot_path Root directory for the installation
- * @return 0 on success, -1 on error
+ * Přidá balík do databáze nainstalovaných balíků.
+ *
+ * @param pkg_name Název balíku
+ * @param pkg_version Verze balíku
+ * @param files JSON pole nainstalovaných souborů
+ * @param chroot_path Kořenový adresář instalace
+ * @return 0 při úspěchu, -1 při chybě
  */
 static int add_installed_package(const char *pkg_name, const char *pkg_version, json_t *files, 
                                  const char *chroot_path, const char *install_reason) {
@@ -425,7 +429,7 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
         return -1;
     }
     
-    // Remove existing entry if present (update case)
+    // Odstraň existující záznam pokud je přítomen (případ aktualizace)
     size_t index;
     json_t *value;
     json_array_foreach(packages, index, value) {
@@ -436,28 +440,28 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
         }
     }
     
-    // Create package entry
+    // Vytvoř záznam balíku
     json_t *pkg_entry = json_object();
     json_object_set_new(pkg_entry, "name", json_string(pkg_name));
     json_object_set_new(pkg_entry, "version", json_string(pkg_version));
     
-    // Add timestamp
+    // Přidej časové razítko
     time_t now = time(NULL);
     struct tm *tm_info = gmtime(&now);
     char timestamp[64];
     strftime(timestamp, sizeof(timestamp), "%Y-%m-%dT%H:%M:%SZ", tm_info);
     json_object_set_new(pkg_entry, "installed_at", json_string(timestamp));
     
-    // Add install reason (manual or dependency)
+    // Přidej důvod instalace (manual nebo dependency)
     json_object_set_new(pkg_entry, "install_reason", json_string(install_reason ? install_reason : "manual"));
     
-    // Add file manifest
+    // Přidej manifest souborů
     json_object_set_new(pkg_entry, "files", json_deep_copy(files));
     
-    // Add package to database array
+    // Přidej balík do pole databáze
     json_array_append_new(packages, pkg_entry);
     
-    // Save database
+    // Ulož databázi
     int result = save_installed_db(db, chroot_path);
     json_decref(db);
     
@@ -469,8 +473,9 @@ static int add_installed_package(const char *pkg_name, const char *pkg_version, 
 }
 
 /**
- * Main installation function.
- * Installs a package from staging directory to chroot environment.
+ * Hlavní instalační funkce.
+ *
+ * Nainstaluje balík ze staging adresáře do chroot prostředí.
  */
 int install_package(const char *pkg_name, const char *pkg_version,
                     const char *staging_dir, const char *chroot_path) {
@@ -478,7 +483,7 @@ int install_package(const char *pkg_name, const char *pkg_version,
 }
 
 /**
- * Install package with specified install reason.
+ * Nainstaluje balík se zadaným důvodem instalace.
  */
 int install_package_with_reason(const char *pkg_name, const char *pkg_version,
                                 const char *staging_dir, const char *chroot_path,
@@ -492,13 +497,13 @@ int install_package_with_reason(const char *pkg_name, const char *pkg_version,
     log_debug(1, "Staging: %s", staging_dir);
     log_debug(1, "Chroot: %s", chroot_path);
     
-    // Step 1: Validate chroot environment
+    // Krok 1: Validuj chroot prostředí
     if (!validate_chroot(chroot_path)) {
         log_error("Chroot validation failed");
         return -1;
     }
     
-    // Step 2: Collect file manifest before merge
+    // Krok 2: Shromáždi manifest souborů před sloučením
     json_t *files = collect_file_manifest(staging_dir);
     if (!files) {
         log_error("Failed to collect file manifest");
@@ -514,21 +519,21 @@ int install_package_with_reason(const char *pkg_name, const char *pkg_version,
     
     log_info("Installing %zu files...", file_count);
     
-    // Step 3: Merge staging to chroot
+    // Krok 3: Slučuj staging adresář do chroot
     if (merge_staging_to_chroot(staging_dir, chroot_path) != 0) {
         log_error("Failed to merge staging to chroot");
         json_decref(files);
         return -1;
     }
     
-    // Step 4: Execute post-install script (if exists)
+    // Krok 4: Spusť post-install skript (pokud existuje)
     if (execute_install_script(staging_dir, chroot_path) != 0) {
         log_error("Post-install script failed");
         json_decref(files);
         return -1;
     }
     
-    // Step 5: Update installed packages database
+    // Krok 5: Aktualizuj databázi nainstalovaných balíků
     if (add_installed_package(pkg_name, pkg_version, files, chroot_path, install_reason) != 0) {
         log_error("Failed to update installed packages database");
         json_decref(files);
@@ -541,10 +546,10 @@ int install_package_with_reason(const char *pkg_name, const char *pkg_version,
 }
 
 /**
- * Checks if a package is installed.
- * 
- * @param pkg_name Package name to check
- * @param chroot_path Root directory (defaults to "/" if NULL)
+ * Zkontroluje zda je balík nainstalován.
+ *
+ * @param pkg_name Název balíku ke kontrole
+ * @param chroot_path Kořenový adresář (výchozí "/" pokud NULL)
  */
 int is_package_installed(const char *pkg_name, const char *chroot_path) {
     if (!pkg_name) {
@@ -563,7 +568,7 @@ int is_package_installed(const char *pkg_name, const char *chroot_path) {
         return -1;
     }
     
-    // Search for package by name (packages is a JSON array)
+    // Hledej balík podle názvu (packages je JSON pole)
     size_t index;
     json_t *value;
     int found = 0;
@@ -584,9 +589,9 @@ int is_package_installed(const char *pkg_name, const char *chroot_path) {
 }
 
 /**
- * Retrieves list of all installed packages.
- * 
- * @param chroot_path Root directory (defaults to "/" if NULL)
+ * Vrátí seznam všech nainstalovaných balíků.
+ *
+ * @param chroot_path Kořenový adresář (výchozí "/" pokud NULL)
  */
 json_t* get_installed_packages(const char *chroot_path) {
     const char *root = chroot_path ? chroot_path : "/";
@@ -601,7 +606,7 @@ json_t* get_installed_packages(const char *chroot_path) {
         return NULL;
     }
     
-    // Return a copy of packages
+    // Vrať kopii balíků
     json_t *result = json_deep_copy(packages);
     json_decref(db);
     
@@ -609,7 +614,7 @@ json_t* get_installed_packages(const char *chroot_path) {
 }
 
 /**
- * Removes an installed package.
+ * Odstraní nainstalovaný balík.
  */
 int erase_package(const char *pkg_name, const char *chroot_path) {
     if (!pkg_name || !chroot_path) {
@@ -619,7 +624,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     
     log_info("Erasing package: %s", pkg_name);
     
-    // Load database
+    // Načti databázi
     json_t *db = load_installed_db(chroot_path);
     if (!db) {
         return -1;
@@ -632,7 +637,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
         return -1;
     }
     
-    // Find package entry in array
+    // Najdi záznam balíku v poli
     size_t pkg_index = 0;
     json_t *found_pkg = NULL;
     size_t index;
@@ -660,7 +665,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
         return -1;
     }
     
-    // Get file manifest
+    // Získej manifest souborů
     json_t *files = json_object_get(found_pkg, "files");
     if (!files || !json_is_array(files)) {
         log_error("Invalid package entry: missing file manifest");
@@ -668,7 +673,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
         return -1;
     }
     
-    // Remove files
+    // Odstraň soubory
     size_t file_count = json_array_size(files);
     size_t removed = 0;
     size_t failed = 0;
@@ -685,7 +690,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
             removed++;
             log_debug(2, "Removed: %s", file);
         } else {
-            if (errno != ENOENT) {  // Ignore if file doesn't exist
+            if (errno != ENOENT) {  // Ignoruj pokud soubor neexistuje
                 log_warn("Failed to remove: %s (%s)", file, strerror(errno));
                 failed++;
             }
@@ -694,7 +699,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
     
     log_info("Removed %zu files (%zu failed)", removed, failed);
     
-    // Remove package from database array
+    // Odstraň balík z pole databáze
     json_array_remove(packages, pkg_index);
     
     // Save database
@@ -709,7 +714,7 @@ int erase_package(const char *pkg_name, const char *chroot_path) {
 }
 
 /**
- * Find reverse dependencies - packages that depend on given package.
+ * Najde reverzní závislosti – balíky závislé na zadaném balíku.
  */
 json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
                                   Pool *pool, Repo *repo, json_t* (*load_db_cb)(const char*)) {
@@ -720,7 +725,7 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
     json_t *result = json_array();
     json_t *db = load_db_cb ? load_db_cb(chroot_path) : NULL;
     if (!db) {
-        return result;  // Return empty array
+        return result;  // Vrať prázdné pole
     }
     
     json_t *packages = json_object_get(db, "packages");
@@ -729,7 +734,7 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
         return result;
     }
     
-    // Get the solvable ID for pkg_name
+    // Získej solvable ID pro pkg_name
     Id pkg_id = 0;
     for (Id p = 1; p < pool->nsolvables; p++) {
         Solvable *s = pool_id2solvable(pool, p);
@@ -746,7 +751,7 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
         return result;
     }
     
-    // Check each installed package to see if it depends on pkg_name
+    // Zkontroluj každý nainstalovaný balík zda závisí na pkg_name
     size_t index;
     json_t *value;
     json_array_foreach(packages, index, value) {
@@ -756,23 +761,23 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
         const char *installed_pkg = json_string_value(name_obj);
         if (!installed_pkg || strcmp(installed_pkg, pkg_name) == 0) continue;
         
-        // Find solvable for this installed package
+        // Najdi solvable pro tento nainstalovaný balík
         for (Id p = 1; p < pool->nsolvables; p++) {
             Solvable *s = pool_id2solvable(pool, p);
             if (!s->name) continue;
             const char *name = pool_id2str(pool, s->name);
             if (strcmp(name, installed_pkg) != 0) continue;
             
-            // Check if this package requires pkg_name
+            // Zkontroluj zda tento balík vyžaduje pkg_name
             if (s->requires) {
                 Id *reqp = s->repo->idarraydata + s->requires;
                 while (*reqp) {
                     Id req = *reqp++;
-                    // Check if this requirement can be satisfied by pkg_name
+                    // Zkontroluj zda tuto závislost lze splnit pomocí pkg_name
                     Id *pp = pool_whatprovides_ptr(pool, req);
                     while (*pp) {
                         if (*pp == pkg_id) {
-                            // This package depends on pkg_name
+                            // Tento balík závisí na pkg_name
                             json_array_append_new(result, json_string(installed_pkg));
                             goto next_package;
                         }
@@ -790,7 +795,7 @@ json_t* find_reverse_dependencies(const char *pkg_name, const char *chroot_path,
 }
 
 /**
- * Find orphaned packages - dependencies no longer needed.
+ * Najde osiřelé balíky – závislosti, které již nejsou potřeba.
  */
 json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo, json_t* (*load_db_cb)(const char*)) {
     if (!chroot_path || !pool || !repo) {
@@ -809,7 +814,7 @@ json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo, 
         return result;
     }
     
-    // Iterate through all installed packages
+    // Iteruj přes všechny nainstalované balíky
     size_t index;
     json_t *value;
     json_array_foreach(packages, index, value) {
@@ -819,14 +824,14 @@ json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo, 
         if (!name_obj) continue;
         const char *pkg_name = json_string_value(name_obj);
         
-        // Only check packages installed as dependencies
+        // Zkontroluj pouze balíky nainstalované jako závislosti
         const char *reason = reason_obj ? json_string_value(reason_obj) : "manual";
         if (strcmp(reason, "dependency") != 0) continue;
         
-        // Check if any installed package depends on this one
+        // Zkontroluj zda na tomto balíku závisí jiný nainstalovaný balík
         json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo, load_db_cb);
         if (json_array_size(reverse_deps) == 0) {
-            // No packages depend on this - it's orphaned
+            // Na tomto balíku nezávisí žádné balíky – je osiřelý
             json_array_append_new(result, json_string(pkg_name));
         }
         json_decref(reverse_deps);
@@ -837,7 +842,7 @@ json_t* find_orphaned_packages(const char *chroot_path, Pool *pool, Repo *repo, 
 }
 
 /**
- * Remove all orphaned packages.
+ * Odstraní všechny osiřelé balíky.
  */
 int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry_run, json_t* (*load_db_cb)(const char*), int (*erase_cb)(const char*, const char*)) {
     if (!chroot_path || !pool || !repo) {
@@ -889,7 +894,7 @@ int autoremove_packages(const char *chroot_path, Pool *pool, Repo *repo, int dry
 }
 
 /**
- * Erase package with dependency checks and orphan detection.
+ * Odstraní balík s kontrolou závislostí a detekcí osiřelých balíků.
  */
 int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
                                Pool *pool, Repo *repo, int show_orphans, json_t* (*load_db_cb)(const char*), int (*erase_cb)(const char*, const char*)) {
@@ -897,7 +902,7 @@ int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
         return -1;
     }
     
-    // Check for reverse dependencies if pool/repo available
+    // Zkontroluj reverzní závislosti pokud jsou pool/repo dostupné
     if (pool && repo) {
         json_t *reverse_deps = find_reverse_dependencies(pkg_name, chroot_path, pool, repo, load_db_cb);
         if (reverse_deps) {
@@ -920,10 +925,10 @@ int erase_package_with_checks(const char *pkg_name, const char *chroot_path,
         }
     }
     
-    // Perform removal
+    // Proveď odstranění
     int result = erase_cb ? erase_cb(pkg_name, chroot_path) : -1;
     
-    // Show orphaned packages after removal
+    // Zobraz osiřelé balíky po odstranění
     if (result == 0 && show_orphans && pool && repo) {
         json_t *orphaned = find_orphaned_packages(chroot_path, pool, repo, load_db_cb);
         if (orphaned) {

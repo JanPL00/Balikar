@@ -1,6 +1,6 @@
 //
-// Command: repos - Display repository information
-// Facade over config.c list_repositories()
+// Příkaz: repos – zobrazí informace o repozitářích
+// Fasáda nad config.c list_repositories()
 //
 
 #include "../includes/command_context.h"
@@ -8,22 +8,23 @@
 #include <stdio.h>
 
 /**
- * Execute 'repos' command.
- * Shows all configured repositories and currently active repository.
- * No pool/repo loading needed - pure config display.
+ * Spustí příkaz 'repos'.
+ *
+ * Zobrazí všechny nakonfigurované repozitáře a aktuálně aktivní repozitář.
+ * Nevyžaduje načítání pool/repo – jde o čisté zobrazení konfigurace.
  */
 int cmd_repos_execute(CommandContext *ctx) {
     if (!ctx) return 1;
     
-    // List all configured repositories from repos.conf
+    // Vypiš všechny nakonfigurované repozitáře z repos.conf
     list_repositories();
     
-    // Show currently used repository
+    // Zobraz aktuálně používaný repozitář
     const char *repo_path = command_context_get_repo_path(ctx);
     printf("\nCurrently using: %s\n", repo_path);
     
-    // If pool/repo were already loaded, show package count
-    // Otherwise skip (avoid unnecessary loading)
+    // Pokud byl pool/repo již načten, zobraz počet balíků
+    // Jinak přeskoč (vyvaruj se zbytečného načítání)
     if (ctx->resources.repo) {
         printf("Packages available: %d\n", ctx->resources.repo->nsolvables);
     }

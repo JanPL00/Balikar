@@ -1,14 +1,12 @@
-//
-// Created by placeja5 on 11/5/25.
-//
-
 #include "includes/print.h"
 
 /**
- * Calculates and displays disk usage changes for a transaction.
- * Shows how much disk space and inodes will be used/freed in key directories.
- * Useful for checking if sufficient disk space is available before installation.
- * @param trans Transaction to analyze
+ * Vypočítá a zobrazí změny využití disku pro transakci.
+ *
+ * Ukáže kolik místa na disku a inodů bude použito/uvolněno v klíčových adresářích.
+ * Slouží ke kontrole dostatku místa před instalací.
+ *
+ * @param trans Transakce k analýze
  */
 void print_disk_usage_changes(Transaction *trans) {
     if (!trans || !trans->pool) {
@@ -16,21 +14,21 @@ void print_disk_usage_changes(Transaction *trans) {
         return;
     }
 
-    DUChanges duc[4];  // Monitor 4 key directories
+    DUChanges duc[4];  // Sleduj 4 klíčové adresáře
     int i;
 
-    // Configure paths to monitor
-    // These represent key directories in LFS/staging setup
+    // Konfiguruj cesty ke sledování
+    // Představují klíčové adresáře v LFS/staging nastavení
     memset(duc, 0, sizeof(duc));
-    duc[0].path = "/";                   // Root filesystem (chroot path)
-    duc[1].path = STAGING_DIR "/usr";    // Staging /usr directory
-    duc[2].path = "/sbin";               // System binaries
-    duc[3].path = "/etc";                // Configuration files
+    duc[0].path = "/";                   // Kořenový souborový systém (cesta chroot)
+    duc[1].path = STAGING_DIR "/usr";    // Staging adresář /usr
+    duc[2].path = "/sbin";               // Systémové binárky
+    duc[3].path = "/etc";                // Konfigurační soubory
 
-    // Calculate disk usage changes using libsolv
+    // Vypočítej změny využití disku pomocí libsolv
     transaction_calc_duchanges(trans, duc, 4);
 
-    // Display changes for paths that have modifications
+    // Zobraz změny pro cesty, které mají úpravy
     for (i = 0; i < 4; i++) {
         if (duc[i].kbytes || duc[i].files) {
             printf("Disk usage changes for %s: %lld KB, %lld inodes\n",
@@ -40,10 +38,12 @@ void print_disk_usage_changes(Transaction *trans) {
 }
 
 /**
- * Displays a summary of transaction steps to the user.
- * Shows which packages will be installed, erased, or modified.
- * Transaction is ordered by dependencies before display.
- * @param trans Transaction to display
+ * Zobrazí souhrn kroků transakce uživateli.
+ *
+ * Ukáže které balíky budou nainstalovány, odstraněny nebo upraveny.
+ * Transakce je seřazena podle závislostí před zobrazením.
+ *
+ * @param trans Transakce k zobrazení
  */
 void display_transaction(Transaction *trans) {
     if (!trans || !trans->pool) {
@@ -56,20 +56,20 @@ void display_transaction(Transaction *trans) {
 
     printf("Transaction summary:\n\n");
 
-    // Order transaction steps by dependencies
-    // Ensures packages are processed in correct order
+    // Seřaď kroky transakce podle závislostí
+    // Zajistí zpracování balíků ve správném pořadí
     transaction_order(trans, 0);
 
-    // Display each transaction step
+    // Zobraz každý krok transakce
     for (i = 0; i < trans->steps.count; i++) {
         Id p = trans->steps.elements[i];
-        // Get transaction type (install, erase, etc.)
+        // Získej typ transakce (instalace, mazání atd.)
         Id type = transaction_type(trans, p, SOLVER_TRANSACTION_RPM_ONLY);
 
-        // Format package name for display
+        // Formátuj název balíku pro zobrazení
         char *solv_str = solvable_to_string(pool, p);
         
-        // Display action based on transaction type
+        // Zobraz akci podle typu transakce
         switch (type) {
             case SOLVER_TRANSACTION_ERASE:
                 printf("Erase: %s\n", solv_str ? solv_str : pool_solvid2str(pool, p));
@@ -85,6 +85,6 @@ void display_transaction(Transaction *trans) {
         free(solv_str);
     }
 
-    // Display summary statistics
+    // Zobraz souhrnné statistiky
     printf("\nTotal steps: %d\n", trans->steps.count);
 }

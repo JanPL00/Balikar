@@ -1,6 +1,6 @@
 //
-// Command: repo - Manage repositories (list, add, remove, enable, disable)
-// Facade over config.c repository management functions
+// Příkaz: repo – správa repozitářů (list, add, remove, enable, disable)
+// Fasáda nad funkcemi správy repozitářů v config.c
 //
 
 #include "../includes/command_context.h"
@@ -9,23 +9,24 @@
 #include <string.h>
 
 /**
- * Execute 'repo' command with subcommands.
- * No pool/repo needed - pure configuration management.
- * 
- * Subcommands:
- * - list: Show all repositories
- * - add <name> <url> [priority]: Add new repository
- * - remove <name>: Remove repository
- * - enable <name>: Enable repository
- * - disable <name>: Disable repository
+ * Spustí příkaz 'repo' s podpříkazy.
+ *
+ * Nevyžaduje pool/repo – jde o čistou správu konfigurace.
+ *
+ * Podpříkazy:
+ * - list: Zobrazí všechny repozitáře
+ * - add <název> <url> [priorita]: Přidá nový repozitář
+ * - remove <název>: Odstraní repozitář
+ * - enable <název>: Povolí repozitář
+ * - disable <název>: Zakáže repozitář
  */
 int cmd_repo_execute(CommandContext *ctx) {
     if (!ctx) return 1;
     
-    // Initialize repo config
+    // Inicializuj konfiguraci repo
     init_repo_config();
     
-    // Subcommand is in package_name field
+    // Podpříkaz je v poli package_name
     const char *subcommand = ctx->config.package_name;
     
     if (!subcommand) {
@@ -34,17 +35,17 @@ int cmd_repo_execute(CommandContext *ctx) {
         return 1;
     }
     
-    // Handle 'list' subcommand
+    // Zpracuj podpříkaz 'list'
     if (strcmp(subcommand, "list") == 0) {
         list_repositories();
         free_repo_config();
         return 0;
     }
     
-    // For other subcommands, we need to access raw argc/argv
-    // Context doesn't store original argc/argv, so we need to handle this differently
-    // For now, log error and suggest using main.c implementation
-    // This will be properly handled when we integrate with main.c
+    // Pro ostatní podpříkazy potřebujeme přístup k surové argc/argv
+    // Kontext neuchovává původní argc/argv, proto je třeba to řešit jinak
+    // Prozatím zaloguj chybu a navrhni použití implementace main.c
+    // Bude správně ošetřeno při integraci s main.c
     
     log_error("Repo subcommand '%s' requires additional arguments not available in current context", subcommand);
     log_error("This will be fixed when main.c is updated to use command pattern");

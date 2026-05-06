@@ -1,10 +1,5 @@
-========================================
-                 CZECH
-========================================
-
 cmd_repo
 =============
-(English below)
 
 Popis
 ----
@@ -58,64 +53,3 @@ Integrace v projektu
 Pro podpříkaz "list" nepotřebuje pool/repo – čte přímo konfiguraci.
 Registrace v command_registry.c: "repo" → cmd_repo_execute
 s validátorem cmd_repo_validate.
-
-
-========================================
-                ENGLISH
-========================================
-
-cmd_repo
-=============
-
-Description
-----
-Source file: commands/cmd_repo.c
-
-The module implements the repo command, which manages individual repositories through
-subcommands: list, add, remove, enable, disable.
-
-IMPORTANT NOTE: Of all subcommands, only "list" is fully implemented. Other subcommands
-(add, remove, enable, disable) are recognized and dispatched, but their body returns
-log_error with a "not yet implemented" or similar message. The code structure prepares
-the interface for future implementation.
-
-
-Subcommands
-----
-list    – lists all repositories from configuration (URL, name, enabled/disabled status)
-add     – adds a new repository to the configuration file (not implemented)
-remove  – removes a repository from configuration (not implemented)
-enable  – activates (enabled=true) an existing repository (not implemented)
-disable – deactivates (enabled=false) an existing repository (not implemented)
-
-
-Key functions
-----
-
-static int repo_list(CommandContext *ctx);
-- Loads repository configuration (read_repos_conf or ctx config).
-- Prints each repository: name, URL, status (enabled/disabled).
-- Marks with asterisk (*) the currently active repository (if defined).
-- Returns 0 always (even with empty list).
-
-static int repo_add(CommandContext *ctx, const char *url);
-static int repo_remove(CommandContext *ctx, const char *name);
-static int repo_enable(CommandContext *ctx, const char *name);
-static int repo_disable(CommandContext *ctx, const char *name);
-- Stub functions – log an error and return 1.
-
-int cmd_repo_execute(CommandContext *ctx);
-- Parses the first positional argument as a subcommand (list/add/remove/enable/disable).
-- Dispatches to the appropriate static function.
-- Without subcommand: prints usage help and returns 1.
-
-int cmd_repo_validate(CommandContext *ctx);
-- Verifies that at least one positional argument (subcommand) is provided.
-- Returns 0 on success, 1 on failure.
-
-
-Project integration
-----
-The "list" subcommand does not require pool/repo – reads configuration directly.
-Registered in command_registry.c: "repo" → cmd_repo_execute
-with validator cmd_repo_validate.

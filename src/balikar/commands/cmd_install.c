@@ -1,7 +1,5 @@
-//
-// Command: install/build - Complete workflow from solving to installation
-// This is the most complex command - handles both install and build
-//
+// Příkaz: install/build – kompletní workflow od řešení závislostí po instalaci
+// Nejkomplexnější příkaz – zpracovává jak install, tak build
 
 #include "../includes/command_context.h"
 #include "../includes/solver.h"
@@ -15,22 +13,22 @@
 #include <string.h>
 
 /**
- * Shared implementation for install and build commands.
- * 
- * @param ctx Command context
- * @param do_install If 1, perform installation after build. If 0, only build.
- * @return Exit code
+ * Sdílená implementace příkazů install a build.
+ *
+ * @param ctx Kontext příkazu
+ * @param do_install Pokud 1, provede instalaci po sestavení. Pokud 0, pouze sestaví.
+ * @return Exit kód
  */
 int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
     if (!ctx) return 1;
     
-    // Validation already done by registry
+    // Validace již provedena registrem
     if (!ctx->config.package_name && !ctx->config.local_package_allocated) {
         log_error("Package name or --local-package required");
         return 1;
     }
     
-    // Ensure pool and repo are loaded
+    // Zajisti načtení poolu a repo
     Pool *pool = command_context_ensure_pool(ctx);
     Repo *repo = command_context_ensure_repo(ctx);
     if (!pool || !repo) {
@@ -46,14 +44,14 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
              do_install ? "install" : "build", 
              pkg_name ? pkg_name : ctx->config.local_package_allocated);
     
-    // Create solver
+    // Vytvoř solver
     Solver *solv = ctx->subsystems.create_solver(pool);
     if (!solv) {
         log_error("Failed to create solver");
         return ERR_SOLVE_FAIL;
     }
     
-    // Solve dependencies
+    // Vyřeš závislosti
     Queue *solution = ctx->subsystems.solve_dependencies(
         solv, pkg_name, pool, repo, target_root, get_custom_mkdeps
     );
@@ -64,7 +62,7 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         return ERR_SOLVE_FAIL;
     }
     
-    // Create transaction
+    // Vytvoř transakci
     Transaction *trans = solver_create_transaction(solv);
     if (!trans) {
         log_error("Failed to create transaction");
@@ -73,14 +71,14 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         return ERR_SOLVE_FAIL;
     }
     
-    // Display transaction
+    // Zobraz transakci
     if (trans->steps.count == 0) {
         log_info("No changes needed - package may already be resolved");
     } else {
         display_transaction(trans);
     }
     
-    // In dry-run mode, stop here
+    // V dry-run módu zastav zde
     if (ctx->config.dry_run) {
         log_info("DRY-RUN: Skipping download and build");
         transaction_free(trans);
@@ -89,7 +87,7 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         return 0;
     }
     
-    // Confirm with user
+    // Potvrď s uživatelem
     if (!user_confirm("Proceed with transaction?", 1)) {
         log_info("Transaction cancelled by user");
         transaction_free(trans);
@@ -98,7 +96,7 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         return 0;
     }
     
-    // Download and build packages
+    // Stáhni a sestav balíky
     log_info("Downloading packages...");
     transaction_order(trans, 0);
     
@@ -117,13 +115,13 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         const char *sname = pool_id2str(pool, s->name);
         const char *version = pool_id2str(pool, s->evr);
         
-        // Skip if already installed
+        // Přeskoč pokud je již nainstalován
         if (is_package_installed(sname, target_root)) {
             log_info("Skipping %s - already installed in %s", sname, target_root);
             continue;
         }
         
-        // Get source download URL
+        // Získej zdrojovou URL ke stažení
         Repodata *data = repo_id2repodata(repo, 1);
         const char *source_url = get_custom_source(data, p, pool);
         
@@ -132,7 +130,7 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
             continue;
         }
         
-        // Download source archive
+        // Stáhni zdrojový archiv
         log_info("Downloading %s from %s", sname, source_url);
         const char *repo_path = command_context_get_repo_path(ctx);
         json_t *source_array = get_custom_source_array(data, p, pool);
@@ -144,11 +142,11 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
             break;
         }
         
-        // Download extras (patches, custom build scripts)
+        // Stáhni extras (záplaty, vlastní build skripty)
         json_t *extras = get_custom_extras(data, p, pool);
         ctx->subsystems.download_extras(extras, sname, version, repo_path, NULL);
         
-        // Build package into staging directory
+        // Sestav balík do staging adresáře
         log_info("Building %s...", sname);
         int is_group = get_custom_is_group(data, p, pool);
         int no_package = get_custom_no_package(data, p, pool);
@@ -165,17 +163,17 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
         
         log_info("Successfully built %s", sname);
         
-        // Install if this is install command (not just build)
+        // Instaluj pokud jde o příkaz install (ne jen build)
         if (do_install) {
             const char *root_display = strcmp(target_root, "/") == 0 ? 
                                        "system root (/)" : target_root;
             log_info("Installing %s to %s...", sname, root_display);
             
-            // Determine install reason: manual if it's the requested package
+            // Urči důvod instalace: manual pokud jde o požadovaný balík
             const char *install_reason = strcmp(sname, pkg_name) == 0 ? 
                                         "manual" : "dependency";
             
-            // Install from staging to target root
+            // Instaluj ze staging adresáře do cílového rootu
             if (ctx->subsystems.install_package_with_reason(
                     sname, version, staging, target_root, install_reason) != 0) {
                 log_error("Installation failed for %s", sname);
@@ -185,7 +183,7 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
             
             log_info("Successfully installed %s to %s", sname, root_display);
             
-            // Cleanup staging directory
+            // Vyčisti staging adresář
             char cleanup_cmd[512];
             snprintf(cleanup_cmd, sizeof(cleanup_cmd), 
                     "rm -rf '%s' 2>/dev/null && mkdir -p '%s'", staging, staging);
@@ -206,7 +204,7 @@ int cmd_install_or_build_execute(CommandContext *ctx, int do_install) {
  * Complete workflow: solve → download → build → install
  */
 int cmd_install_execute(CommandContext *ctx) {
-    return cmd_install_or_build_execute(ctx, 1);  // do_install=1
+    return cmd_install_or_build_execute(ctx, 1);  // do_install=1 (provést instalaci)
 }
 
 /**
@@ -214,5 +212,5 @@ int cmd_install_execute(CommandContext *ctx) {
  * Workflow: solve → download → build (no install)
  */
 int cmd_build_execute(CommandContext *ctx) {
-    return cmd_install_or_build_execute(ctx, 0);  // do_install=0
+    return cmd_install_or_build_execute(ctx, 0);  // do_install=0 (pouze sestavení)
 }

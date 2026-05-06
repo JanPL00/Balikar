@@ -1,42 +1,42 @@
-// Created by placeja5 on 11/14/25.
+
 //
 
 #include "includes/downloader.h"
 
 /**
- * CURL write callback for downloading files.
- * 
- * Standard libcurl callback that writes downloaded data to a file stream.
- * 
- * @param ptr Pointer to downloaded data
- * @param size Size of each data element
- * @param nmemb Number of elements
- * @param stream FILE* to write to
- * @return Number of bytes written
+ * Callback pro zápis dat při stahování přes CURL.
+ *
+ * Standardní libcurl callback zapisující stažená data do souborového streamu.
+ *
+ * @param ptr Ukazatel na stažená data
+ * @param size Velikost jednoho datového elementu
+ * @param nmemb Počet elementů
+ * @param stream FILE* pro zápis
+ * @return Počet zapsaných bytů
  */
 static size_t write_data(void *ptr, size_t size, size_t nmemb, void *stream) {
     return fwrite(ptr, size, nmemb, (FILE *)stream);
 }
 
 /**
- * Progress callback for CURL downloads.
- * 
- * Displays progress bar or spinner during download. Shows percentage,
- * downloaded/total size in MB, and visual progress indicator.
- * 
- * @param clientp Client data pointer (unused)
- * @param dltotal Total download size
- * @param dlnow Current downloaded size
- * @param ultotal Total upload size (unused)
- * @param ulnow Current upload size (unused)
- * @return 0 to continue, non-zero to abort
+ * Callback průběhu stahování pro CURL.
+ *
+ * Zobrazuje progress bar nebo spinner během stahování. Ukazuje procenta,
+ * staženo/celkem v MB a vizuální indikátor průběhu.
+ *
+ * @param clientp Ukazatel na klientská data (nevyužito)
+ * @param dltotal Celková velikost ke stažení
+ * @param dlnow Aktuálně stažená velikost
+ * @param ultotal Celková velikost k odeslání (nevyužito)
+ * @param ulnow Aktuálně odeslaná velikost (nevyužito)
+ * @return 0 pro pokračování, nenulová hodnota pro přerušení
  */
 static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow, curl_off_t ultotal, curl_off_t ulnow) {
     (void)clientp;
     (void)ultotal;
     (void)ulnow;
     
-    // Show spinner when total size is unknown
+    // Zobraz spinner pokud není celková velikost známa
     if (dltotal <= 0) {
         static int spin_idx = 0;
         char spinner[] = "|/-\\";
@@ -47,16 +47,16 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
         return 0;
     }
     
-    // Calculate progress percentage and bar fill
+    // Vypočítej procento pokroku a výplň lišty
     int percent = (int)((100.0 * dlnow) / dltotal);
     int bar_width = 50;
     int filled = (bar_width * dlnow) / dltotal;
     
-    // Format sizes in megabytes for display
+    // Formátuj velikosti v megabajtech pro zobrazení
     double dl_mb = dlnow / 1024.0 / 1024.0;
     double total_mb = dltotal / 1024.0 / 1024.0;
     
-    // Progress bar: [=====>     ] 45% (5.2MB/11.5MB)
+    // Lišta průběhu: [=====>     ] 45% (5.2MB/11.5MB)
     fprintf(stderr, "\r[");
     for (int i = 0; i < bar_width; i++) {
         if (i < filled) fprintf(stderr, "=");
@@ -66,13 +66,13 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     fprintf(stderr, "] %3d%% (%.1fMB/%.1fMB)", percent, dl_mb, total_mb);
     fflush(stderr);
     
-    // Only print newline once at 100%, not on every callback after completion
+    // Tiskni nový řádek pouze jednou při 100%, ne při každém callbacku po dokončení
     static int completed = 0;
     if (dlnow >= dltotal && dltotal > 0 && !completed) {
-        fprintf(stderr, "\n");  // New line after completion
+        fprintf(stderr, "\n");  // Nový řádek po dokončení
         completed = 1;
     } else if (dlnow < dltotal) {
-        completed = 0;  // Reset for next download
+        completed = 0;  // Reset pro další stahování
     }
     
     return 0;
@@ -81,22 +81,22 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
 
 
 /**
- * Extract repository archive and check for embedded source files.
- * 
- * This function enables packages to include source archives directly in the
- * repository archive (e.g., gzip-1.14.tar.bz2 contains gzip-1.14/gzip-1.14.tar.xz).
- * 
- * Process:
- * 1. Extract repository archive to temporary directory
- * 2. Read index.json to get source[0].url
- * 3. Check if source URL is a local filename (no ://)
- * 4. If local file exists in extracted archive, copy to cache
- * 
- * @param repo_archive_path Path to repository archive in cache
- * @param pkg_name Package name
- * @param version Package version
- * @param target_cache_path Where to copy the embedded source
- * @return 1 if embedded source found and copied, 0 otherwise
+ * Rozbalí archiv repozitáře a zkontroluje vložené zdrojové soubory.
+ *
+ * Umožňuje balíkům obsahovat zdrojové archivy přímo v archivu repozitáře
+ * (např. gzip-1.14.tar.bz2 obsahuje gzip-1.14/gzip-1.14.tar.xz).
+ *
+ * Postup:
+ * 1. Rozbalí archiv repozitáře do dočasného adresáře
+ * 2. Přečte index.json pro získání source[0].url
+ * 3. Zkontroluje zda URL zdroje je lokální název souboru (bez ://)
+ * 4. Pokud lokální soubor existuje v rozbaleném archivu, zkopíruje ho do cache
+ *
+ * @param repo_archive_path Cesta k archivu repozitáře v cache
+ * @param pkg_name Název balíku
+ * @param version Verze balíku
+ * @param target_cache_path Kam zkopírovat vložený zdrojový soubor
+ * @return 1 pokud byl vložený zdroj nalezen a zkopírován, 0 jinak
  */
 static int extract_and_check_embedded_source(const char *repo_archive_path,
                                              const char *pkg_name,
@@ -106,12 +106,12 @@ static int extract_and_check_embedded_source(const char *repo_archive_path,
         return 0;
     }
     
-    // Check if repository archive exists
+    // Zkontroluj zda existuje archiv repozitáře
     if (access(repo_archive_path, F_OK) != 0) {
         return 0;
     }
     
-    // Create temporary extraction directory
+    // Vytvoř dočasný adresář pro rozbalení
     char tmp_extract[2048];
     snprintf(tmp_extract, sizeof(tmp_extract), "%s/balikar_extract_%s_%d", 
              CACHE_DIR, pkg_name, (int)getpid());
@@ -122,20 +122,20 @@ static int extract_and_check_embedded_source(const char *repo_archive_path,
         return 0;
     }
     
-    // Extract repository archive
+    // Rozbal archiv repozitáře
     char extract_cmd[4096];
     snprintf(extract_cmd, sizeof(extract_cmd), "tar -xjf '%s' -C '%s' 2>/dev/null",
              repo_archive_path, tmp_extract);
     
     int result = 0;
     if (system(extract_cmd) == 0) {
-        // Look for index.json in extracted package directory
+        // Hledej index.json v rozbaleném adresáři balíku
         char index_path[2560];
         snprintf(index_path, sizeof(index_path), "%s/%s-%s/index.json",
                 tmp_extract, pkg_name, version);
         
         if (access(index_path, F_OK) == 0) {
-            // Parse index.json to get source array
+            // Parsuj index.json pro získání pole zdrojů
             json_error_t error;
             json_t *index_root = json_load_file(index_path, 0, &error);
             
@@ -151,14 +151,14 @@ static int extract_and_check_embedded_source(const char *repo_archive_path,
                         if (url_json && json_is_string(url_json)) {
                             const char *source_file = json_string_value(url_json);
                             
-                            // Check if it's a local filename (not a URL with ://)
+                            // Zkontroluj zda jde o lokální název souboru (ne URL s ://)
                             if (!strstr(source_file, "://")) {
                                 char embedded_path[4096];
                                 snprintf(embedded_path, sizeof(embedded_path), "%s/%s-%s/%s",
                                         tmp_extract, pkg_name, version, source_file);
                                 
                                 if (access(embedded_path, F_OK) == 0) {
-                                    // Copy embedded source to cache
+                                    // Zkopíruj vložený zdroj do cache
                                     char copy_cmd[8192];
                                     snprintf(copy_cmd, sizeof(copy_cmd), "cp '%s' '%s'",
                                             embedded_path, target_cache_path);
@@ -177,7 +177,7 @@ static int extract_and_check_embedded_source(const char *repo_archive_path,
         }
     }
     
-    // Cleanup temporary extraction directory
+    // Ukliď dočasný adresář pro rozbalení
     char rm_cmd[2560];
     snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf '%s'", tmp_extract);
     system(rm_cmd);
@@ -210,7 +210,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
         return NULL;
     }
 
-    char *cache_dir = CACHE_DIR;  // strdup if modification needed
+    char *cache_dir = CACHE_DIR;  // strdup pokud je nutná modifikace
     char cmd[2048];
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", cache_dir);
     if (system(cmd) != 0) {
@@ -222,17 +222,17 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
     char *pkg_name = pool_id2str(pool, s->name);
     char *version = pool_id2str(pool, s->evr);
     
-    // Get solvable ID from Solvable pointer
+    // Získej ID solvable z ukazatele Solvable
     Id p = s - pool->solvables;
     
-    // Source array is passed injected from main.c
+    // Pole zdrojů je předáno injektováním z main.c
     size_t source_count = 0;
     if (source_array && json_is_array(source_array)) {
         source_count = json_array_size(source_array);
     }
     
-    // Detect file extension from first URL for cache path
-    const char *first_url = loc;  // fallback
+    // Detekuj příponu souboru z první URL pro cestu cache
+    const char *first_url = loc;  // záloha
     if (source_count > 0) {
         json_t *first_source = json_array_get(source_array, 0);
         if (first_source && json_is_object(first_source)) {
@@ -245,23 +245,23 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
     
     char cache_path[2048];
     
-    // Detect file extension including .tar.* formats
-    const char *ext = ".tar.xz";  // default
+    // Detekuj příponu souboru včetně formátů .tar.*
+    const char *ext = ".tar.xz";  // výchozí
     const char *last_dot = strrchr(first_url, '.');
     if (last_dot) {
         const char *last_slash = strrchr(first_url, '/');
         const char *filename = last_slash ? last_slash + 1 : first_url;
         
-        // Check for .tar.{xz,gz,bz2} formats
+        // Zkontroluj formáty .tar.{xz,gz,bz2}
         if (strstr(filename, ".tar.xz")) ext = ".tar.xz";
         else if (strstr(filename, ".tar.gz")) ext = ".tar.gz";
         else if (strstr(filename, ".tar.bz2")) ext = ".tar.bz2";
         else if (strstr(filename, ".tgz")) ext = ".tgz";
-        else ext = last_dot;  // other extension
+        else ext = last_dot;  // jiná přípona
     }
     snprintf(cache_path, sizeof(cache_path), "%s/%s-%s%s", cache_dir, pkg_name, version, ext);
 
-    // Check cache (no verification)
+    // Zkontroluj cache (bez ověření)
     if (access(cache_path, F_OK) == 0) {
         log_info("Using cached file (no verification): %s", cache_path);
         free(cache_dir);
@@ -269,15 +269,15 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
         return fopen(cache_path, "r");
     }
 
-    // NEW: Check for embedded source in repository archive BEFORE downloading from remote
-    // This allows packages to include source files directly (e.g., gzip-1.14.tar.bz2 contains gzip-1.14.tar.xz)
-    if (loc && strstr(loc, "://")) {  // loc is a remote repository URL
-        // Construct repository archive path (always .tar.bz2)
+    // NOVÉ: Zkontroluj vložený zdroj v archivu repozitáře PŘED stahováním ze vzdáleného zdroje
+    // Umožňuje balíkům zahrnovat zdrojové soubory přímo (např. gzip-1.14.tar.bz2 obsahuje gzip-1.14.tar.xz)
+    if (loc && strstr(loc, "://")) {  // loc je vzdálená URL repozitáře
+        // Sestav cestu archivu repozitáře (vždy .tar.bz2)
         char repo_archive_path[2048];
         snprintf(repo_archive_path, sizeof(repo_archive_path), "%s/%s-%s.tar.bz2", 
                 cache_dir, pkg_name, version);
         
-        // Download repository archive if not cached
+        // Stáhni archiv repozitáře pokud není v cache
         if (access(repo_archive_path, F_OK) != 0) {
             log_debug(1, "Downloading repository archive: %s", loc);
             if (download_url_to_file(loc, repo_archive_path) != 0) {
@@ -286,16 +286,16 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
             }
         }
         
-        // Check for embedded source in repository archive
+        // Zkontroluj vložený zdroj v archivu repozitáře
         if (extract_and_check_embedded_source(repo_archive_path, pkg_name, version, cache_path)) {
-            // Embedded source was found and copied to cache
+            // Vložený zdroj byl nalezen a zkopírován do cache
             free(cache_dir);
             if (source_array) json_decref(source_array);
             return fopen(cache_path, "r");
         }
     }
 
-    // Try each URL in source array until one succeeds
+    // Zkus každou URL v poli zdrojů dokud jedna neuspěje
     int download_success = 0;
     for (size_t url_idx = 0; url_idx < source_count && !download_success; url_idx++) {
         json_t *source_obj = json_array_get(source_array, url_idx);
@@ -307,7 +307,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
         const char *actual_url = json_string_value(url_json);
         log_info("Trying source[%zu].url: %s", url_idx, actual_url);
         
-        // Determine if source is local file or remote URL
+        // Urči zda je zdroj lokální soubor nebo vzdálená URL
         int is_remote = (strncmp(actual_url, "http://", 7) == 0 || 
                         strncmp(actual_url, "https://", 8) == 0 ||
                         strncmp(actual_url, "ftp://", 6) == 0 || 
@@ -315,30 +315,30 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
         int is_local = !is_remote;
         
         if (is_local) {
-            // Try multiple possible local paths for the source file
+            // Zkus více možných lokálních cest pro zdrojový soubor
             char full_local_path[2048];
             int found_local = 0;
             
-            // If it's an absolute path, use it directly
+            // Pokud jde o absolutní cestu, použij ji přímo
             if (actual_url[0] == '/') {
                 snprintf(full_local_path, sizeof(full_local_path), "%s", actual_url);
                 if (access(full_local_path, F_OK) == 0) {
                     found_local = 1;
                 }
             }
-            // If it's a ./ or ../ relative path, try relative to repo_path (if local)
+            // Pokud jde o relativní cestu ./ nebo ../, zkus relativně k repo_path (pokud lokální)
             else if (strncmp(actual_url, "./", 2) == 0 || strncmp(actual_url, "../", 3) == 0) {
                 if (repo_path && repo_path[0] == '/') {
-                    // Only works if repo_path is local (not a URL)
+                    // Funguje pouze pokud je repo_path lokální (ne URL)
                     snprintf(full_local_path, sizeof(full_local_path), "%s/%s", repo_path, actual_url);
                     if (access(full_local_path, F_OK) == 0) {
                         found_local = 1;
                     }
                 }
             }
-            // Otherwise it's a relative filename - try multiple locations:
+            // Jinak jde o relativní název souboru – zkus více umístění:
             else {
-                // 1. Try relative to repo_path (if it's a local path, not URL)
+                // 1. Zkus relativně k repo_path (pokud jde o lokální cestu, ne URL)
                 if (repo_path && repo_path[0] == '/' && pkg_name && version) {
                     char first_letter = tolower(pkg_name[0]);
                     snprintf(full_local_path, sizeof(full_local_path), "%s/%c/%s/%s-%s/%s",
@@ -349,7 +349,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
                     }
                 }
                 
-                // 2. Try common local repository locations if not found yet
+                // 2. Zkus běžná lokální umístění repozitáře pokud ještě nenalezeno
                 if (!found_local && pkg_name && version) {
                     const char *local_repo_paths[] = {
                         "/home/placeja5/Balikar/balikar-repository",
@@ -369,7 +369,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
                     }
                 }
                 
-                // 3. Try as-is (current directory)
+                // 3. Zkus tak jak je (aktuální adresář)
                 if (!found_local) {
                     snprintf(full_local_path, sizeof(full_local_path), "%s", actual_url);
                     if (access(full_local_path, F_OK) == 0) {
@@ -378,13 +378,13 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
                 }
             }
             
-            // If no local file found, skip to next source
+            // Pokud nebyl nalezen žádný lokální soubor, přeskoč na další zdroj
             if (!found_local) {
                 log_info("Local source file not found for: %s (trying next source)", actual_url);
-                continue;  // Try next source
+                continue;  // Zkus další zdroj
             }
             
-            // Try local file copy
+            // Zkus kopírování lokálního souboru
             char cmd_local[2048];
             snprintf(cmd_local, sizeof(cmd_local), "cp \"%s\" \"%s\"", full_local_path, cache_path);
             if (system(cmd_local) == 0) {
@@ -394,7 +394,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
                 log_warn("Failed to copy from source[%zu]: %s", url_idx, full_local_path);
             }
         } else {
-            // Try remote download
+            // Zkus vzdálené stahování
             FILE *fp = fopen(cache_path, "wb");
             if (!fp) {
                 log_warn("Failed to open %s for writing, trying next source", cache_path);
@@ -410,7 +410,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
 
             log_info("Downloading from: %s", actual_url);
             
-            // Configure CURL options for download
+            // Konfiguruj volby CURL pro stahování
             curl_easy_setopt(curl, CURLOPT_URL, actual_url);
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
@@ -420,7 +420,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
             curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
             curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
             
-            // Progress bar callback
+            // Callback lišty průběhu
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
@@ -436,12 +436,12 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
                 download_success = 1;
             } else {
                 log_warn("Download failed from source[%zu]: %s (%s)", url_idx, actual_url, curl_easy_strerror(res));
-                remove(cache_path);  // Remove partial download
+                remove(cache_path);  // Odstraň neúplné stahování
             }
         }
     }
     
-    // If no source URL worked, try local fallback from repository structure
+    // Pokud žádná zdrojová URL nefungovala, zkus lokální zálohu ze struktury repozitáře
     if (!download_success && repo_path) {
         char local_attempt[2048];
         const char *pkg_first_char = pkg_name ? pkg_name : "unknown";
@@ -461,7 +461,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
         }
     }
     
-    // Cleanup and return result
+    // Uklid a vrať výsledek
     if (source_array) json_decref(source_array);
     
     if (!download_success) {
@@ -472,7 +472,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
 
     log_info("Package cached at: %s", cache_path);
 
-    // Return fopen for builder (from cache)
+    // Vrať fopen pro builder (z cache)
     FILE *fp = fopen(cache_path, "rb");
     free(cache_dir);
     return fp;
@@ -503,13 +503,13 @@ static void try_download_build_script(const char *pkg_name, const char *version,
     char build_path[2048];
     snprintf(build_path, sizeof(build_path), "%s/build.sh", extras_subdir);
     
-    // Skip if build.sh script already cached
+    // Přeskoč pokud je skript build.sh již v cache
     if (access(build_path, F_OK) == 0) {
         log_info("Build script already cached: %s", build_path);
         return;
     }
     
-    // Construct repository archive URL using standard structure
+    // Sestav URL archivu repozitáře pomocí standardní struktury
     char first_letter = tolower(pkg_name[0]);
     char repo_archive_url[2048];
     snprintf(repo_archive_url, sizeof(repo_archive_url), "%s/%c/%s/%s-%s.tar.bz2", 
@@ -517,11 +517,11 @@ static void try_download_build_script(const char *pkg_name, const char *version,
     
     log_info("Repository archive URL: %s", repo_archive_url);
     
-    // Download repository archive to temporary file
+    // Stáhni archiv repozitáře do dočasného souboru
     char temp_archive[2048];
     snprintf(temp_archive, sizeof(temp_archive), "%s/repo_archive.tar.bz2", extras_subdir);
     
-    // Check if it's a local path
+    // Zkontroluj zda jde o lokální cestu
     int is_local = (repo_archive_url[0] == '/' || strncmp(repo_archive_url, "./", 2) == 0 || 
                     strncmp(repo_archive_url, "../", 3) == 0 ||
                     (strncmp(repo_archive_url, "http://", 7) != 0 && 
@@ -529,7 +529,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
                      strncmp(repo_archive_url, "file://", 7) != 0));
     
     if (is_local) {
-        // Local file - copy it
+        // Lokální soubor – zkopíruj ho
         char cmd[4096];
         snprintf(cmd, sizeof(cmd), "cp \"%s\" \"%s\"", repo_archive_url, temp_archive);
         if (system(cmd) != 0) {
@@ -537,7 +537,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
             return;
         }
     } else {
-        // Download via HTTP
+        // Stáhni přes HTTP
         FILE *fp = fopen(temp_archive, "wb");
         if (!fp) return;
         
@@ -554,7 +554,7 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         curl_easy_setopt(curl, CURLOPT_TIMEOUT, 30L);
         curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 10L);
         curl_easy_setopt(curl, CURLOPT_FAILONERROR, 1L);
-        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Prefer IPv4
+        curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4
         
         CURLcode res = curl_easy_perform(curl);
         long http_code = 0;
@@ -569,8 +569,8 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         }
     }
     
-    // Extract build.sh from archive
-    // Use exact path instead of --wildcards for compatibility with busybox tar (Alpine)
+    // Extrahuj build.sh z archivu
+    // Použij přesnou cestu místo --wildcards pro kompatibilitu s busybox tar (Alpine)
     char extract_cmd[4096];
     snprintf(extract_cmd, sizeof(extract_cmd), 
              "tar -xjf \"%s\" -C \"%s\" --strip-components=1 \"%s-%s/build.sh\" 2>/dev/null",
@@ -585,22 +585,22 @@ static void try_download_build_script(const char *pkg_name, const char *version,
         log_warn("Failed to extract build.sh from repository archive (exit code: %d)", extract_result);
     }
     
-    // Remove temporary archive
+    // Odstraň dočasný archiv
     remove(temp_archive);
 }
 
 /**
- * Download extra files (patches, additional files) for a package.
- * 
- * Downloads extras defined in package metadata, plus attempts to download
- * .build script from repository archive. Files are cached in extras/<pkg_name>/
- * for use during build process.
- * 
- * @param extras JSON array of extra file URLs
- * @param pkg_name Package name
- * @param version Package version
- * @param repo_base_url Base URL of repository
- * @param tmp_dir Temporary directory (unused)
+ * Stáhne doplňkové soubory (záplaty, dodatečné soubory) pro balík.
+ *
+ * Stáhne extras definované v metadatech balíku, plus se pokusí stáhnout
+ * skript .build z archivu repozitáře. Soubory jsou uloženy do cache v extras/<pkg_name>/
+ * pro použití během procesu sestavení.
+ *
+ * @param extras JSON pole URL doplňkových souborů
+ * @param pkg_name Název balíku
+ * @param version Verze balíku
+ * @param repo_base_url Základní URL repozitáře
+ * @param tmp_dir Dočasný adresář (nepoužito)
  */
 void download_extras(json_t *extras, const char *pkg_name, const char *version, const char *repo_base_url, const char *tmp_dir) {
     if (!pkg_name) return;
@@ -611,7 +611,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", extras_subdir);
     system(cmd);
     
-    // Automatically try to download build.sh script from repository
+    // Automaticky zkus stáhnout skript build.sh z repozitáře
     log_info("download_extras called: pkg=%s, version=%s, repo_base_url=%s", 
              pkg_name, version ? version : "NULL", repo_base_url ? repo_base_url : "NULL");
     if (version && repo_base_url) {
@@ -622,7 +622,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
                  version ? "OK" : "NULL", repo_base_url ? "OK" : "NULL");
     }
 
-    // Download remaining extras from JSON array
+    // Stáhni zbývající doplňky z JSON pole
     if (!extras || !json_is_array(extras)) return;
 
     size_t i;
@@ -635,7 +635,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
         const char *extra_name = strrchr(extra_url, '/') ? strrchr(extra_url, '/') + 1 : "extra_file";
         snprintf(extra_path, sizeof(extra_path), "%s/%s", extras_subdir, extra_name);
 
-        // Similar logic to download_package, but without Solvable (just URL)
+        // Podobná logika jako download_package, ale bez Solvable (jen URL)
         if (access(extra_path, F_OK) == 0) {
             log_info("Using cached extra: %s", extra_path);
             continue;
@@ -650,11 +650,11 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
             curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_data);
             curl_easy_setopt(curl, CURLOPT_WRITEDATA, fp);
             curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
-            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // 5 minute timeout
-            curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L); // 30s connect timeout
-            curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Prefer IPv4
+            curl_easy_setopt(curl, CURLOPT_TIMEOUT, 300L); // Časový limit 5 minut
+            curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 30L); // Časový limit připojení 30 s
+            curl_easy_setopt(curl, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4); // Preferuj IPv4
             
-            // Progress bar for extras
+            // Lišta průběhu pro doplňky
             curl_easy_setopt(curl, CURLOPT_XFERINFOFUNCTION, progress_callback);
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
             
@@ -696,16 +696,16 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
     const char *pkg_name = pool_id2str(pool, s->name);
     const char *version = pool_id2str(pool, s->evr);
     
-    // Get solvable ID from Solvable pointer
+    // Získej ID solvable z ukazatele Solvable
     Id p = s - pool->solvables;
     
-    // Source array is passed injected from main.c
+    // Pole zdrojů je předáno injektováním z main.c
     size_t source_count = 0;
     if (source_array && json_is_array(source_array)) {
         source_count = json_array_size(source_array);
     }
     
-    // Ensure the output directory exists
+    // Zajisti existenci výstupního adresáře
     char cmd[2048];
     char first_letter = pkg_name[0];
     snprintf(cmd, sizeof(cmd), "mkdir -p \"%s\"", output_dir);
@@ -715,8 +715,8 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
         return -1;
     }
     
-    // Determine filename and extension
-    const char *first_url = loc;  // fallback
+    // Urči název souboru a příponu
+    const char *first_url = loc;  // záloha
     if (source_count > 0) {
         json_t *first_source = json_array_get(source_array, 0);
         if (first_source && json_is_object(first_source)) {
@@ -727,8 +727,8 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
         }
     }
     
-    // Detect file extension
-    const char *ext = ".tar.xz";  // default
+    // Detekuj příponu souboru
+    const char *ext = ".tar.xz";  // výchozí
     const char *last_dot = strrchr(first_url, '.');
     if (last_dot) {
         const char *last_slash = strrchr(first_url, '/');
@@ -744,14 +744,14 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
     char output_path[2048];
     snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", output_dir, pkg_name, version, ext);
     
-    // Check if file already exists
+    // Zkontroluj zda soubor již existuje
     if (access(output_path, F_OK) == 0) {
         log_info("Package already exists: %s", output_path);
         if (source_array) json_decref(source_array);
         return 0;
     }
     
-    // Try each source URL
+    // Zkus každou zdrojovou URL
     int download_success = 0;
     
     if (source_count > 0) {
@@ -765,7 +765,7 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
             const char *source_url = json_string_value(url_json);
             log_info("Trying source[%zu].url: %s", i, source_url);
             
-            // Detect if URL is remote or local
+            // Detekuj zda je URL vzdálená nebo lokální
             int has_url_scheme = (strncmp(source_url, "http://", 7) == 0 ||
                                  strncmp(source_url, "https://", 8) == 0 ||
                                  strncmp(source_url, "ftp://", 6) == 0 ||
@@ -774,14 +774,14 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
             int is_local = !is_remote;
             
             if (is_local) {
-                // Try local source with multiple search paths
+                // Zkus lokální zdroj s více vyhledávacími cestami
                 char local_path[2048] = {0};
                 int found_local = 0;
                 
-                // Try multiple possible locations
+                // Zkus více možných umístění
                 const char *search_paths[] = {
-                    source_url,  // Absolute or relative path as-is
-                    NULL,        // Repository structure path (filled below)
+                    source_url,  // Absolutní nebo relativní cesta tak jak je
+                    NULL,        // Cesta struktury repozitáře (vyplní se níže)
                 };
                 
                 char repo_structure_path[2048];
@@ -817,7 +817,7 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
                     log_debug(2, "Local source file not found: %s", source_url);
                 }
             } else {
-                // Remote download
+                // Vzdálené stahování
                 FILE *fp = fopen(output_path, "wb");
                 if (!fp) {
                     log_error("Cannot write to %s", output_path);
@@ -881,19 +881,19 @@ int download_url_to_file(const char *url, const char *output_path) {
         return -1;
     }
     
-    // Check if file already exists
+    // Zkontroluj zda soubor již existuje
     if (access(output_path, F_OK) == 0) {
         log_info("File already exists: %s", output_path);
         return 0;
     }
     
-    // Determine if URL is remote or local
+    // Urči zda je URL vzdálená nebo lokální
     int is_remote = (strncmp(url, "http://", 7) == 0 || 
                     strncmp(url, "https://", 8) == 0 ||
                     strncmp(url, "ftp://", 6) == 0);
     
     if (is_remote) {
-        // Remote download via CURL
+        // Vzdálené stahování přes CURL
         FILE *fp = fopen(output_path, "wb");
         if (!fp) {
             log_error("Cannot write to %s", output_path);
@@ -931,7 +931,7 @@ int download_url_to_file(const char *url, const char *output_path) {
         log_info("Successfully downloaded to: %s", output_path);
         return 0;
     } else {
-        // Local file copy
+        // Kopírování lokálního souboru
         if (access(url, F_OK) != 0) {
             log_error("Local file not found: %s", url);
             return -1;

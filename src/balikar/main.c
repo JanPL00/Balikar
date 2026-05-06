@@ -1,50 +1,49 @@
 //
-// Created by placeja5 on 11/2/25.
-// Refactored: 2026-04-09 - Command Pattern + Dispatcher
 //
 #include "includes/command_context.h"
 #include "includes/command_registry.h"
 #include "../common/common.h"
 
 /**
- * Main entry point for Balikar package manager.
- * Refactored using Command Pattern + Dispatcher for modular command handling.
- * 
+ * Vstupní bod aplikace Balikar.
+ *
+ * Refaktorováno pomocí Command Pattern + Dispatcher pro modulární zpracování příkazů.
+ *
  * Workflow:
- * 1. Create command context (holds CLI config + lazy resources)
- * 2. Parse command-line arguments into context
- * 3. Dispatch to appropriate command handler
- * 4. Cleanup and return exit code
- * 
- * @param argc Argument count
- * @param argv Argument vector
- * @return Exit code: 0 on success, error code on failure
+ * 1. Vytvoření kontextu příkazu (obsahuje CLI konfiguraci + lazy resources)
+ * 2. Parsování argumentů příkazové řádky do kontextu
+ * 3. Dispatch na příslušný handler příkazu
+ * 4. Úklid a vrácení exit kódu
+ *
+ * @param argc Počet argumentů
+ * @param argv Vektor argumentů
+ * @return Exit kód: 0 při úspěchu, chybový kód při selhání
  */
 int main(int argc, char **argv) {
     
-    // Step 1: Create command context
+    // Krok 1: Vytvoř kontext příkazu
     CommandContext *ctx = command_context_create();
     if (!ctx) {
         log_error("Failed to create command context.");
         return 1;
     }
     
-    // Step 1.5: Initialize subsystem facades
+    // Krok 1.5: Inicializuj fasády subsystémů
     command_context_init_subsystems(ctx);
     
-    // Step 2: Parse command-line arguments
-    // This populates CLI config and sets DEBUG_LEVEL
+    // Krok 2: Parsuj argumenty příkazové řádky
+    // Naplní konfiguraci CLI a nastaví DEBUG_LEVEL
     if (command_context_parse_args(ctx, argc, argv) != 0) {
-        // Parse error or --help was requested
+        // Chyba při parsování nebo byl vyžádán --help
         command_context_destroy(ctx);
         return 1;
     }
     
-    // Step 3: Dispatch to command handler
-    // Lookup command, validate, and execute
+    // Krok 3: Předej ke zpracovači příkazu
+    // Vyhledej příkaz, validuj a spusť
     int exit_code = command_dispatch(ctx);
     
-    // Step 4: Cleanup
+    // Krok 4: Úklid
     command_context_destroy(ctx);
     
     return exit_code;

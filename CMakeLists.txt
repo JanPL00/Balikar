@@ -127,7 +127,7 @@ message(STATUS "LibSolv_INCLUDE_DIRS: ${LibSolv_INCLUDE_DIRS}")
 enable_testing()
 
 ## ========================================
-## MAIN EXECUTABLE FOR BALIKAR
+## HLAVNÍ SPUSTITELNÝ SOUBOR BALIKAR
 ## ========================================
 
 add_executable(balikar
@@ -163,9 +163,9 @@ add_executable(balikar
         src/balikar/includes/commands.h
 )
 
-# Build binary into build/ directory (not project root directly)
-# POST_BUILD then writes content in-place to project root to preserve inode
-# so Docker bind mounts see the updated binary without container restart.
+# Sestav binárku do adresáře build/ (ne přímo do kořene projektu)
+# POST_BUILD pak zapíše obsah na místo v kořenu projektu pro zachování inode
+# aby Docker bind mounty viděly aktualizovanou binárku bez restartu kontejneru.
 set_target_properties(balikar PROPERTIES
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
@@ -218,8 +218,8 @@ else()
         ${LibArchive_LIBRARIES}
     )
     
-    # RPATH configuration for distribution
-    # Use $ORIGIN for portable binary with bundled libraries
+    # Konfigurace RPATH pro distribuci
+    # Použij $ORIGIN pro přenositelnou binárku s přibalenými knihovnami
     set_target_properties(balikar PROPERTIES
         INSTALL_RPATH "$ORIGIN:$ORIGIN/lib:$ORIGIN/../lib"
         BUILD_WITH_INSTALL_RPATH TRUE
@@ -228,7 +228,7 @@ else()
 endif()
 
 ## ========================================
-## UNIT TESTS
+## UNIT TESTY
 ## ========================================
 
 add_executable(tests

@@ -1,10 +1,5 @@
-========================================
-                 CZECH
-========================================
-
 cmd_autoremove
 =============
-(English below)
 
 Popis
 ----
@@ -48,57 +43,3 @@ Integrace v projektu
 ----
 Závisí na installer.c (get_install_db, get_reverse_deps, remove_package).
 Registrace v command_registry.c: "autoremove" → cmd_autoremove_execute, validate=NULL.
-
-
-========================================
-                ENGLISH
-========================================
-
-cmd_autoremove
-=============
-
-Description
-----
-Source file: commands/cmd_autoremove.c
-
-The module implements the autoremove command. The command identifies and removes
-packages that were installed automatically as dependencies but are no longer needed
-(no other installed package depends on them and they are not marked as manually
-installed).
-
-Algorithm:
-    1. Lazy initialization of pool/repo via ctx.
-    2. Load installation database (list of installed packages with install reason).
-    3. Select candidates: packages with install reason "dependency" with no reverse
-       dependency.
-    4. Iteratively repeat step 3 as long as new candidates exist (transitive analysis).
-    5. If --dry-run: print candidates without action.
-    6. Without --dry-run: user confirmation → remove all candidates via
-       ctx->subsystems.remove_package.
-
-The command has no required operand – it always operates on the full installation
-database.
-
-
-Key functions
-----
-
-static int autoremove_packages(CommandContext *ctx, int dry_run);
-- Core of the command. Performs complete analysis and (if dry_run=0) removal.
-- Returns 0 on success, 1 on failure.
-- With dry_run=1 prints candidates and returns 0.
-
-int cmd_autoremove_execute(CommandContext *ctx);
-- Entry point for the command.
-- Passes ctx->config.dry_run to autoremove_packages.
-- Does not require package_name – operates system-wide.
-
-(no validator – cmd_autoremove_validate is not registered; validate=NULL
-in command_registry.c because the command requires no mandatory arguments)
-
-
-Project integration
-----
-Depends on installer.c (get_install_db, get_reverse_deps, remove_package).
-Registered in command_registry.c: "autoremove" → cmd_autoremove_execute,
-validate=NULL.

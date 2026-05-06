@@ -1,23 +1,23 @@
-# Balikar Package Manager
+# Balikar – správce balíčků
 
-Source-based package manager inspired by Linux From Scratch (LFS), using libsolv for dependency resolution.
+Správce balíčků sestavující ze zdrojových kódů, inspirovaný projektem Linux From Scratch (LFS), využívající libsolv pro řešení závislostí.
 
-## Features
+## Funkce
 
-- **Dependency Resolution** using libsolv (same engine as zypper, dnf)
-- **Build-from-Source** workflow (LFS-style)
-- **Remote Repositories** support (GitHub, HTTP/HTTPS)
-- **Multiple Repository** support with priorities
-- **Staging Environment** for safe builds ($DESTDIR)
-- **Custom Build Scripts** (.build) and install hooks (.install)
+- **Řešení závislostí** pomocí libsolv (stejný engine jako zypper, dnf)
+- **Sestavení ze zdrojů** (LFS styl)
+- **Vzdálené repozitáře** (GitHub, HTTP/HTTPS)
+- **Více repozitářů** s prioritami
+- **Staging prostředí** pro bezpečné sestavení ($DESTDIR)
+- **Vlastní build skripty** (.build) a install hooky (.install)
 
-## Quick Start
+## Rychlý start
 
-### Installation Options
+### Možnosti instalace
 
-#### Option 1: Pre-built Binary (with bundled libraries)
+#### Možnost 1: Předkompilovaná binárka (s přibalenou knihovnou)
 
-**Prerequisites - Install system libraries:**
+**Požadavky – systémové balíky:**
 ```bash
 # Debian/Ubuntu
 sudo apt install libcurl4 libjansson4 libarchive13 patchelf
@@ -26,108 +26,106 @@ sudo apt install libcurl4 libjansson4 libarchive13 patchelf
 sudo dnf install libcurl jansson libarchive patchelf
 ```
 
-**Install Balikar:**
+**Instalace Balikaru:**
 ```bash
-# Clone repository
+# Klonuj repozitář
 git clone https://gitlab.fel.cvut.cz/placeja5/proj6_balikar.git
 cd proj6_balikar
 
-# System-wide installation (recommended)
+# Systémová instalace (doporučeno)
 sudo sh run_scripts/install/install_prebuilt.sh
 
-# OR user installation
+# nebo instalace pro aktuálního uživatele
 sh run_scripts/install/install_prebuilt.sh
 ```
 
-#### Option 2: Static Binary (single file, works anywhere)
+#### Možnost 2: Statická binárka (jediný soubor, funguje kdekoli)
 
-**Build static binary using Alpine Docker (recommended):**
+**Sestavení statické binárky pomocí Alpine Docker (doporučeno):**
 ```bash
-# Requires only Docker installed
+# Vyžaduje pouze nainstalovaný Docker
 ./run_scripts/build/build_static_alpine.sh
 
-# Install
+# Instalace
 sudo cp balikar-static /usr/local/bin/balikar
 ```
 
-**Or build natively (requires static libraries):**
+**Nebo nativní sestavení (vyžaduje statické knihovny):**
 ```bash
-# See doc/STATIC_BUILD.md for detailed instructions
+# Viz doc/STATIC_BUILD.md pro podrobné instrukce
 ./run_scripts/build/build_static.sh
 ```
 
-**Advantages of static build:**
-- Single file, no dependencies
-- Works on any Linux distribution
-- No need to distribute lib/ directory
-- Perfect for embedded systems or containers
+**Výhody statické binárky:**
+- Jediný soubor, žádné závislosti
+- Funguje na jakékoli linuxové distribuci
+- Není potřeba distribuovat adresář lib/
+- Vhodné pro embedded systémy nebo kontejnery
 
-See [doc/STATIC_BUILD.md](doc/STATIC_BUILD.md) for complete static build guide.
-
-**Manual:**
+**Ruční sestavení:**
 ```bash
-# Build (requires libsolv, jansson, curl, openssl)
+# Sestavení (vyžaduje libsolv, jansson, curl, openssl)
 cmake -B build
 cmake --build build
 
-# Configure repositories (system-wide)
+# Konfigurace repozitářů (systémová)
 sudo mkdir -p /etc/balikar
 sudo cp repos.conf /etc/balikar/repos.conf
 
-# OR configure per-user
+# nebo konfigurace pro aktuálního uživatele
 mkdir -p ~/.config/balikar
 cp repos.conf ~/.config/balikar/repos.conf
 
-# List available packages
+# Výpis dostupných balíčků
 ./build/balikar repo list
 ```
 
-### Basic Usage
+### Základní použití
 
 ```bash
-# Install a package (with automatic dependency resolution)
+# Instalace balíčku (s automatickým řešením závislostí)
 ./build/balikar install gzip
 
-# Build from source
+# Sestavení ze zdrojů
 ./build/balikar build gcc
 
-# Show package information
+# Zobrazení informací o balíčku
 ./build/balikar show bash
 
-# Dry-run (see what would happen)
+# Dry-run (zobrazení co by se stalo)
 ./build/balikar install gcc --dry-run
 ```
 
-## Repository Management
+## Správa repozitářů
 
 ```bash
-# List all configured repositories
+# Výpis všech konfigurovaných repozitářů
 ./build/balikar repos
 
-# List configured repositories (alternative)
+# Výpis konfigurovaných repozitářů (alternativa)
 ./build/balikar repo list
 
-# Update repository metadata
-./build/balikar repo-update              # Updates primary repository
-./build/balikar repo-update --repo=./repo  # Updates specific repository
+# Aktualizace metadat repozitáře
+./build/balikar repo-update              # Aktualizuje primární repozitář
+./build/balikar repo-update --repo=./repo  # Aktualizuje konkrétní repozitář
 
-# Add remote repository
-./build/balikar repo add my-repo https://example.com/packages 80
+# Přidání vzdáleného repozitáře
+./build/balikar repo add muj-repo https://example.com/packages 80
 
-# Enable/disable repositories
-./build/balikar repo enable my-repo
+# Povolení/zakázání repozitářů
+./build/balikar repo enable muj-repo
 ./build/balikar repo disable local-dev
 
-# Remove repository
-./build/balikar repo remove my-repo
+# Odebrání repozitáře
+./build/balikar repo remove muj-repo
 ```
 
-### Configuration Files
+### Konfigurační soubory
 
-- **User config**: `~/.config/balikar/repos.conf` (highest priority)
-- **System config**: `/etc/balikar/repos.conf` (fallback)
+- **Uživatelská konfigurace**: `~/.config/balikar/repos.conf` (nejvyšší priorita)
+- **Systémová konfigurace**: `/etc/balikar/repos.conf` (záloha)
 
-**Example configuration:**
+**Příklad konfigurace:**
 ```ini
 [balikar-official]
 url = https://raw.githubusercontent.com/JanPL00/balikar-repository/main
@@ -303,28 +301,28 @@ docker rm tmp
 
 ---
 
-## Package Repository
+## Repozitář balíčků
 
-Official packages: [github.com/JanPL00/balikar-repository](https://github.com/JanPL00/balikar-repository)
+Oficiální balíčky: [github.com/JanPL00/balikar-repository](https://github.com/JanPL00/balikar-repository)
 
-Includes 11 packages from Linux From Scratch 12.4:
+Obsahuje 11 balíčků z Linux From Scratch 12.4:
 - bash, binutils, coreutils, gcc, glibc, gmp, gzip, hello, iana-etc, tar, zlib
 
-## Documentation
+## Dokumentace
 
-### User Guides
+### Uživatelské příručky
 
-- **[Repository Management](doc/repo/README.md)** - Complete guide: configuration, remote repositories, CLI commands
-- **[Configuration Example](doc/repo/repos.conf.example)** - Annotated repository configuration
+- **[Správa repozitářů](doc/repo/README.md)** – Kompletní průvodce: konfigurace, vzdálené repozitáře, CLI příkazy
+- **[Příklad konfigurace](doc/repo/repos.conf.example)** – Okomentovaná konfigurace repozitáře
 
-### Developer Documentation
+### Dokumentace pro vývojáře
 
-- **[Architecture & Workflow](doc/balikar/README.md)** - System architecture, workflow diagrams, module overview
-- **[Builder Implementation](doc/balikar/builder.txt)** - Build system details
-- **[Parser Details](doc/balikar/parser.txt)** - Metadata parsing and repository loading
-- **[Solver Implementation](doc/balikar/solver.txt)** - Dependency resolution
-- **[Downloader](doc/balikar/downloader.txt)** - Package downloading and verification
-- **[Manual](doc/manual.txt)** - General documentation
+- **[Architektura a workflow](doc/balikar/README.md)** – Systémová architektura, diagramy workflow, přehled modulů
+- **[Implementace builderu](doc/balikar/builder.txt)** – Podrobnosti build systému
+- **[Podrobnosti parseru](doc/balikar/parser.txt)** – Parsování metadat a načítání repozitářů
+- **[Implementace solveru](doc/balikar/solver.txt)** – Řešení závislostí
+- **[Downloader](doc/balikar/downloader.txt)** – Stahování a ověřování balíčků
+- **[Manuál](doc/manual.txt)** – Obecná dokumentace
 
 
 # TODO

@@ -1,7 +1,5 @@
-//
-// Command: download - Download packages without installing
-// Facade over solver + downloader subsystems
-//
+// Příkaz: download – stáhne balíky bez instalace
+// Fasáda nad subsystémy solver + downloader
 
 #include "../includes/command_context.h"
 #include "../includes/solver.h"
@@ -14,21 +12,22 @@
 #include <string.h>
 
 /**
- * Helper: Get output directory for downloads.
- * Returns allocated string - caller must free.
+ * Pomocná funkce: Zjistí výstupní adresář pro stahování.
+ *
+ * Vrací alokovaný řetězec – volající musí uvolnit.
  */
 static char* get_download_output_dir(CommandContext *ctx) {
-    // Use --output-dir if specified
+    // Použij --output-dir pokud je zadán
     if (ctx->config.output_dir_allocated) {
         return strdup(ctx->config.output_dir_allocated);
     }
     
-    // Find first enabled local repository from config
+    // Najdi první povolený lokální repozitář z konfigurace
     init_repo_config();
     repo_config_t *repos = get_enabled_repos();
     for (repo_config_t *r = repos; r; r = r->next) {
         if (r->enabled) {
-            // Check if URL is local path (not http/https/ftp)
+            // Zkontroluj zda je URL lokální cesta (ne http/https/ftp)
             if (strncmp(r->url, "http://", 7) != 0 && 
                 strncmp(r->url, "https://", 8) != 0 &&
                 strncmp(r->url, "ftp://", 6) != 0) {
@@ -38,27 +37,27 @@ static char* get_download_output_dir(CommandContext *ctx) {
         }
     }
     
-    // Fallback to ./repo
+    // Záloha na ./repo
     log_info("No local repository found in config, using default: ./repo");
     return strdup("./repo");
 }
 
 /**
- * Helper: Download single package without dependencies.
+ * Pomocná funkce: Stáhne jeden balík bez závislostí.
  */
 static int download_single_package(CommandContext *ctx, char *output_directory) {
     Pool *pool = ctx->resources.pool;
     Repo *repo = ctx->resources.repo;
     const char *pkg_name = ctx->config.package_name;
     
-    // Find package in pool by name
+    // Najdi balík v poolu podle názvu
     Id name_id = pool_str2id(pool, pkg_name, 0);
     if (!name_id) {
         log_error("Package '%s' not found in repository", pkg_name);
         return 1;
     }
     
-    // Find the solvable with this name
+    // Najdi solvable s tímto názvem
     Solvable *s = NULL;
     Id p = 0;
     for (Id i = 2; i < pool->nsolvables; i++) {
@@ -78,7 +77,7 @@ static int download_single_package(CommandContext *ctx, char *output_directory) 
     const char *version = pool_id2str(pool, s->evr);
     log_info("Found package: %s-%s", pkg_name, version);
     
-    // Get source URL from sources array
+    // Získej zdrojovou URL z pole zdrojů
     Repodata *data = repo_id2repodata(repo, 1);
     const char *download_url = NULL;
     static char full_url[4096];
@@ -96,7 +95,7 @@ static int download_single_package(CommandContext *ctx, char *output_directory) 
             
             const char *source_url = json_string_value(url_json);
             
-            // Check if URL is absolute (has scheme)
+            // Zkontroluj zda je URL absolutní (má schéma)
             int is_absolute = (strncmp(source_url, "http://", 7) == 0 ||
                              strncmp(source_url, "https://", 8) == 0 ||
                              strncmp(source_url, "ftp://", 6) == 0 ||
@@ -110,7 +109,7 @@ static int download_single_package(CommandContext *ctx, char *output_directory) 
     }
     
     if (!download_url) {
-        // Fallback to location field
+        // Záloha na pole location
         const char *location = solvable_get_location(s, NULL);
         if (location) {
             const char *repo_path = command_context_get_repo_path(ctx);
@@ -125,7 +124,7 @@ static int download_single_package(CommandContext *ctx, char *output_directory) 
         return 1;
     }
     
-    // Detect file extension
+    // Detekuj příponu souboru
     const char *ext = ".tar.bz2";
     const char *last_dot = strrchr(download_url, '.');
     if (last_dot) {
@@ -139,7 +138,7 @@ static int download_single_package(CommandContext *ctx, char *output_directory) 
         else ext = last_dot;
     }
     
-    // Create output path
+    // Vytvoř výstupní cestu
     char output_path[2048];
     snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", 
              output_directory, pkg_name, version, ext);
@@ -159,8 +158,9 @@ static int download_single_package(CommandContext *ctx, char *output_directory) 
 }
 
 /**
- * Execute 'download' command.
- * Downloads packages with or without dependencies based on --no-deps flag.
+ * Spustí příkaz 'download'.
+ *
+ * Stáhne balíky se závislostmi nebo bez nich podle příznaku --no-deps.
  */
 int cmd_download_execute(CommandContext *ctx) {
     if (!ctx || !ctx->config.package_name) {
@@ -168,7 +168,7 @@ int cmd_download_execute(CommandContext *ctx) {
         return 1;
     }
     
-    // Ensure pool and repo are loaded
+    // Zajisti načtení poolu a repo
     Pool *pool = command_context_ensure_pool(ctx);
     Repo *repo = command_context_ensure_repo(ctx);
     if (!pool || !repo) {
@@ -183,7 +183,7 @@ int cmd_download_execute(CommandContext *ctx) {
         log_info("Downloading without dependencies (--no-deps)");
     }
     
-    // Get output directory
+    // Získej výstupní adresář
     char *output_directory = get_download_output_dir(ctx);
     if (!output_directory) {
         log_error("Failed to determine output directory");
@@ -192,14 +192,14 @@ int cmd_download_execute(CommandContext *ctx) {
     
     log_info("Output directory: %s", output_directory);
     
-    // Handle --no-deps: download only specified package
+    // Zpracuj --no-deps: stáhni pouze zadaný balík
     if (ctx->config.no_deps) {
         int rc = download_single_package(ctx, output_directory);
         free(output_directory);
         return rc;
     }
     
-    // Download with dependencies - create solver
+    // Stáhni se závislostmi – vytvoř solver
     Solver *solv = ctx->subsystems.create_solver(pool);
     if (!solv) {
         log_error("Failed to create solver");
@@ -207,7 +207,7 @@ int cmd_download_execute(CommandContext *ctx) {
         return 1;
     }
     
-    // Solve dependencies (use "/" as root - downloads are independent)
+    // Vyřeš závislosti (použij "/" jako root – stahování je nezávislé)
     Queue *solution = ctx->subsystems.solve_dependencies(
         solv, pkg_name, pool, repo, "/", get_custom_mkdeps
     );
@@ -219,7 +219,7 @@ int cmd_download_execute(CommandContext *ctx) {
         return 1;
     }
     
-    // Create transaction
+    // Vytvoř transakci
     Transaction *trans = solver_create_transaction(solv);
     if (!trans) {
         log_error("Failed to create transaction");
@@ -229,14 +229,14 @@ int cmd_download_execute(CommandContext *ctx) {
         return 1;
     }
     
-    // Display transaction
+    // Zobraz transakci
     if (trans->steps.count == 0) {
         log_info("No packages to download - package may already be resolved");
     } else {
         display_transaction(trans);
     }
     
-    // Confirm with user
+    // Potvrď s uživatelem
     if (!user_confirm("Proceed with download?", 1)) {
         log_info("Download cancelled by user");
         transaction_free(trans);
@@ -246,7 +246,7 @@ int cmd_download_execute(CommandContext *ctx) {
         return 0;
     }
     
-    // Download all packages in transaction
+    // Stáhni všechny balíky v transakci
     log_info("Downloading packages to: %s", output_directory);
     transaction_order(trans, 0);
     
@@ -266,7 +266,7 @@ int cmd_download_execute(CommandContext *ctx) {
         const char *sname = pool_id2str(pool, s->name);
         const char *version = pool_id2str(pool, s->evr);
         
-        // Get source URL
+        // Získej zdrojovou URL
         Repodata *data = repo_id2repodata(repo, 1);
         const char *download_url = NULL;
         static char full_url_buf[4096];
@@ -311,7 +311,7 @@ int cmd_download_execute(CommandContext *ctx) {
             continue;
         }
         
-        // Detect extension
+        // Detekuj příponu
         const char *ext = ".tar.bz2";
         const char *last_dot = strrchr(download_url, '.');
         if (last_dot) {
@@ -325,7 +325,7 @@ int cmd_download_execute(CommandContext *ctx) {
             else ext = last_dot;
         }
         
-        // Create output path
+        // Vytvoř výstupní cestu
         char output_path[2048];
         snprintf(output_path, sizeof(output_path), "%s/%s-%s%s", 
                  output_directory, sname, version, ext);

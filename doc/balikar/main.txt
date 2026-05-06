@@ -1,10 +1,5 @@
-========================================
-                 CZECH
-========================================
-
 main
 =============
-(English below)
 
 Popis
 ----
@@ -61,67 +56,3 @@ Build artefakty:
                               + src/common/*.c + src/utils/*.c)
     CMake target "tests"    → testovací binárka, používá
                               tests/main.c místo src/balikar/main.c
-
-
-========================================
-                ENGLISH
-========================================
-
-main
-=============
-
-Description
-----
-Source file: src/balikar/main.c
-
-The main module is the application entry point. After refactoring
-(Command Pattern + Dispatcher, 2026-04-09) it is intentionally
-extremely thin – just 4 steps with no business logic:
-
-    1. command_context_create() – allocate CommandContext (CLI config
-       + lazy resources: Pool, Repo, subsystems function pointers)
-    2. command_context_parse_args(ctx, argc, argv) – populate the
-       context from CLI arguments; recognize command and its options
-    3. command_dispatch(ctx) – look up the handler for the recognized
-       command in command_registry and run it (validate → execute)
-    4. command_context_destroy(ctx) – free context, return exit code
-
-Goals of this structure:
-    - No business decisions in main – everything is done by modules
-      (command_context, command_registry, the individual cmd_*.c)
-    - Trivial testability: tests/main.c has the same structure, just
-      with a mocked command_registry
-    - Easy to add new commands: write a new cmd_xxx.c and register
-      it in command_registry.c – main.c is not touched
-
-
-Key functions
-----
-
-int main(int argc, char **argv);
-- Program entry point. Returns:
-    0   success
-    1   command_context_create failed (out of memory)
-    !=0 return value of command_dispatch (= return value of the
-        actual command handler)
-
-
-Error codes
-----
-1                   command_context_create failed
-see cmd_*.txt       Return codes of concrete commands are inherited
-
-
-Project integration
-----
-main.c connects to:
-    - command_context.c (context create/destroy, CLI parsing)
-    - command_registry.c (command-name → handler mapping)
-    - common.c (logging init, default paths)
-    - All cmd_*.c modules (through the registry)
-
-Build artifacts:
-    CMake target "balikar"  → the binary itself (src/balikar/*.c
-                              + src/common/*.c + src/utils/*.c)
-    CMake target "tests"    → test binary, uses tests/main.c instead
-                              of src/balikar/main.c

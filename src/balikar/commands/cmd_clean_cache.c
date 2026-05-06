@@ -1,7 +1,5 @@
-//
-// Command: clean-cache - Clear download cache
-// Manages /var/cache/balikar/downloads directory
-//
+// Příkaz: clean-cache – vyčistí cache stažených souborů
+// Spravuje adresář /var/cache/balikar/downloads
 
 #include "../includes/command_context.h"
 #include "../../utils/includes/cli_helpers.h"
@@ -9,9 +7,10 @@
 #include <stdio.h>
 
 /**
- * Execute 'clean-cache' command.
- * Cleans download cache: either specific package or entire cache.
- * No pool/repo needed - pure filesystem operation.
+ * Spustí příkaz 'clean-cache'.
+ *
+ * Vyčistí cache stažených souborů: buď pro konkrétní balík nebo celou cache.
+ * Nevyžaduje pool/repo – jde o čistou operaci se souborovým systémem.
  */
 int cmd_clean_cache_execute(CommandContext *ctx) {
     if (!ctx) return 1;
@@ -23,18 +22,18 @@ int cmd_clean_cache_execute(CommandContext *ctx) {
     }
     
     if (ctx->config.clean_cache_pkg_allocated) {
-        // Clean cache for specific package
+        // Vyčisti cache pro konkrétní balík
         const char *pkg = ctx->config.clean_cache_pkg_allocated;
         log_info("Cleaning cache for package: %s", pkg);
         
-        // Remove tar archives and sha256 checksum files
+        // Odstraň tar archivy a soubory kontrolních součtů sha256
         char pattern_cmd[2048];
         snprintf(pattern_cmd, sizeof(pattern_cmd), 
                  "rm -f \"%s/%s\"* 2>/dev/null", 
                  cache_dir, pkg);
         system(pattern_cmd);
         
-        // Remove extras directory (patches, custom build scripts)
+        // Odstraň adresář extras (záplaty, vlastní build skripty)
         char extras_dir[2048];
         snprintf(extras_dir, sizeof(extras_dir), "%s/extras/%s", cache_dir, pkg);
         char rm_cmd[4096];
@@ -44,10 +43,10 @@ int cmd_clean_cache_execute(CommandContext *ctx) {
         log_info("Cache cleaned for package: %s", pkg);
         
     } else {
-        // Clean entire cache directory
+        // Vyčisti celý adresář cache
         log_info("Cleaning entire cache: %s", cache_dir);
         
-        // Require user confirmation (destructive operation)
+        // Vyžaduj potvrzení uživatele (destruktivní operace)
         if (user_confirm("This will delete all cached downloads. Continue?", 0)) {
             char rm_cmd[2048];
             snprintf(rm_cmd, sizeof(rm_cmd), "rm -rf \"%s\"/* 2>/dev/null", cache_dir);

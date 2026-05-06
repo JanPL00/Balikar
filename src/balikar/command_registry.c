@@ -1,5 +1,5 @@
 //
-// Command Registry Implementation
+// Implementace registru příkazů
 //
 
 #include "includes/command_registry.h"
@@ -7,9 +7,10 @@
 #include "../common/common.h"
 
 /**
- * Static command registry - zero heap allocation.
- * All commands registered at compile time.
- * Memory footprint: ~1 KB for 10 commands.
+ * Statický registr příkazů – žádná heap alokace.
+ *
+ * Všechny příkazy zaregistrovány v době kompilace.
+ * Paměťová stopa: ~1 KB pro 10 příkazů.
  */
 static Command commands[] = {
     {
@@ -51,7 +52,7 @@ static Command commands[] = {
     {
         .name = "repo",
         .description = "Manage repositories (list, add, remove, enable, disable)",
-        .execute = cmd_repo_execute,      // PARTIAL (only 'list' works)
+        .execute = cmd_repo_execute,      // ČÁSTEČNĚ (funguje pouze 'list')
         .validate = NULL
     },
     {
@@ -72,12 +73,13 @@ static Command commands[] = {
         .execute = cmd_clean_cache_execute, 
         .validate = NULL
     },
-    {NULL, NULL, NULL, NULL}  // Terminator
+    {NULL, NULL, NULL, NULL}  // Ukončovač
 };
 
 /**
- * Lookup command by name.
- * O(n) lookup where n=10 (negligible overhead).
+ * Vyhledá příkaz podle názvu.
+ *
+ * Složitost O(n) kde n=10 (zanedbatelná režie).
  */
 Command* command_lookup(const char *name) {
     if (!name) return NULL;
@@ -92,7 +94,7 @@ Command* command_lookup(const char *name) {
 }
 
 /**
- * Dispatch command execution with validation.
+ * Odešle příkaz k vykonání s validací.
  */
 int command_dispatch(CommandContext *ctx) {
     if (!ctx || !ctx->config.command) {
@@ -100,7 +102,7 @@ int command_dispatch(CommandContext *ctx) {
         return 1;
     }
     
-    // Lookup command
+    // Vyhledej příkaz
     Command *cmd = command_lookup(ctx->config.command);
     if (!cmd) {
         log_error("Unknown command: %s", ctx->config.command);
@@ -108,7 +110,7 @@ int command_dispatch(CommandContext *ctx) {
         return 1;
     }
     
-    // Validate if validator exists
+    // Validuj pokud existuje validátor
     if (cmd->validate) {
         int rc = cmd->validate(ctx);
         if (rc != 0) {
@@ -117,13 +119,13 @@ int command_dispatch(CommandContext *ctx) {
         }
     }
     
-    // Execute command
+    // Spusť příkaz
     log_debug(1, "Executing command: %s", cmd->name);
     return cmd->execute(ctx);
 }
 
 /**
- * List all registered commands (for help).
+ * Vypíše všechny registrované příkazy (pro nápovědu).
  */
 void command_list_all(void) {
     printf("Available commands:\n");
@@ -133,7 +135,7 @@ void command_list_all(void) {
 }
 
 // ========================================
-// VALIDATION FUNCTIONS
+// VALIDAČNÍ FUNKCE
 // ========================================
 
 int cmd_install_validate(CommandContext *ctx) {

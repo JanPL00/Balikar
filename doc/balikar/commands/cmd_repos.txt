@@ -1,10 +1,5 @@
-========================================
-                 CZECH
-========================================
-
 cmd_repos
 =============
-(English below)
 
 Popis
 ----
@@ -50,56 +45,3 @@ Integrace v projektu
 ----
 Čte konfiguraci přes common/config.c. Pool/repo jsou volitelné (lazy init).
 Registrace v command_registry.c: "repos" → cmd_repos_execute, validate=NULL.
-
-
-========================================
-                ENGLISH
-========================================
-
-cmd_repos
-=============
-
-Description
-----
-Source file: commands/cmd_repos.c
-
-The module implements the repos command, which provides an overview of all configured
-repositories. Unlike "repo list", it also displays statistical information – the number
-of packages in each repository if metadata is available (i.e. if repo-update has been
-run).
-
-The command requires no arguments.
-
-
-Key functions
-----
-
-static void list_repositories(CommandContext *ctx);
-- Loads the repository list from repos.conf (via config mechanism in ctx).
-- For each repository prints:
-    - Name, URL, status (enabled/disabled)
-    - Package count (if pool/repo is loaded)
-    - Current repository marker (if defined)
-- Lazy initialization of pool/repo is performed only if the user has not disabled
-  metadata loading (e.g. empty or missing repodata.json is tolerated).
-
-int cmd_repos_execute(CommandContext *ctx);
-- Entry point for the command.
-- Calls list_repositories(ctx).
-- Does not require pool/repo as a precondition – pool/repo are optional for statistics.
-- Returns 0 always (output occurs even with an empty list).
-
-(no validator – validate=NULL in command_registry.c because the command requires
-no arguments)
-
-
-Difference from cmd_repo
-----
-cmd_repos: overview listing of all repositories with statistics, no subcommands.
-cmd_repo:  repository management via subcommands (list/add/remove/enable/disable).
-
-
-Project integration
-----
-Reads configuration via common/config.c. Pool/repo are optional (lazy init).
-Registered in command_registry.c: "repos" → cmd_repos_execute, validate=NULL.
