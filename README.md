@@ -109,15 +109,6 @@ cp repos.conf ~/.config/balikar/repos.conf
 ./build/balikar repo-update              # Aktualizuje primární repozitář
 ./build/balikar repo-update --repo=./repo  # Aktualizuje konkrétní repozitář
 
-# Přidání vzdáleného repozitáře
-./build/balikar repo add muj-repo https://example.com/packages 80
-
-# Povolení/zakázání repozitářů
-./build/balikar repo enable muj-repo
-./build/balikar repo disable local-dev
-
-# Odebrání repozitáře
-./build/balikar repo remove muj-repo
 ```
 
 ### Konfigurační soubory
@@ -280,10 +271,10 @@ Jde o sestavení na základě dockerfile proj6_balikar/tests/docker-tests/alpine
 
 ```bash
 cd /cesta/k/proj6_balikar
-docker build -f alpine/Dockerfile.alpine -t balikar-static-builder .
+docker build -f tests/docker-tests/alpine/Dockerfile.alpine -t balikar-static-builder .
 
 docker create --name tmp balikar-static-builder
-docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
+docker cp tmp:/usr/local/bin/balikar ./balikar-static
 docker rm tmp
 ```
 

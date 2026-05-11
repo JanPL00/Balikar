@@ -40,4 +40,5 @@ Integrační testy v izolovaném prostředí jsou zdokumentovány v
 Zahrnují tři scénáře: základní workflow (install, build, clean-cache),
 pokročilé příkazy a reálné balíčky z LFS repozitáře.
 
+
 **Požadavek:** Docker 20.10+.

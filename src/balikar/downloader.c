@@ -66,15 +66,6 @@ static int progress_callback(void *clientp, curl_off_t dltotal, curl_off_t dlnow
     fprintf(stderr, "] %3d%% (%.1fMB/%.1fMB)", percent, dl_mb, total_mb);
     fflush(stderr);
     
-    // Tiskni nový řádek pouze jednou při 100%, ne při každém callbacku po dokončení
-    static int completed = 0;
-    if (dlnow >= dltotal && dltotal > 0 && !completed) {
-        fprintf(stderr, "\n");  // Nový řádek po dokončení
-        completed = 1;
-    } else if (dlnow < dltotal) {
-        completed = 0;  // Reset pro další stahování
-    }
-    
     return 0;
 }
 
@@ -425,8 +416,7 @@ FILE *download_package(Solvable *s, const char *loc, Pool *pool, json_t *source_
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
 
             CURLcode res = curl_easy_perform(curl);
-            printf("\n");
-            fflush(stdout);
+            fprintf(stderr, "\n");
             
             curl_easy_cleanup(curl);
             fclose(fp);
@@ -659,6 +649,7 @@ void download_extras(json_t *extras, const char *pkg_name, const char *version, 
             curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
             
             CURLcode res = curl_easy_perform(curl);
+            fprintf(stderr, "\n");
             curl_easy_cleanup(curl);
             if (res == CURLE_OK) {
                 log_info("Downloaded extra %s to %s", extra_url, extra_path);
@@ -840,6 +831,7 @@ int download_package_to_directory(Solvable *s, const char *loc, Pool *pool, json
                 curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
                 
                 CURLcode res = curl_easy_perform(curl);
+                fprintf(stderr, "\n");
                 curl_easy_cleanup(curl);
                 fclose(fp);
                 
@@ -919,6 +911,7 @@ int download_url_to_file(const char *url, const char *output_path) {
         curl_easy_setopt(curl, CURLOPT_NOPROGRESS, 0L);
         
         CURLcode res = curl_easy_perform(curl);
+        fprintf(stderr, "\n");
         curl_easy_cleanup(curl);
         fclose(fp);
         

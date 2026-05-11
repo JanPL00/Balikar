@@ -22,7 +22,7 @@
 #
 #  !!! POZOR !!!
 #   Tento kontajner slouží pouze pro extrakci statické binárky.
-#   Pro používání balikaru zde chybí gcc, make apod.
+#   Pro používání balikaru v kontajneru zde chybí gcc, make apod.
 #   (Za tímto účelem použijte standartní Dockerfile)
 
 
@@ -102,6 +102,10 @@ FROM alpine:3.21
 
 # Statická binárka — žádné runtime .so závislosti
 COPY --from=builder /src/build-static/balikar /usr/local/bin/balikar
+
+# ca-certificates: Alpine OpenSSL hledá certy na /etc/ssl/cert.pem
+# Bez tohoto balíčku selží každý HTTPS požadavek s "SSL CA cert" chybou
+RUN apk add --no-cache ca-certificates
 
 # Adresářová struktura balikar
 RUN mkdir -p /var/cache/balikar/downloads \
