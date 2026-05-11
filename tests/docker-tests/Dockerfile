@@ -12,7 +12,9 @@ RUN apt-get update && apt-get install -y \
     bzip2 \
     xz-utils \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && ln -sf /etc/ssl/certs/ca-certificates.crt /etc/ssl/cert.pem
+    # ln -sf ... je nutné pokud byla binárka staticky zkompilovaná v alpine linuxu
 
 # Adresářová struktura balikar
 RUN mkdir -p /var/cache/balikar/downloads \

@@ -57,13 +57,33 @@ if(BUILD_STATIC)
     find_library(BZ2_LIBRARY NAMES libbz2.a bz2)
     find_library(ZSTD_LIBRARY NAMES libzstd.a zstd)
 
+    # Volitelné statické závislosti libcurl (distribuční curl.a má všechny zapnuté,
+    # minimalistická conda/custom libcurl je mít nemusí — proto REQUIRED je OFF)
+    find_library(NGHTTP2_LIBRARY NAMES libnghttp2.a nghttp2
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+    find_library(CARES_LIBRARY NAMES libcares.a cares
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+    find_library(BROTLIDEC_LIBRARY NAMES libbrotlidec.a brotlidec
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+    find_library(BROTLICOMMON_LIBRARY NAMES libbrotlicommon.a brotlicommon
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+    find_library(PSL_LIBRARY NAMES libpsl.a psl
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+    find_library(IDN2_LIBRARY NAMES libidn2.a idn2
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+    find_library(UNISTRING_LIBRARY NAMES libunistring.a unistring
+        HINTS ${CONDA_PREFIX}/lib /usr/lib /usr/local/lib)
+
     set(STATIC_EXTRA_LIBS
         ${SSL_LIBRARY}
         ${CRYPTO_LIBRARY}
         ${ZLIB_LIBRARY}
     )
 
-    foreach(_lib LZMA_LIBRARY BZ2_LIBRARY ZSTD_LIBRARY)
+    foreach(_lib LZMA_LIBRARY BZ2_LIBRARY ZSTD_LIBRARY
+                 NGHTTP2_LIBRARY CARES_LIBRARY
+                 BROTLIDEC_LIBRARY BROTLICOMMON_LIBRARY
+                 PSL_LIBRARY IDN2_LIBRARY UNISTRING_LIBRARY)
         if(${_lib})
             list(APPEND STATIC_EXTRA_LIBS ${${_lib}})
         endif()

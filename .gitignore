@@ -34,12 +34,3 @@ structure_exports/
 impl_builderu.txt
 BUILD_STATIC.txt
 
-# Testing help scripts
-tests/docker-tests/test1.sh
-tests/docker-tests/test2.sh
-tests/docker-tests/test3.sh
-
-tests/docker-tests/test_all_13.sh
-tests/docker-tests/test_real_software.sh
-
-tests/build_variants_results.log
