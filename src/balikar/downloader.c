@@ -913,6 +913,10 @@ int download_url_to_file(const char *url, const char *output_path) {
         CURLcode res = curl_easy_perform(curl);
         fprintf(stderr, "\n");
         curl_easy_cleanup(curl);
+        fclose(fp);
+        
+        if (res != CURLE_OK) {
+            log_error("Download failed: %s", curl_easy_strerror(res));
             remove(output_path);
             return -1;
         }

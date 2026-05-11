@@ -274,7 +274,7 @@ cd /cesta/k/proj6_balikar
 docker build -f tests/docker-tests/alpine/Dockerfile.alpine -t balikar-static-builder .
 
 docker create --name tmp balikar-static-builder
-docker cp tmp:/usr/local/bin/balikar ./balikar-alpine-static
+docker cp tmp:/usr/local/bin/balikar ./balikar-static
 docker rm tmp
 ```
 
