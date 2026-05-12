@@ -1,6 +1,7 @@
 # Balikar – správce balíčků
 
 Správce balíčků sestavující ze zdrojových kódů, inspirovaný projektem Linux From Scratch (LFS), využívající libsolv pro řešení závislostí.
+Balikar byl vyvíjen na systému Debian 12 (Bookworm).
 
 ## Funkce
 
@@ -296,7 +297,7 @@ Oficiální balíčky: [github.com/JanPL00/balikar-repository](https://github.co
 - **[Podrobnosti parseru](doc/balikar/parser.txt)** – Parsování metadat a načítání repozitářů
 - **[Implementace solveru](doc/balikar/solver.txt)** – Řešení závislostí
 - **[Downloader](doc/balikar/downloader.txt)** – Stahování a ověřování balíčků
-- **[Testování](tests/README.md)** – Možnosti testování programu
+- **[Testování](tests/README.md)** – Možnosti testování programu a základní troubleshooting
 
 ### Organizace zdrojových souborů
 

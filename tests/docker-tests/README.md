@@ -155,6 +155,8 @@ SW dostupný v balikar-repository (gzip, ncurses, bash, nmap, ...) **není** př
 
 ## Řešení možných problémů
 
+Balikar byl vyvíjen na systému Debian 12 (Bookworm). V případě přetrvávajících problémů s kompilací/fungováním programu se doporučuje zkompilovat program na systému Debian 12.
+
 **`balikar: command not found`**
 Zkontrolujte, že balikar binary je namountováno na `/usr/local/bin/balikar`.
 
