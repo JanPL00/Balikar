@@ -3,6 +3,9 @@
 Správce balíčků sestavující ze zdrojových kódů, inspirovaný projektem Linux From Scratch (LFS), využívající libsolv pro řešení závislostí.
 Balikar byl vyvíjen na systému Debian 12 (Bookworm).
 
+
+*jde o mirror školního repa*
+
 ## Funkce
 
 - **Řešení závislostí** pomocí libsolv (stejný engine jako zypper, dnf)
